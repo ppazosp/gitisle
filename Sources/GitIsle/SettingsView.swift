@@ -11,6 +11,8 @@ struct SettingsView: View {
   @State private var draft: AppSettings
   @State private var loginItemError: String?
   @State private var startAtLogin = SMAppService.mainApp.status == .enabled
+  @State private var cardsHeight: CGFloat = 0
+  @State private var saveRowHeight: CGFloat = 0
 
   init(store: IslandStore, contentHeight: Binding<CGFloat>) {
     self.store = store
@@ -18,55 +20,85 @@ struct SettingsView: View {
     _draft = State(initialValue: store.settings)
   }
 
-  private var changed: Bool {
-    var current = store.settings
-    current.notificationsEnabled = draft.notificationsEnabled
-    return current != draft
+  /// The draft with the preferences that apply outside this page (system permission and
+  /// chart choices) taken from the live settings, so saving never reverts them.
+  private var merged: AppSettings {
+    var result = draft
+    result.notificationsEnabled = store.settings.notificationsEnabled
+    result.githubChart = store.settings.githubChart
+    result.usageChart = store.settings.usageChart
+    result.usageMetric = store.settings.usageMetric
+    return result
   }
 
+  private var changed: Bool { merged != store.settings }
+
   var body: some View {
-    MeasuredColumn {
-      VStack(spacing: 12) {
-        HStack(alignment: .top, spacing: 12) {
-          VStack(spacing: 12) {
+    // The cards scroll; the save row stays pinned below them so Save is always visible.
+    VStack(spacing: 0) {
+      MeasuredColumn {
+        VStack(spacing: 12) {
+          // Rows of equal-height cards, so no column leaves an empty block.
+          HStack(alignment: .top, spacing: 12) {
             github
             notifications
           }
-          VStack(spacing: 12) {
+          .fixedSize(horizontal: false, vertical: true)
+          HStack(alignment: .top, spacing: 12) {
             island
             usage
           }
+          .fixedSize(horizontal: false, vertical: true)
         }
-        .fixedSize(horizontal: false, vertical: true)
-        HStack(spacing: 12) {
-          if let error = store.persistenceError ?? loginItemError {
-            Text(error).font(.system(size: 11)).foregroundStyle(Palette.failed).lineLimit(2)
-          } else {
-            Text("GitIsle reads GitHub through your gh login and never writes to GitHub.")
-              .font(.system(size: 10.5)).foregroundStyle(.white.opacity(0.35))
-          }
-          Spacer()
-          Button("Save") {
-            draft.notificationsEnabled = store.settings.notificationsEnabled
-            store.applySettings(draft)
-            if store.persistenceError == nil {
-              withAnimation(Motion.snappy) { store.showingSettings = false }
-            }
-          }
-          .buttonStyle(.borderedProminent).controlSize(.small)
-          .keyboardShortcut(.defaultAction)
-          .disabled(!changed)
-        }
-        .padding(.horizontal, 4)
+        .padding(.horizontal, 16).padding(.top, 12).padding(.bottom, 6)
+      } onHeight: {
+        cardsHeight = $0
+        contentHeight = $0 + saveRowHeight
       }
-      .padding(.horizontal, 16).padding(.top, 12).padding(.bottom, 6)
-    } onHeight: {
-      contentHeight = $0
+      HStack(spacing: 12) {
+        if let error = store.persistenceError ?? loginItemError {
+          Text(error).font(.system(size: 11)).foregroundStyle(Palette.failed).lineLimit(2)
+        } else {
+          Text("GitIsle reads GitHub through your gh login and never writes to GitHub.")
+            .font(.system(size: 10.5)).foregroundStyle(.white.opacity(0.35))
+        }
+        Spacer()
+        Button("Save") {
+          store.applySettings(merged)
+          if store.persistenceError == nil {
+            withAnimation(Motion.snappy) { store.showingSettings = false }
+          }
+        }
+        .buttonStyle(.borderedProminent).controlSize(.small)
+        .keyboardShortcut(.defaultAction)
+        .disabled(!changed)
+      }
+      .padding(.horizontal, 20).padding(.vertical, 8)
+      .onGeometryChange(for: CGFloat.self) {
+        $0.size.height
+      } action: {
+        saveRowHeight = $0
+        contentHeight = cardsHeight + $0
+      }
     }
   }
 
   private var github: some View {
     SettingsCard(glyph: .github, title: "GitHub") {
+      SettingsRow("Account") {
+        if let login = store.github?.login, store.githubError == nil {
+          HStack(spacing: 6) {
+            Circle().fill(Palette.open).frame(width: 6, height: 6)
+            Text(verbatim: "@\(login)").font(.system(size: 12, weight: .medium))
+          }
+        } else {
+          Link(
+            "Sign in with gh",
+            destination: URL(string: "https://cli.github.com/manual/gh_auth_login")!
+          )
+          .font(.system(size: 12))
+        }
+      }
       SettingsRow("Also watch") {
         TextField("owner/repo, owner/another-repo", text: $draft.repositories)
           .islandField()
@@ -76,21 +108,17 @@ struct SettingsView: View {
           options: [(60.0, "1 min"), (120.0, "2 min"), (300.0, "5 min")],
           selection: $draft.githubRefreshSeconds, fontSize: 11)
       }
-      HStack {
-        Text("Your PRs and review requests are always included.").lineLimit(1)
-          .layoutPriority(-1)
-        Spacer(minLength: 8)
-        Link(
-          "GitHub CLI setup",
-          destination: URL(string: "https://cli.github.com/manual/gh_auth_login")!)
-      }
-      .font(.system(size: 10.5)).foregroundStyle(.white.opacity(0.4))
+      Text("Your PRs and review requests are always included.")
+        .font(.system(size: 10.5)).foregroundStyle(.white.opacity(0.4))
     }
   }
 
   private var notifications: some View {
     SettingsCard(glyph: .eye, title: "Notifications") {
-      SettingsRow("Merges, failures, reviews") {
+      SettingsRow("Island banner") {
+        Toggle("", isOn: $draft.bannersEnabled).islandToggle()
+      }
+      SettingsRow("System notifications") {
         Toggle(
           "",
           isOn: Binding(
@@ -99,15 +127,42 @@ struct SettingsView: View {
               if enabled {
                 Task { await store.requestNotifications() }
               } else {
-                store.settings.notificationsEnabled = false
-                store.saveSettings()
+                store.update { $0.notificationsEnabled = false }
               }
             })
         )
         .islandToggle()
       }
+      SettingsRow("Sound") {
+        Toggle("", isOn: $draft.notificationSound).islandToggle()
+      }
+      .disabled(!store.settings.notificationsEnabled)
+      .opacity(store.settings.notificationsEnabled ? 1 : 0.45)
+      VStack(alignment: .leading, spacing: 7) {
+        Text("Announce").font(.system(size: 12)).foregroundStyle(.white.opacity(0.75))
+        LazyVGrid(
+          columns: [GridItem(.flexible(), spacing: 6), GridItem(.flexible(), spacing: 6)],
+          spacing: 6
+        ) {
+          ForEach(Self.announcements, id: \.kind) { item in
+            AnnouncementChip(
+              glyph: item.glyph, label: item.label, color: item.kind.color,
+              selected: draft.announcedKinds.contains(item.kind.rawValue)
+            ) {
+              if draft.announcedKinds.remove(item.kind.rawValue) == nil {
+                draft.announcedKinds.insert(item.kind.rawValue)
+              }
+            }
+          }
+        }
+      }
     }
   }
+
+  private static let announcements: [(kind: PRStatus, glyph: Glyph, label: String)] = [
+    (.merged, .merge, "Merged"), (.failed, .failFill, "Failed"), (.review, .eye, "Review"),
+    (.queued, .mergeQueue, "Merging"),
+  ]
 
   private var island: some View {
     SettingsCard(glyph: .pullRequest, title: "Island") {
@@ -161,7 +216,56 @@ struct SettingsView: View {
       SettingsRow("Claude Code home") {
         TextField("~/.claude", text: $draft.claudeHome).islandField()
       }
+      SettingsRow("Currency") {
+        PillPicker(
+          options: [(CostCurrency.usd, "$ USD"), (.eur, "€ EUR")], selection: $draft.currency,
+          fontSize: 11)
+      }
+      if draft.currency == .eur {
+        SettingsRow("Rate") {
+          HStack(spacing: 6) {
+            Text("1 USD =").foregroundStyle(.white.opacity(0.5))
+            TextField(
+              "0.86", value: $draft.usdToEur, format: .number.precision(.fractionLength(0...4))
+            )
+            .islandField().frame(width: 70)
+            Text("EUR").foregroundStyle(.white.opacity(0.5))
+          }
+          .font(.system(size: 12))
+        }
+        .transition(.opacity)
+      }
     }
+    .animation(Motion.snappy, value: draft.currency)
+  }
+}
+
+/// A toggle chip for one kind of announcement.
+private struct AnnouncementChip: View {
+  let glyph: Glyph
+  let label: String
+  let color: Color
+  let selected: Bool
+  let action: () -> Void
+
+  var body: some View {
+    Button(action: action) {
+      HStack(spacing: 5) {
+        GlyphView(glyph: glyph, size: 10)
+        Text(label).lineLimit(1).fixedSize()
+      }
+      .font(.system(size: 11, weight: .semibold))
+      .foregroundStyle(selected ? color : .white.opacity(0.4))
+      .padding(.vertical, 5)
+      // Stretch after padding so the capsule fills the grid cell without overflowing it.
+      .frame(maxWidth: .infinity)
+      .background(Capsule().fill(selected ? color.opacity(0.16) : .white.opacity(0.05)))
+      .overlay(Capsule().inset(by: 0.5).stroke(color.opacity(selected ? 0.6 : 0), lineWidth: 1))
+      .contentShape(Capsule())
+    }
+    .buttonStyle(.plain)
+    .accessibilityLabel(label)
+    .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
   }
 }
 

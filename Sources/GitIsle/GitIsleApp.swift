@@ -60,6 +60,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     // `--agents` is the earlier name for the statistics preview.
     if arguments.contains("--stats") || arguments.contains("--agents") { store.tab = .stats }
     if arguments.contains("--board") { store.activityLayout = .board }
+    if let index = arguments.firstIndex(of: "--chart"), arguments.count > index + 1,
+      let style = ChartStyle(rawValue: arguments[index + 1])
+    {
+      store.update {
+        $0.githubChart = style
+        $0.usageChart = style
+        $0.usageMetric = style == .cumulative ? .cost : .tokens
+      }
+    }
     if let index = arguments.firstIndex(of: "--states"), arguments.count > index + 1 {
       store.stateFilter = Set(
         arguments[index + 1].split(separator: ",").compactMap { PRGroup(rawValue: String($0)) })

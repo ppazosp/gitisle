@@ -1,5 +1,29 @@
 import Foundation
 
+enum ChartStyle: String, Codable, CaseIterable {
+  case bars, line, area, cumulative
+
+  var label: String { rawValue.capitalized }
+  var symbol: String {
+    switch self {
+    case .bars: "chart.bar.fill"
+    case .line: "chart.xyaxis.line"
+    case .area: "chart.line.uptrend.xyaxis"
+    case .cumulative: "sum"
+    }
+  }
+}
+
+enum UsageMetric: String, Codable, CaseIterable {
+  case tokens, cost
+  var label: String { self == .tokens ? "Tokens" : "Cost" }
+}
+
+enum CostCurrency: String, Codable, CaseIterable {
+  case usd, eur
+  var code: String { rawValue.uppercased() }
+}
+
 struct AppSettings: Codable, Equatable {
   var repositories = ""
   var hoverDelay = 0.2
@@ -10,6 +34,44 @@ struct AppSettings: Codable, Equatable {
   var codexHome = ProcessInfo.processInfo.environment["CODEX_HOME"] ?? NSHomeDirectory() + "/.codex"
   var claudeHome =
     ProcessInfo.processInfo.environment["CLAUDE_CONFIG_DIR"] ?? NSHomeDirectory() + "/.claude"
+  /// Island banners for changes, separate from system notifications.
+  var bannersEnabled = true
+  var notificationSound = true
+  /// Which changes announce themselves, by `PRStatus` raw value.
+  var announcedKinds: Set<String> = ["merged", "failed", "review", "queued"]
+  /// Costs are recorded in US dollars; euros use `usdToEur`, which the person sets.
+  var currency: CostCurrency = .usd
+  var usdToEur = 0.86
+  var githubChart: ChartStyle = .bars
+  var usageChart: ChartStyle = .bars
+  var usageMetric: UsageMetric = .tokens
+
+  init() {}
+
+  /// Missing keys keep their defaults, so adding a setting never resets the others.
+  init(from decoder: Decoder) throws {
+    let values = try decoder.container(keyedBy: CodingKeys.self)
+    let defaults = AppSettings()
+    func value<T: Decodable>(_ key: CodingKeys, _ fallback: T) -> T {
+      (try? values.decodeIfPresent(T.self, forKey: key)) ?? fallback
+    }
+    repositories = value(.repositories, defaults.repositories)
+    hoverDelay = value(.hoverDelay, defaults.hoverDelay)
+    githubRefreshSeconds = value(.githubRefreshSeconds, defaults.githubRefreshSeconds)
+    displayID = value(.displayID, defaults.displayID)
+    showInFullscreen = value(.showInFullscreen, defaults.showInFullscreen)
+    notificationsEnabled = value(.notificationsEnabled, defaults.notificationsEnabled)
+    codexHome = value(.codexHome, defaults.codexHome)
+    claudeHome = value(.claudeHome, defaults.claudeHome)
+    bannersEnabled = value(.bannersEnabled, defaults.bannersEnabled)
+    notificationSound = value(.notificationSound, defaults.notificationSound)
+    announcedKinds = value(.announcedKinds, defaults.announcedKinds)
+    currency = value(.currency, defaults.currency)
+    usdToEur = value(.usdToEur, defaults.usdToEur)
+    githubChart = value(.githubChart, defaults.githubChart)
+    usageChart = value(.usageChart, defaults.usageChart)
+    usageMetric = value(.usageMetric, defaults.usageMetric)
+  }
 
   static func load(from url: URL) -> AppSettings {
     guard let data = try? Data(contentsOf: url),
@@ -22,6 +84,14 @@ struct AppSettings: Codable, Equatable {
 
   func save(to url: URL) throws {
     try JSONEncoder().encode(self).write(to: url, options: .atomic)
+  }
+
+  /// Formats a cost recorded in US dollars in the chosen currency.
+  func cost(_ usd: Double?) -> String {
+    guard let usd else { return "—" }
+    let value = currency == .eur ? usd * usdToEur : usd
+    return value.formatted(
+      .currency(code: currency.code).precision(.fractionLength(value < 100 ? 2 : 0)))
   }
 }
 

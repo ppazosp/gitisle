@@ -8,30 +8,29 @@ struct StatsView: View {
   var body: some View {
     MeasuredColumn {
       VStack(spacing: 10) {
-        GitHubStatsCard(
-          stats: store.githubStats, error: store.githubStatsError, days: store.usageDays,
-          openCount: store.openPRs.count)
+        GitHubStatsCard(store: store)
         // Equal-height columns: each card stretches to the taller one.
         HStack(alignment: .top, spacing: 10) {
           ForEach([AgentProvider.claude, .codex], id: \.self) { provider in
-            UsageCard(
-              provider: provider,
-              summary: store.usage[provider]?.first { $0.days == store.usageDays },
-              history: store.usage[provider]?.first { $0.days == 30 }?.daily ?? [],
-              days: store.usageDays, error: store.usageErrors[provider])
+            UsageCard(store: store, provider: provider)
           }
         }
         .fixedSize(horizontal: false, vertical: true)
-        Text(
-          "Tokens come from local history. Costs are estimates at API prices, separate from your plan."
-        )
-        .font(.system(size: 10)).foregroundStyle(.white.opacity(0.35))
-        .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 6)
+        Text(costNote)
+          .font(.system(size: 10)).foregroundStyle(.white.opacity(0.35))
+          .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 6)
       }
       .padding(.horizontal, 16).padding(.top, 12).padding(.bottom, 4)
     } onHeight: {
       contentHeight = $0
     }
+  }
+
+  private var costNote: String {
+    let base =
+      "Tokens come from local history. Costs are estimates at API prices, separate from your plan."
+    guard store.settings.currency == .eur else { return base }
+    return base + " Euros use 1 USD = \(store.settings.usdToEur.formatted()) EUR."
   }
 }
 
@@ -43,12 +42,13 @@ private let metricColumns = [
   GridItem(.flexible(), spacing: 8, alignment: .leading),
 ]
 
-private struct Card<Content: View>: View {
+private struct Card<Accessory: View, Content: View>: View {
   let glyph: Glyph
   let tint: Color
   let title: String
   var badge: String?
   var badgeColor: Color = .white.opacity(0.4)
+  @ViewBuilder let accessory: Accessory
   @ViewBuilder let content: Content
 
   var body: some View {
@@ -60,6 +60,7 @@ private struct Card<Content: View>: View {
         if let badge {
           Text(badge).font(.system(size: 10.5, weight: .medium)).foregroundStyle(badgeColor)
         }
+        accessory
       }
       content
     }
@@ -87,29 +88,33 @@ private struct Metric: View {
 }
 
 private struct GitHubStatsCard: View {
-  let stats: GitHubStats?
-  let error: String?
-  let days: Int
-  let openCount: Int
+  let store: IslandStore
 
   var body: some View {
+    let stats = store.githubStats
+    let days = store.usageDays
     Card(glyph: .github, tint: .white, title: "GitHub", badge: stats.map { "@\($0.login)" }) {
+      ChartMenu(style: store.settings.githubChart) { style in
+        store.update { $0.githubChart = style }
+      }
+    } content: {
       if let stats, let window = stats.window(days: days) {
         LazyVGrid(columns: wideMetricColumns, alignment: .leading, spacing: 10) {
           Metric(label: "Opened", value: "\(window.opened)", numeric: Double(window.opened))
           Metric(label: "Merged", value: "\(window.merged)", numeric: Double(window.merged))
           Metric(label: "Reviewed", value: "\(window.reviewed)", numeric: Double(window.reviewed))
-          Metric(label: "Open now", value: "\(openCount)", numeric: Double(openCount))
+          Metric(
+            label: "Open now", value: "\(store.openPRs.count)",
+            numeric: Double(store.openPRs.count))
         }
         .animation(Motion.snappy, value: days)
         if !stats.daily.isEmpty {
-          VStack(alignment: .leading, spacing: 6) {
-            DailyBars(values: Array(stats.daily.suffix(30)), highlight: days, tint: Palette.open)
-            Text("Contributions · 30 days").font(.system(size: 10))
-              .foregroundStyle(.white.opacity(0.35))
-          }
+          TrendChart(
+            values: Array(stats.daily.suffix(30)), highlight: days, tint: Palette.open,
+            style: store.settings.githubChart, caption: "Contributions · 30 days",
+            format: { "\(Int($0)) contributions" })
         }
-      } else if let error {
+      } else if let error = store.githubStatsError {
         Text(error).font(.system(size: 11)).foregroundStyle(Palette.attention).lineLimit(3)
       } else {
         Text("Loading activity…").font(.system(size: 11)).foregroundStyle(.white.opacity(0.4))
@@ -119,37 +124,53 @@ private struct GitHubStatsCard: View {
 }
 
 private struct UsageCard: View {
+  let store: IslandStore
   let provider: AgentProvider
-  let summary: UsageSummary?
-  let history: [DailyValue]
-  let days: Int
-  let error: String?
 
   var body: some View {
+    let days = store.usageDays
+    let summary = store.usage[provider]?.first { $0.days == days }
+    let history = store.usage[provider]?.first { $0.days == 30 }
+    let settings = store.settings
     Card(
       glyph: provider.glyph, tint: provider.tint,
       title: provider == .claude ? "Claude Code" : "Codex",
       badge: summary?.partial == true ? "Partial history" : nil,
       badgeColor: Palette.attention
     ) {
+      ChartMenu(
+        style: settings.usageChart, setStyle: { style in store.update { $0.usageChart = style } },
+        metric: settings.usageMetric,
+        setMetric: { metric in store.update { $0.usageMetric = metric } })
+    } content: {
       if let summary {
         LazyVGrid(columns: metricColumns, alignment: .leading, spacing: 10) {
           Metric(
             label: "Tokens", value: Format.count(summary.tokens),
             numeric: summary.tokens.map(Double.init))
           Metric(
-            label: "Est. API cost", value: Format.cost(summary.estimatedCost),
+            label: "Est. API cost", value: settings.cost(summary.estimatedCost),
             numeric: summary.estimatedCost)
           Metric(
             label: "Cache read", value: Format.count(summary.cachedTokens),
             numeric: summary.cachedTokens.map(Double.init))
         }
         .animation(Motion.snappy, value: days)
-        if !history.isEmpty {
-          DailyBars(values: history, highlight: days, tint: provider.tint.opacity(0.9))
+        if let history {
+          let tokens = settings.usageMetric == .tokens
+          let values = tokens ? history.daily : history.dailyCost
+          if !values.isEmpty {
+            TrendChart(
+              values: values, highlight: days, tint: provider.tint.opacity(0.9),
+              style: settings.usageChart,
+              caption: "\(settings.usageMetric.label) · 30 days",
+              format: { value in
+                tokens ? "\(Format.count(Int(value))) tokens" : settings.cost(value)
+              })
+          }
         }
         if !summary.models.isEmpty { models(summary) }
-      } else if let error {
+      } else if let error = store.usageErrors[provider] {
         Text(error).font(.system(size: 11)).foregroundStyle(Palette.attention).lineLimit(3)
       } else {
         Text("Reading local history…").font(.system(size: 11))
@@ -179,6 +200,6 @@ private struct UsageCard: View {
         }
       }
     }
-    .animation(Motion.snappy, value: days)
+    .animation(Motion.snappy, value: store.usageDays)
   }
 }

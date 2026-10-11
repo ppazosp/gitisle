@@ -179,7 +179,9 @@ private struct StateChip: View {
       .background(
         Capsule().fill(group.color.opacity(selected ? 0.28 : hovered ? 0.2 : 0.13))
       )
-      .overlay(Capsule().strokeBorder(group.color.opacity(selected ? 0.9 : 0), lineWidth: 1))
+      .overlay(
+        Capsule().inset(by: 0.5).stroke(group.color.opacity(selected ? 0.9 : 0), lineWidth: 1)
+      )
       .opacity(dimmed && !hovered ? 0.4 : 1)
       .contentShape(Capsule())
     }

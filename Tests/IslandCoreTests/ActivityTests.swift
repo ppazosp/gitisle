@@ -137,7 +137,7 @@ struct ActivityTests {
     #expect(summary.total == 11)
   }
 
-  @Test func ownPRStartingToMergeAnnouncesItOnceWithoutASystemNotification() {
+  @Test func ownPRStartingToMergeAnnouncesItOnce() {
     let open = pr("mine")
     var merging = open
     merging.queuePosition = 1
@@ -145,7 +145,6 @@ struct ActivityTests {
     let current = GitHubSnapshot(login: "person", pullRequests: [merging])
     let events = GitHubChanges.events(previous: previous, current: current)
     #expect(events.map(\.kind) == [.queued])
-    #expect(events.first?.notifiesSystem == false)
     #expect(events.first?.title.hasSuffix("Merging") == true)
     #expect(GitHubChanges.events(previous: current, current: current).isEmpty)
   }

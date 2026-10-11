@@ -10,7 +10,8 @@ collapsible section per repository, with each PR's state shown the way GitHub
 shows it, or a board with one column per state. Filter it by repository, by
 today, 7 days, or all, and by state: press the state counts in a repository
 header to show only those states, and press again to clear. Stats shows GitHub activity, tokens, models, and estimated
-API costs.
+API costs. Each chart can show bars, a line, an area, or a running total, and the
+Claude Code and Codex charts can plot tokens or cost; hover a chart to read a day.
 
 At rest the island covers only the notch. It appears while one of your PRs is
 merging, with its number and how long it has been merging, or while checks run
@@ -75,7 +76,8 @@ Token totals cover locally recorded history. Deleted logs, other machines, and
 unsupported records can leave gaps. Missing values stay unavailable. Incomplete
 scans or unpriced requests show a partial-history label.
 
-Dollar values estimate usage at API prices. They are separate from subscription
+Dollar values estimate usage at API prices. To show euros, choose EUR in
+Settings and set the exchange rate; GitIsle does not fetch exchange rates. They are separate from subscription
 payments and remaining plan quota. Cache tokens use the provider's categories;
 do not add the rows together to reconstruct a bill.
 

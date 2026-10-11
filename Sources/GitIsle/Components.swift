@@ -191,11 +191,6 @@ enum Format {
     return value.formatted(.number.notation(.compactName).precision(.fractionLength(0...1)))
   }
 
-  static func cost(_ value: Double?) -> String {
-    guard let value else { return "—" }
-    return value.formatted(.currency(code: "USD").precision(.fractionLength(value < 100 ? 2 : 0)))
-  }
-
   /// A short age such as "now", "4m", "2h", or "3d".
   static func age(_ date: Date, now: Date = Date()) -> String {
     let seconds = max(0, now.timeIntervalSince(date))
@@ -294,32 +289,6 @@ struct CheckBadge: View {
       default: Circle().fill(Palette.merging).frame(width: 7, height: 7).frame(width: 13)
       }
     }
-  }
-}
-
-/// Daily bars with the selected trailing window highlighted.
-struct DailyBars: View {
-  let values: [DailyValue]
-  let highlight: Int
-  var tint: Color
-  var height: CGFloat = 34
-
-  var body: some View {
-    let peak = max(1, values.map(\.value).max() ?? 1)
-    HStack(alignment: .bottom, spacing: 2) {
-      ForEach(Array(values.enumerated()), id: \.element.id) { index, day in
-        let active = index >= values.count - highlight
-        RoundedRectangle(cornerRadius: 1.5, style: .continuous)
-          .fill(active ? tint : .white.opacity(0.13))
-          .frame(height: max(2, height * day.value / peak))
-          .frame(maxWidth: .infinity)
-          .help("\(day.day): \(Format.count(Int(day.value)))")
-      }
-    }
-    .frame(height: height, alignment: .bottom)
-    .animation(Motion.snappy, value: highlight)
-    .accessibilityElement(children: .ignore)
-    .accessibilityLabel("Daily activity for the last \(values.count) days")
   }
 }
 

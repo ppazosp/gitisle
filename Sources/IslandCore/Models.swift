@@ -363,13 +363,14 @@ public struct UsageSummary: Sendable {
   public var estimatedCost: Double?
   public var models: [UsageModel]
   public var daily: [DailyValue]
+  public var dailyCost: [DailyValue]
   public var partial: Bool
   public var updatedAt: Date
 
   public init(
     provider: AgentProvider, days: Int, tokens: Int?, inputTokens: Int?, outputTokens: Int?,
     cachedTokens: Int?, cacheCreationTokens: Int?, estimatedCost: Double?, models: [UsageModel],
-    daily: [DailyValue] = [], partial: Bool, updatedAt: Date
+    daily: [DailyValue] = [], dailyCost: [DailyValue] = [], partial: Bool, updatedAt: Date
   ) {
     self.provider = provider
     self.days = days
@@ -381,6 +382,7 @@ public struct UsageSummary: Sendable {
     self.estimatedCost = estimatedCost
     self.models = models
     self.daily = daily
+    self.dailyCost = dailyCost
     self.partial = partial
     self.updatedAt = updatedAt
   }
@@ -437,8 +439,6 @@ public struct IslandEvent: Codable, Identifiable, Sendable {
     self.kind = kind
   }
 
-  /// Merging announcements show in the island but are not system notifications.
-  public var notifiesSystem: Bool { kind != .queued }
 }
 
 public enum GitHubChanges {

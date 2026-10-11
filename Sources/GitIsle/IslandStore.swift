@@ -206,7 +206,12 @@ final class IslandStore {
       Task { [weak self] in
         while !Task.isCancelled {
           guard let self else { return }
-          if Date().timeIntervalSince(lastUsageRefresh) > 120 { await refreshUsage() }
+          // A new day changes what "today" means, so refresh right after midnight too.
+          if Date().timeIntervalSince(lastUsageRefresh) > 120
+            || !Calendar.current.isDateInToday(lastUsageRefresh)
+          {
+            await refreshUsage()
+          }
           do { try await Task.sleep(for: .seconds(10)) } catch { return }
         }
       })
@@ -214,7 +219,11 @@ final class IslandStore {
       Task { [weak self] in
         while !Task.isCancelled {
           guard let self else { return }
-          if Date().timeIntervalSince(lastStatsRefresh) > 600 { await refreshStats() }
+          if Date().timeIntervalSince(lastStatsRefresh) > 600
+            || !Calendar.current.isDateInToday(lastStatsRefresh)
+          {
+            await refreshStats()
+          }
           do { try await Task.sleep(for: .seconds(30)) } catch { return }
         }
       })
@@ -264,10 +273,13 @@ final class IslandStore {
       events = newEvents
       setGitHub(fresh)
       githubError = nil
-      if let latest = changes.min(by: { $0.kind.bannerPriority < $1.kind.bannerPriority }) {
-        showEvent(latest, extra: changes.count - 1)
+      let announced = changes.filter { settings.announcedKinds.contains($0.kind.rawValue) }
+      if settings.bannersEnabled,
+        let latest = announced.min(by: { $0.kind.bannerPriority < $1.kind.bannerPriority })
+      {
+        showEvent(latest, extra: announced.count - 1)
       }
-      for event in changes where event.notifiesSystem { notify(event) }
+      for event in announced { notify(event) }
     } catch { githubError = error.localizedDescription }
   }
 
@@ -302,6 +314,15 @@ final class IslandStore {
       saveSettings()
       NotificationCenter.default.post(name: .islandSettingsChanged, object: nil)
     } catch { persistenceError = error.localizedDescription }
+  }
+
+  /// Applies a display preference, such as a chart style, and saves it without refetching.
+  func update(_ change: (inout AppSettings) -> Void) {
+    change(&settings)
+    guard !isDemo else { return }
+    do { try settings.save(to: AppFiles.settings) } catch {
+      persistenceError = error.localizedDescription
+    }
   }
 
   func saveSettings() {
@@ -371,6 +392,7 @@ final class IslandStore {
     content.title = event.title
     content.body = event.detail
     content.userInfo = ["url": event.url.absoluteString]
+    if settings.notificationSound { content.sound = .default }
     UNUserNotificationCenter.current().add(
       UNNotificationRequest(identifier: event.id, content: content, trigger: nil))
   }
@@ -445,6 +467,9 @@ final class IslandStore {
           provider: provider, days: days, tokens: tokens, inputTokens: tokens * 85 / 100,
           outputTokens: tokens * 15 / 100, cachedTokens: tokens * 55 / 100,
           cacheCreationTokens: tokens / 20, estimatedCost: cost, models: models, daily: window,
+          dailyCost: window.map {
+            DailyValue(day: $0.day, value: $0.value / 1_000_000 * (provider == .codex ? 4.1 : 6.3))
+          },
           partial: false, updatedAt: now)
       }
     }
