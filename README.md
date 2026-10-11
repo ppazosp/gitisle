@@ -11,7 +11,8 @@ shows it. Stats shows GitHub activity, tokens, models, and estimated API costs.
 
 When a PR merges, fails its checks, receives your review request, or starts
 merging, the island grows into a short banner. While one of your PRs is in the
-merge queue or set to auto-merge, the closed island shows it.
+merge queue or set to auto-merge, the closed island shows its number and how
+long it has been merging.
 
 ## What it shows
 
@@ -40,7 +41,8 @@ open dist/GitIsle.app
 ```
 
 The app supports Macs with a notch and external displays. Choose the display,
-hover delay, watched repositories, and local usage directories in Settings.
+hover delay, watched repositories, and local usage directories in Settings,
+which open inside the island from the gear button or the menu bar.
 Notifications and launch at login are optional. Enable them in Settings.
 
 For a repeatable preview using example data:
@@ -50,6 +52,7 @@ dist/GitIsle.app/Contents/MacOS/GitIsle --demo --expanded
 dist/GitIsle.app/Contents/MacOS/GitIsle --snapshot /absolute/path/activity.png
 dist/GitIsle.app/Contents/MacOS/GitIsle --snapshot /absolute/path/stats.png --stats
 dist/GitIsle.app/Contents/MacOS/GitIsle --snapshot /absolute/path/banner.png --banner
+dist/GitIsle.app/Contents/MacOS/GitIsle --snapshot /absolute/path/settings.png --settings
 ```
 
 To check your actual connections and local history:

@@ -72,6 +72,7 @@ struct GitHubServiceTests {
   @Test func checkCountsAndAuthorDecodeFromTheRollup() throws {
     var node = row("checked")
     node["author"] = ["login": "person"]
+    node["mergeQueueEntry"] = ["position": 2, "enqueuedAt": "2026-10-11T09:58:00Z"]
     node["commits"] = [
       "nodes": [
         [
@@ -91,6 +92,8 @@ struct GitHubServiceTests {
     ]
     let pr = try GitHubService.decode(node)
     #expect(pr.author == "person")
+    #expect(pr.queuePosition == 2)
+    #expect(pr.mergingSince == Dates.parse("2026-10-11T09:58:00Z"))
     #expect(pr.checks == "PENDING")
     #expect(pr.checkSummary == CheckSummary(passed: 4, failed: 1, pending: 1))
     #expect(try GitHubService.decode(row("plain")).checkSummary == nil)

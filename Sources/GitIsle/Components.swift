@@ -58,8 +58,8 @@ enum Palette {
 
 enum Motion {
   /// Shape morphs between compact, banner, and expanded.
-  static let morph = Animation.spring(response: 0.42, dampingFraction: 0.82)
-  static let snappy = Animation.snappy(duration: 0.24)
+  static let morph = Animation.spring(response: 0.3, dampingFraction: 0.85)
+  static let snappy = Animation.snappy(duration: 0.18)
 }
 
 extension AnyTransition {
@@ -67,8 +67,8 @@ extension AnyTransition {
   static var islandContent: AnyTransition {
     .asymmetric(
       insertion: .opacity.combined(with: .scale(scale: 0.96, anchor: .top))
-        .animation(.smooth(duration: 0.28).delay(0.07)),
-      removal: .opacity.animation(.easeOut(duration: 0.1)))
+        .animation(.smooth(duration: 0.2).delay(0.04)),
+      removal: .opacity.animation(.easeOut(duration: 0.08)))
   }
 }
 

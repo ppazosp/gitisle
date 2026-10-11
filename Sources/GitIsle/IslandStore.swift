@@ -21,6 +21,7 @@ final class IslandStore {
   var recentEventExtra = 0
   var expanded = false {
     didSet {
+      if !expanded { showingSettings = false }
       // Expanding shows the full context, so a pending banner has done its job.
       if expanded, recentEvent != nil {
         notificationTask?.cancel()
@@ -29,6 +30,8 @@ final class IslandStore {
     }
   }
   var tab: IslandTab = .activity
+  /// Settings replace the expanded content; the island stays open while they are shown.
+  var showingSettings = false
   var activityWindow: ActivityWindow = .all {
     didSet { if activityWindow != oldValue { regroup() } }
   }
@@ -253,11 +256,18 @@ final class IslandStore {
     hoverTask?.cancel()
     hoverTask = Task { [weak self] in
       guard let self else { return }
-      do { try await Task.sleep(for: .seconds(inside ? settings.hoverDelay : 0.25)) } catch {
+      do { try await Task.sleep(for: .seconds(inside ? settings.hoverDelay : 0.15)) } catch {
         return
       }
-      if !Task.isCancelled { expanded = inside }
+      // Leaving the island must not throw away settings that are being edited.
+      if !Task.isCancelled, inside || !showingSettings { expanded = inside }
     }
+  }
+
+  func openSettings() {
+    hoverTask?.cancel()
+    showingSettings = true
+    expanded = true
   }
 
   func dismiss() {
@@ -317,7 +327,8 @@ final class IslandStore {
       PullRequest(
         id: "demo3", number: 433, repository: "example/tools", title: "Cache workspace metadata",
         url: link, checks: "PENDING", checkSummary: CheckSummary(passed: 3, failed: 0, pending: 2),
-        autoMerge: true, queuePosition: 2, updatedAt: now.addingTimeInterval(-0.1 * hour),
+        autoMerge: true, queuePosition: 2, mergingSince: now.addingTimeInterval(-95),
+        updatedAt: now.addingTimeInterval(-0.1 * hour),
         author: "example"),
       PullRequest(
         id: "demo4", number: 436, repository: "example/app", title: "Polish the island animations",

@@ -4,7 +4,7 @@ public actor GitHubService {
   private static let fields = """
     fragment PRFields on PullRequest {
       id number title url state isDraft updatedAt mergedAt mergeable mergeStateStatus reviewDecision
-      headRefOid autoMergeRequest { enabledAt } mergeQueueEntry { position }
+      headRefOid autoMergeRequest { enabledAt } mergeQueueEntry { position enqueuedAt }
       repository { nameWithOwner } author { login }
       commits(last: 1) { nodes { commit { statusCheckRollup {
         state
@@ -164,6 +164,9 @@ public actor GitHubService {
     }
     let summary = CheckSummary(counts: counts)
     let queue = row["mergeQueueEntry"] as? [String: Any]
+    let autoMerge = row["autoMergeRequest"] as? [String: Any]
+    let mergingSince = ((queue?["enqueuedAt"] ?? autoMerge?["enabledAt"]) as? String)
+      .flatMap(Dates.parse)
     return PullRequest(
       id: id, number: number, repository: repo, title: title, url: url, state: state,
       isDraft: row["isDraft"] as? Bool ?? false, reviewDecision: row["reviewDecision"] as? String,
@@ -171,8 +174,8 @@ public actor GitHubService {
       mergeStateStatus: row["mergeStateStatus"] as? String ?? "UNKNOWN",
       checks: rollup?["state"] as? String, checkSummary: summary.total > 0 ? summary : nil,
       headOID: row["headRefOid"] as? String ?? "",
-      autoMerge: row["autoMergeRequest"] is [String: Any],
-      queuePosition: queue?["position"] as? Int,
+      autoMerge: autoMerge != nil,
+      queuePosition: queue?["position"] as? Int, mergingSince: mergingSince,
       updatedAt: updatedAt, mergedAt: (row["mergedAt"] as? String).flatMap(Dates.parse),
       author: (row["author"] as? [String: Any])?["login"] as? String)
   }

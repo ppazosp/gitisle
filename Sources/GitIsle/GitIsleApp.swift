@@ -22,7 +22,10 @@ import UserNotifications
       Button("Show GitIsle") { delegate.island?.show() }
       Button("Refresh GitHub") { Task { await store.refreshGitHub() } }.disabled(
         store.githubRefreshing || store.isDemo)
-      SettingsLink { Text("Settings…") }
+      Button("Settings…") {
+        NotificationCenter.default.post(name: .islandOpenSettings, object: nil)
+      }
+      .keyboardShortcut(",")
       Divider()
       Text("\(store.openPRs.count) open PRs · \(store.attention.count) need you")
       Divider()
@@ -30,7 +33,6 @@ import UserNotifications
     } label: {
       Image(nsImage: Glyph.pullRequest.image(size: 16)).accessibilityLabel("GitIsle")
     }
-    Settings { SettingsView(store: store) }
   }
 }
 
@@ -39,6 +41,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
   var store: IslandStore?
   var island: IslandPanelController?
   private var settingsObserver: NSObjectProtocol?
+  private var openSettingsObserver: NSObjectProtocol?
 
   func applicationDidFinishLaunching(_ notification: Notification) {
     NSApp.setActivationPolicy(.accessory)
@@ -72,6 +75,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     ) { [weak self] _ in
       Task { @MainActor in self?.island?.reposition() }
     }
+    openSettingsObserver = NotificationCenter.default.addObserver(
+      forName: .islandOpenSettings, object: nil, queue: .main
+    ) { [weak self] _ in
+      Task { @MainActor in self?.store?.openSettings() }
+    }
+    if arguments.contains("--settings") { store.openSettings() }
     store.start()
     if let position = CommandLine.arguments.firstIndex(of: "--snapshot"),
       CommandLine.arguments.count > position + 1

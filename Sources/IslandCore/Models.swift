@@ -84,6 +84,8 @@ public struct PullRequest: Codable, Hashable, Identifiable, Sendable {
   public var headOID: String
   public var autoMerge: Bool
   public var queuePosition: Int?
+  /// When the PR entered the merge queue, or when auto-merge was enabled.
+  public var mergingSince: Date?
   public var updatedAt: Date
   public var mergedAt: Date?
 
@@ -92,8 +94,8 @@ public struct PullRequest: Codable, Hashable, Identifiable, Sendable {
     isDraft: Bool = false, reviewDecision: String? = nil, reviewRequested: Bool = false,
     mergeable: String = "UNKNOWN", mergeStateStatus: String = "UNKNOWN", checks: String? = nil,
     checkSummary: CheckSummary? = nil, headOID: String = "", autoMerge: Bool = false,
-    queuePosition: Int? = nil, updatedAt: Date = Date(), mergedAt: Date? = nil,
-    author: String? = nil
+    queuePosition: Int? = nil, mergingSince: Date? = nil, updatedAt: Date = Date(),
+    mergedAt: Date? = nil, author: String? = nil
   ) {
     self.id = id
     self.number = number
@@ -111,6 +113,7 @@ public struct PullRequest: Codable, Hashable, Identifiable, Sendable {
     self.headOID = headOID
     self.autoMerge = autoMerge
     self.queuePosition = queuePosition
+    self.mergingSince = mergingSince
     self.updatedAt = updatedAt
     self.mergedAt = mergedAt
     self.author = author

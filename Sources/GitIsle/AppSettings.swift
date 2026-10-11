@@ -2,7 +2,7 @@ import Foundation
 
 struct AppSettings: Codable, Equatable {
   var repositories = ""
-  var hoverDelay = 0.45
+  var hoverDelay = 0.2
   var githubRefreshSeconds = 60.0
   var displayID: UInt32?
   var showInFullscreen = false

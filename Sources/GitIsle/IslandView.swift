@@ -110,11 +110,10 @@ private struct CompactBar: View {
         } animation: { _ in
           .easeInOut(duration: 1.1)
         }
-      Text(
-        verbatim: store.merging.count == 1
-          ? "Merging #\(first.number)" : "\(store.merging.count) merging"
-      )
-      .contentTransition(.numericText())
+      Text(verbatim: "#\(first.number)")
+      if store.merging.count > 1 {
+        Text(verbatim: "+\(store.merging.count - 1)").foregroundStyle(.white.opacity(0.45))
+      }
     } else if store.attention.isEmpty {
       GlyphView(glyph: .checkFill, size: 15).foregroundStyle(Palette.open)
       Text("All clear").foregroundStyle(.white.opacity(0.85))
@@ -125,10 +124,18 @@ private struct CompactBar: View {
     }
   }
 
-  private var trailing: some View {
-    Text("\(store.openPRs.count) open")
-      .foregroundStyle(.white.opacity(0.5))
-      .contentTransition(.numericText(value: Double(store.openPRs.count)))
+  @ViewBuilder private var trailing: some View {
+    if let since = store.merging.first?.mergingSince {
+      // How long the PR has been merging; the system updates the timer without polling.
+      Text(since, style: .timer)
+        .foregroundStyle(Palette.merging)
+        .multilineTextAlignment(.trailing)
+        .fixedSize()
+    } else {
+      Text("\(store.openPRs.count) open")
+        .foregroundStyle(.white.opacity(0.5))
+        .contentTransition(.numericText(value: Double(store.openPRs.count)))
+    }
   }
 
   private var accessibilityText: String {
@@ -208,19 +215,39 @@ private struct ExpandedIsland: View {
         .frame(height: Self.topInset(metrics) + Self.headerHeight, alignment: .bottom)
       Rectangle().fill(Palette.hairline).frame(height: 1).padding(.horizontal, 28)
       Group {
-        switch store.tab {
-        case .activity: ActivityView(store: store, contentHeight: $contentHeight)
-        case .stats: StatsView(store: store, contentHeight: $contentHeight)
+        if store.showingSettings {
+          SettingsView(store: store, contentHeight: $contentHeight)
+        } else {
+          switch store.tab {
+          case .activity: ActivityView(store: store, contentHeight: $contentHeight)
+          case .stats: StatsView(store: store, contentHeight: $contentHeight)
+          }
         }
       }
-      .id(store.tab)
-      .transition(.opacity.animation(.easeOut(duration: 0.16)))
+      .id(store.showingSettings ? "settings" : store.tab.rawValue)
+      .transition(.opacity.animation(.easeOut(duration: 0.12)))
       .frame(maxHeight: .infinity, alignment: .top)
       footer.frame(height: Self.footerHeight)
     }
   }
 
-  private var header: some View {
+  @ViewBuilder private var header: some View {
+    if store.showingSettings {
+      HStack(spacing: 10) {
+        FooterButton(glyph: nil, systemImage: "chevron.left", label: "Back") {
+          withAnimation(Motion.snappy) { store.showingSettings = false }
+        }
+        Text("Settings").font(.system(size: 14, weight: .semibold))
+        Spacer()
+      }
+      .padding(.horizontal, 22)
+      .frame(height: Self.headerHeight)
+    } else {
+      tabsHeader
+    }
+  }
+
+  private var tabsHeader: some View {
     HStack(spacing: 8) {
       PillPicker(
         options: IslandStore.IslandTab.allCases.map { ($0, $0.rawValue) },
@@ -254,11 +281,9 @@ private struct ExpandedIsland: View {
         }
       }
       .disabled(refreshing || store.isDemo)
-      SettingsLink {
-        GlyphView(glyph: .gear, size: 13).frame(width: 26, height: 24).contentShape(Rectangle())
+      FooterButton(glyph: .gear, label: "GitIsle settings") {
+        withAnimation(Motion.snappy) { store.showingSettings.toggle() }
       }
-      .buttonStyle(.plain).foregroundStyle(.white.opacity(0.55))
-      .accessibilityLabel("GitIsle settings")
       FooterButton(glyph: nil, label: "Collapse island") { store.dismiss() }
     }
     .padding(.horizontal, 24)
@@ -280,6 +305,7 @@ private struct ExpandedIsland: View {
 
 private struct FooterButton: View {
   let glyph: Glyph?
+  var systemImage = "chevron.up"
   let label: String
   var spinning = false
   let action: () -> Void
@@ -299,7 +325,7 @@ private struct FooterButton: View {
         } else if let glyph {
           GlyphView(glyph: glyph, size: 13)
         } else {
-          Image(systemName: "chevron.up").font(.system(size: 11, weight: .semibold))
+          Image(systemName: systemImage).font(.system(size: 11, weight: .semibold))
         }
       }
       .frame(width: 26, height: 24)

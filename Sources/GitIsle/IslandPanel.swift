@@ -3,7 +3,7 @@ import SwiftUI
 
 // Notch detection and the non-activating panel pattern are adapted from Agents Island (MIT).
 // The original license is reproduced in THIRD_PARTY_NOTICES.md.
-struct IslandMetrics {
+struct IslandMetrics: Equatable {
   var notchWidth: CGFloat
   var notchHeight: CGFloat
   var hasNotch: Bool
@@ -130,11 +130,21 @@ final class IslandPanel: NSPanel {
 
   func reposition() {
     guard let screen else { return }
-    metrics = IslandMetrics.detect(screen)
+    let detected = IslandMetrics.detect(screen)
+    // Rebuilding the view resets its state, so keep it unless the geometry changed.
+    if detected == metrics, panel.contentView is NSHostingView<IslandView> {
+      placePanel(on: screen)
+      return
+    }
+    metrics = detected
     let host = NSHostingView(rootView: IslandView(store: store, metrics: metrics))
     // The window keeps a fixed size; the island animates inside it without window resizes.
     host.sizingOptions = []
     panel.contentView = host
+    placePanel(on: screen)
+  }
+
+  private func placePanel(on screen: NSScreen) {
     panel.setFrameOrigin(
       NSPoint(
         x: screen.frame.midX - panel.frame.width / 2, y: screen.frame.maxY - panel.frame.height))
