@@ -181,9 +181,18 @@ final class IslandStore {
       scoped, window: activityWindow, states: stateFilter, needsYouOnly: needsYouOnly)
     if fresh != repositories { repositories = fresh }
     let unfiltered = PRGrouping.sections(scoped, window: activityWindow)
-    let counts = unfiltered.map { StateCount(group: $0.group, count: $0.pullRequests.count) }
+    // Each filter counts what the other one leaves, so an empty combination is never offered.
+    let counts = unfiltered.map { section in
+      StateCount(
+        group: section.group,
+        count: needsYouOnly
+          ? section.pullRequests.count(where: \.needsYou) : section.pullRequests.count)
+    }
     if counts != stateCounts { stateCounts = counts }
-    let attention = unfiltered.reduce(0) { $0 + $1.pullRequests.count(where: \.needsYou) }
+    let attention =
+      unfiltered
+      .filter { stateFilter.isEmpty || stateFilter.contains($0.group) }
+      .reduce(0) { $0 + $1.pullRequests.count(where: \.needsYou) }
     if attention != needsYouCount { needsYouCount = attention }
     let columns = unfiltered.compactMap { section -> PRSection? in
       guard stateFilter.isEmpty || stateFilter.contains(section.group) else { return nil }

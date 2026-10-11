@@ -20,8 +20,10 @@ struct ActivityView: View {
         if store.github != nil && store.repositories.isEmpty {
           EmptyState(
             glyph: .checkFill,
-            text: store.activityWindow == .month
-              ? "You're all caught up" : "No PR activity \(windowPhrase)")
+            text: !store.stateFilter.isEmpty || store.needsYouOnly
+              ? "No PRs match these filters"
+              : store.activityWindow == .month
+                ? "You're all caught up" : "No PR activity \(windowPhrase)")
         }
         ForEach(store.repositories) { section in
           if section.id != store.repositories.first?.id {
@@ -364,12 +366,16 @@ private struct BoardView: View {
   var body: some View {
     Group {
       if store.github != nil && store.sections.isEmpty {
-        EmptyState(glyph: .checkFill, text: "No PRs here")
-          .onGeometryChange(for: CGFloat.self) {
-            $0.size.height
-          } action: {
-            contentHeight = $0
-          }
+        EmptyState(
+          glyph: .checkFill,
+          text: store.stateFilter.isEmpty && !store.needsYouOnly
+            ? "No PRs here" : "No PRs match these filters"
+        )
+        .onGeometryChange(for: CGFloat.self) {
+          $0.size.height
+        } action: {
+          contentHeight = $0
+        }
       } else {
         HStack(alignment: .top, spacing: 10) {
           ForEach(columns) { section in
@@ -399,10 +405,12 @@ private struct BoardView: View {
     }
   }
 
-  /// The tallest visible column sets the island height.
+  /// The tallest visible column sets the island height. With no columns the empty state
+  /// reports its own height, so this must not overwrite it with zero.
   private func report(_ heights: [PRGroup: CGFloat]) {
     let visible = Set(store.sections.map(\.group))
-    contentHeight = heights.filter { visible.contains($0.key) }.values.max() ?? 0
+    guard let tallest = heights.filter({ visible.contains($0.key) }).values.max() else { return }
+    contentHeight = tallest
   }
 
   /// Long columns show their newest cards first; a state filter or "show more" lifts that.

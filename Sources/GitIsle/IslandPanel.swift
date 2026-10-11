@@ -7,6 +7,7 @@ struct IslandMetrics: Equatable {
   var notchWidth: CGFloat
   var notchHeight: CGFloat
   var hasNotch: Bool
+  var screenHeight: CGFloat = 900
 
   static func detect(_ screen: NSScreen) -> IslandMetrics {
     if screen.safeAreaInsets.top > 0, let left = screen.auxiliaryTopLeftArea,
@@ -14,9 +15,11 @@ struct IslandMetrics: Equatable {
     {
       return IslandMetrics(
         notchWidth: screen.frame.width - left.width - right.width,
-        notchHeight: screen.safeAreaInsets.top, hasNotch: true)
+        notchHeight: screen.safeAreaInsets.top, hasNotch: true,
+        screenHeight: screen.frame.height)
     }
-    return IslandMetrics(notchWidth: 0, notchHeight: 0, hasNotch: false)
+    return IslandMetrics(
+      notchWidth: 0, notchHeight: 0, hasNotch: false, screenHeight: screen.frame.height)
   }
 
   var closedWidth: CGFloat { hasNotch ? notchWidth + 150 : 200 }
@@ -38,12 +41,18 @@ struct IslandMetrics: Equatable {
   var expandedWidth: CGFloat { 640 }
   /// The board grows with its columns and never gets narrower than the list.
   func boardWidth(columns: Int) -> CGFloat {
-    let column: CGFloat = 176
+    let column: CGFloat = 230
     let spacing: CGFloat = 10
     let content = CGFloat(columns) * column + CGFloat(max(0, columns - 1)) * spacing + 32
     return max(expandedWidth, content)
   }
-  var maxExpandedHeight: CGFloat { 560 }
+  /// Tall content such as Stats grows with the screen before it needs to scroll.
+  var maxExpandedHeight: CGFloat { min(860, max(420, screenHeight - 140)) }
+
+  /// The transparent window holds the widest board and the tallest island, plus shadow.
+  var panelSize: CGSize {
+    CGSize(width: boardWidth(columns: 4) + 2 * ear + 80, height: maxExpandedHeight + topGap + 60)
+  }
 
   func cornerRadius(for presentation: IslandStore.Presentation) -> CGFloat {
     switch presentation {
@@ -170,9 +179,12 @@ final class IslandPanel: NSPanel {
   }
 
   private func placePanel(on screen: NSScreen) {
-    panel.setFrameOrigin(
-      NSPoint(
-        x: screen.frame.midX - panel.frame.width / 2, y: screen.frame.maxY - panel.frame.height))
+    let size = metrics.panelSize
+    panel.setFrame(
+      NSRect(
+        x: screen.frame.midX - size.width / 2, y: screen.frame.maxY - size.height,
+        width: size.width, height: size.height),
+      display: false)
     updateVisibility()
   }
 

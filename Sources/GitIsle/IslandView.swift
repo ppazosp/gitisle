@@ -320,7 +320,6 @@ private struct ExpandedIsland: View {
       FooterButton(glyph: .gear, label: "GitIsle settings") {
         withAnimation(Motion.snappy) { store.showingSettings.toggle() }
       }
-      FooterButton(glyph: nil, label: "Collapse island") { store.dismiss() }
     }
     .padding(.horizontal, 24)
   }
