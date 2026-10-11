@@ -1,0 +1,6 @@
+.build/
+.swiftpm/
+.artifacts/
+dist/
+.DS_Store
+*.xcuserstate
