@@ -168,21 +168,17 @@ struct PRRow: View {
           Text(pr.title).font(.system(size: 12.5, weight: .medium)).lineLimit(1)
           HStack(spacing: 4) {
             Text(verbatim: "#\(pr.number)")
-            Text("·")
-            Text(pr.stateLabel.text).foregroundStyle(pr.stateLabel.color)
+            if let reason = pr.reason {
+              Text("·")
+              Text(reason.text).foregroundStyle(reason.color)
+            }
             Text("·")
             Text(Format.age(pr.mergedAt ?? pr.updatedAt))
           }
           .font(.system(size: 10.5)).foregroundStyle(.white.opacity(0.45)).lineLimit(1)
         }
         Spacer(minLength: 8)
-        if let position = pr.queuePosition, pr.state == "OPEN" {
-          Text(verbatim: "#\(position) in queue").font(.system(size: 10, weight: .medium))
-            .monospacedDigit()
-            .foregroundStyle(Palette.merging)
-            .padding(.horizontal, 6).padding(.vertical, 2)
-            .background(Capsule().fill(Palette.merging.opacity(0.14)))
-        }
+        if let position = pr.queuePosition, pr.state == "OPEN" { QueueBadge(position: position) }
         if pr.state == "OPEN" { CheckBadge(pr: pr) }
       }
       .padding(.vertical, 7).padding(.horizontal, 8)
@@ -217,7 +213,7 @@ private struct BoardView: View {
           }
       } else {
         HStack(alignment: .top, spacing: 10) {
-          ForEach(store.sections) { section in
+          ForEach(columns) { section in
             MeasuredColumn {
               column(section).padding(.top, 10).padding(.bottom, 4)
             } onHeight: { height in
@@ -235,6 +231,13 @@ private struct BoardView: View {
     }
     .animation(Motion.snappy, value: store.sections)
     .onChange(of: store.sections.map(\.group)) { report(heights) }
+  }
+
+  private var columns: [PRSection] {
+    store.sections.sorted {
+      (PRGroup.boardOrder.firstIndex(of: $0.group) ?? 0)
+        < (PRGroup.boardOrder.firstIndex(of: $1.group) ?? 0)
+    }
   }
 
   /// The tallest visible column sets the island height.
@@ -281,8 +284,13 @@ private struct PRCard: View {
           .multilineTextAlignment(.leading)
           .frame(maxWidth: .infinity, alignment: .leading)
         HStack(spacing: 6) {
-          Text(pr.stateLabel.text).foregroundStyle(pr.stateLabel.color).lineLimit(1)
+          if let reason = pr.reason {
+            Text(reason.text).foregroundStyle(reason.color).lineLimit(1)
+          } else {
+            Text(Format.age(pr.mergedAt ?? pr.updatedAt)).foregroundStyle(.white.opacity(0.4))
+          }
           Spacer(minLength: 4)
+          if let position = pr.queuePosition, pr.state == "OPEN" { QueueBadge(position: position) }
           if pr.state == "OPEN" { CheckBadge(pr: pr) }
         }
         .font(.system(size: 10.5, weight: .medium))
