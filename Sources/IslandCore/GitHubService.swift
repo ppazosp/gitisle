@@ -5,7 +5,7 @@ public actor GitHubService {
     fragment PRFields on PullRequest {
       id number title url state isDraft updatedAt mergedAt mergeable mergeStateStatus reviewDecision
       headRefOid autoMergeRequest { enabledAt } mergeQueueEntry { position enqueuedAt }
-      repository { nameWithOwner } author { login }
+      repository { nameWithOwner owner { avatarUrl(size: 64) } } author { login }
       commits(last: 1) { nodes { commit { statusCheckRollup {
         state
         contexts(first: 0) {
@@ -177,7 +177,17 @@ public actor GitHubService {
       autoMerge: autoMerge != nil,
       queuePosition: queue?["position"] as? Int, mergingSince: mergingSince,
       updatedAt: updatedAt, mergedAt: (row["mergedAt"] as? String).flatMap(Dates.parse),
-      author: (row["author"] as? [String: Any])?["login"] as? String)
+      author: (row["author"] as? [String: Any])?["login"] as? String,
+      ownerAvatar: avatar(row["repository"]))
+  }
+
+  /// Only GitHub's own avatar host is accepted, so a response cannot point the app elsewhere.
+  static func avatar(_ repository: Any?) -> URL? {
+    let owner = (repository as? [String: Any])?["owner"] as? [String: Any]
+    guard let link = owner?["avatarUrl"] as? String, let url = URL(string: link),
+      url.scheme == "https", url.host == "avatars.githubusercontent.com"
+    else { return nil }
+    return url
   }
 
   /// Personal PR counts for today, 7 days, and 30 days, plus daily contributions.

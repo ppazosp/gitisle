@@ -59,7 +59,7 @@ struct SettingsView: View {
         }
         .padding(.horizontal, 4)
       }
-      .padding(.horizontal, 20).padding(.top, 14).padding(.bottom, 18)
+      .padding(.horizontal, 16).padding(.top, 12).padding(.bottom, 6)
     } onHeight: {
       contentHeight = $0
     }
@@ -77,8 +77,9 @@ struct SettingsView: View {
           selection: $draft.githubRefreshSeconds, fontSize: 11)
       }
       HStack {
-        Text("Your PRs and review requests are always included.")
-        Spacer()
+        Text("Your PRs and review requests are always included.").lineLimit(1)
+          .layoutPriority(-1)
+        Spacer(minLength: 8)
         Link(
           "GitHub CLI setup",
           destination: URL(string: "https://cli.github.com/manual/gh_auth_login")!)
@@ -89,7 +90,7 @@ struct SettingsView: View {
 
   private var notifications: some View {
     SettingsCard(glyph: .eye, title: "Notifications") {
-      SettingsRow("Merges, failed checks, review requests") {
+      SettingsRow("Merges, failures, reviews") {
         Toggle(
           "",
           isOn: Binding(
@@ -122,12 +123,12 @@ struct SettingsView: View {
             }
           }
         }
-        .labelsHidden().pickerStyle(.menu).fixedSize()
+        .labelsHidden().pickerStyle(.menu).frame(maxWidth: 150)
       }
       SettingsRow("Hover delay") {
         HStack(spacing: 8) {
           Slider(value: $draft.hoverDelay, in: 0.05...0.9, step: 0.05).controlSize(.small)
-            .frame(width: 130)
+            .frame(minWidth: 60, maxWidth: 130)
           Text("\(Int(draft.hoverDelay * 1000)) ms").monospacedDigit()
             .font(.system(size: 11)).foregroundStyle(.white.opacity(0.6))
             .frame(width: 50, alignment: .trailing)
@@ -194,9 +195,11 @@ private struct SettingsRow<Control: View>: View {
 
   var body: some View {
     HStack(spacing: 12) {
+      // Labels keep their full width; controls give way when the card is narrow.
       Text(label).font(.system(size: 12)).foregroundStyle(.white.opacity(0.75)).lineLimit(1)
+        .fixedSize()
       Spacer(minLength: 8)
-      control
+      control.layoutPriority(-1)
     }
   }
 }
@@ -207,7 +210,7 @@ extension View {
       .font(.system(size: 12))
       .padding(.horizontal, 9).padding(.vertical, 6)
       .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(.white.opacity(0.07)))
-      .frame(maxWidth: 240)
+      .frame(minWidth: 80, maxWidth: 240)
   }
 
   fileprivate func islandToggle() -> some View {

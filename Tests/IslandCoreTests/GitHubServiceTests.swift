@@ -99,6 +99,17 @@ struct GitHubServiceTests {
     #expect(try GitHubService.decode(row("plain")).checkSummary == nil)
   }
 
+  @Test func repositoryAvatarsOnlyComeFromGitHubsAvatarHost() {
+    let github = "https://avatars.githubusercontent.com/u/1?v=4"
+    #expect(
+      GitHubService.avatar(["owner": ["avatarUrl": github]])?.absoluteString == github)
+    #expect(GitHubService.avatar(["owner": ["avatarUrl": "https://example.com/a.png"]]) == nil)
+    #expect(
+      GitHubService.avatar(["owner": ["avatarUrl": "http://avatars.githubusercontent.com/u/1"]])
+        == nil)
+    #expect(GitHubService.avatar(nil) == nil)
+  }
+
   @Test func statsReadEachWindowAndTheContributionCalendar() async throws {
     var data: [String: Any] = [
       "viewer": [

@@ -43,8 +43,28 @@ final class IslandStore {
   // Derived once per GitHub snapshot so rendering never re-filters the PR list.
   private(set) var openPRs: [PullRequest] = []
   private(set) var attention: [PullRequest] = []
+  /// Your PRs that are merging, and your PRs with checks running. These make the island live.
   private(set) var merging: [PullRequest] = []
+  private(set) var checking: [PullRequest] = []
   private(set) var repositories: [RepoSection] = []
+  /// State columns for the board layout, after the repository filter.
+  private(set) var sections: [PRSection] = []
+  /// Every repository with PRs in the snapshot, for the filter menu.
+  private(set) var repositoryChoices: [(name: String, avatar: URL?)] = []
+  var repositoryFilter: String? = UserDefaults.standard.string(forKey: "repositoryFilter") {
+    didSet {
+      guard repositoryFilter != oldValue else { return }
+      if !isDemo { UserDefaults.standard.set(repositoryFilter, forKey: "repositoryFilter") }
+      regroup()
+    }
+  }
+  var activityLayout: ActivityLayout =
+    ActivityLayout(rawValue: UserDefaults.standard.string(forKey: "activityLayout") ?? "") ?? .list
+  {
+    didSet {
+      if !isDemo { UserDefaults.standard.set(activityLayout.rawValue, forKey: "activityLayout") }
+    }
+  }
   /// Repositories collapsed in the activity list, remembered across launches.
   private(set) var collapsedRepositories: Set<String> =
     Set(UserDefaults.standard.stringArray(forKey: "collapsedRepositories") ?? [])
@@ -67,13 +87,21 @@ final class IslandStore {
     case stats = "Stats"
   }
 
-  enum Presentation: Equatable {
-    case compact, banner, expanded
+  enum ActivityLayout: String {
+    case list, board
   }
+
+  /// `idle` blends into the notch; `live` shows work in progress; `banner` announces a change.
+  enum Presentation: Equatable {
+    case idle, live, banner, expanded
+  }
+
+  var isLive: Bool { !merging.isEmpty || !checking.isEmpty }
 
   var presentation: Presentation {
     if expanded { return .expanded }
-    return recentEvent == nil ? .compact : .banner
+    if recentEvent != nil { return .banner }
+    return isLive ? .live : .idle
   }
 
   init(demo: Bool = false) {
@@ -81,6 +109,9 @@ final class IslandStore {
     settings = demo ? AppSettings() : AppSettings.load(from: AppFiles.settings)
     usageService = UsageService(cacheRoot: AppFiles.directory.appendingPathComponent("usage-cache"))
     if demo {
+      // Previews must not depend on this Mac's remembered choices.
+      repositoryFilter = nil
+      activityLayout = .list
       loadDemo()
       return
     }
@@ -106,11 +137,35 @@ final class IslandStore {
     let open = all.filter { $0.state == "OPEN" }
     openPRs = open
     attention = open.filter { $0.group == .needsYou }
-    merging = open.filter(\.isMerging).sorted {
+    let mine = open.filter { $0.author != nil && $0.author == github?.login }
+    merging = mine.filter(\.isMerging).sorted {
       ($0.queuePosition ?? .max, $1.updatedAt) < ($1.queuePosition ?? .max, $0.updatedAt)
     }
-    let fresh = PRGrouping.repositories(all, window: activityWindow)
+    checking = mine.filter { pr in
+      !pr.isMerging && pr.status != .failed
+        && ((pr.checkSummary?.pending ?? 0) > 0 || pr.checks == "PENDING")
+    }
+    .sorted { $0.updatedAt > $1.updatedAt }
+    var avatars: [String: URL] = [:]
+    for pr in all where pr.group != nil {
+      if avatars[pr.repository] == nil || pr.ownerAvatar != nil {
+        avatars[pr.repository] = pr.ownerAvatar
+      }
+    }
+    let names = Set(all.filter { $0.group != nil }.map(\.repository)).sorted {
+      $0.localizedCaseInsensitiveCompare($1) == .orderedAscending
+    }
+    let choices = names.map { (name: $0, avatar: avatars[$0]) }
+    if choices.map(\.name) != repositoryChoices.map(\.name)
+      || choices.map(\.avatar) != repositoryChoices.map(\.avatar)
+    {
+      repositoryChoices = choices
+    }
+    let scoped = repositoryFilter.map { name in all.filter { $0.repository == name } } ?? all
+    let fresh = PRGrouping.repositories(scoped, window: activityWindow)
     if fresh != repositories { repositories = fresh }
+    let columns = PRGrouping.sections(scoped, window: activityWindow)
+    if columns != sections { sections = columns }
   }
 
   func toggleCollapsed(_ repository: String) {

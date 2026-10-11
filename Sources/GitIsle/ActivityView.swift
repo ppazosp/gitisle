@@ -7,8 +7,15 @@ struct ActivityView: View {
   @Binding var contentHeight: CGFloat
 
   var body: some View {
+    switch store.activityLayout {
+    case .list: list
+    case .board: BoardView(store: store, contentHeight: $contentHeight)
+    }
+  }
+
+  private var list: some View {
     MeasuredColumn {
-      VStack(alignment: .leading, spacing: 10) {
+      VStack(alignment: .leading, spacing: 0) {
         notices
         if store.github != nil && store.repositories.isEmpty {
           EmptyState(
@@ -17,15 +24,18 @@ struct ActivityView: View {
               ? "You're all caught up" : "No PR activity \(windowPhrase)")
         }
         ForEach(store.repositories) { section in
+          if section.id != store.repositories.first?.id {
+            Rectangle().fill(Palette.hairline).frame(height: 1).padding(.horizontal, 8)
+          }
           RepositoryCard(
             section: section, collapsed: store.collapsedRepositories.contains(section.id)
           ) {
             withAnimation(Motion.snappy) { store.toggleCollapsed(section.id) }
           }
-          .transition(.opacity.combined(with: .move(edge: .top)))
+          .transition(.opacity)
         }
       }
-      .padding(.horizontal, 20).padding(.top, 14).padding(.bottom, 18)
+      .padding(.horizontal, 14).padding(.top, 8).padding(.bottom, 4)
     } onHeight: {
       contentHeight = $0
     }
@@ -55,6 +65,7 @@ private struct Notice: View {
       .textSelection(.enabled)
       .padding(10).frame(maxWidth: .infinity, alignment: .leading)
       .background(RoundedRectangle(cornerRadius: 10).fill(Palette.attention.opacity(0.1)))
+      .padding(.vertical, 6)
   }
 }
 
@@ -91,7 +102,7 @@ private struct RepositoryCard: View {
     VStack(spacing: 0) {
       Button(action: toggle) {
         HStack(spacing: 9) {
-          GlyphView(glyph: .repo, size: 14).foregroundStyle(.white.opacity(0.5))
+          RepoAvatar(url: section.avatar)
           (Text(verbatim: "\(section.owner)/").foregroundStyle(.white.opacity(0.45))
             + Text(verbatim: section.name).foregroundStyle(.white))
             .font(.system(size: 13, weight: .semibold)).lineLimit(1)
@@ -112,7 +123,11 @@ private struct RepositoryCard: View {
             .rotationEffect(.degrees(collapsed ? -90 : 0))
             .padding(.leading, 2)
         }
-        .padding(.horizontal, 14).padding(.vertical, 11)
+        .padding(.horizontal, 10).padding(.vertical, 10)
+        .background(
+          RoundedRectangle(cornerRadius: 9, style: .continuous)
+            .fill(.white.opacity(hovered ? 0.06 : 0))
+        )
         .contentShape(Rectangle())
       }
       .buttonStyle(.plain)
@@ -120,25 +135,21 @@ private struct RepositoryCard: View {
       .accessibilityLabel(
         "\(section.repository), \(section.pullRequests.count) pull requests, "
           + (collapsed ? "collapsed" : "expanded"))
-      if !collapsed {
-        VStack(spacing: 0) {
-          Rectangle().fill(Palette.hairline).frame(height: 1).padding(.horizontal, 14)
-          VStack(spacing: 0) {
-            ForEach(visible) { pr in
-              PRRow(pr: pr)
-                .transition(.opacity.combined(with: .move(edge: .top)))
-            }
-          }
-          .padding(.horizontal, 6).padding(.vertical, 6)
+      // Rows stay in place and are revealed by a clipped height, so they never slide
+      // over the header while the section opens or closes.
+      VStack(spacing: 0) {
+        ForEach(visible) { pr in
+          PRRow(pr: pr).transition(.opacity)
         }
-        .transition(.opacity.combined(with: .move(edge: .top)))
       }
+      .padding(.bottom, 8)
+      .fixedSize(horizontal: false, vertical: true)
+      .frame(height: collapsed ? 0 : nil, alignment: .top)
+      .opacity(collapsed ? 0 : 1)
+      .clipped()
+      .allowsHitTesting(!collapsed)
+      .accessibilityHidden(collapsed)
     }
-    .background(
-      RoundedRectangle(cornerRadius: 14, style: .continuous)
-        .fill(.white.opacity(hovered ? 0.075 : 0.055))
-    )
-    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
   }
 }
 
@@ -158,7 +169,7 @@ struct PRRow: View {
           HStack(spacing: 4) {
             Text(verbatim: "#\(pr.number)")
             Text("·")
-            Text(state.text).foregroundStyle(state.color)
+            Text(pr.stateLabel.text).foregroundStyle(pr.stateLabel.color)
             Text("·")
             Text(Format.age(pr.mergedAt ?? pr.updatedAt))
           }
@@ -185,21 +196,108 @@ struct PRRow: View {
     .buttonStyle(PressableStyle())
     .onHover { inside in withAnimation(.easeOut(duration: 0.12)) { hovered = inside } }
     .help("Open \(pr.repository) #\(pr.number) on GitHub")
-    .accessibilityLabel("\(pr.title), \(pr.repository) number \(pr.number), \(state.text)")
+    .accessibilityLabel("\(pr.title), \(pr.repository) number \(pr.number), \(pr.stateLabel.text)")
+  }
+}
+
+/// PRs as a board: one column per state, each scrolling on its own.
+private struct BoardView: View {
+  let store: IslandStore
+  @Binding var contentHeight: CGFloat
+  @State private var heights: [PRGroup: CGFloat] = [:]
+
+  var body: some View {
+    Group {
+      if store.github != nil && store.sections.isEmpty {
+        EmptyState(glyph: .checkFill, text: "No PRs here")
+          .onGeometryChange(for: CGFloat.self) {
+            $0.size.height
+          } action: {
+            contentHeight = $0
+          }
+      } else {
+        HStack(alignment: .top, spacing: 10) {
+          ForEach(store.sections) { section in
+            MeasuredColumn {
+              column(section).padding(.top, 10).padding(.bottom, 4)
+            } onHeight: { height in
+              var next = heights
+              next[section.group] = height
+              heights = next
+              report(next)
+            }
+            .frame(maxWidth: .infinity)
+            .transition(.opacity)
+          }
+        }
+        .padding(.horizontal, 16)
+      }
+    }
+    .animation(Motion.snappy, value: store.sections)
+    .onChange(of: store.sections.map(\.group)) { report(heights) }
   }
 
-  /// The PR's state, with the specific reason when it needs you.
-  private var state: (text: String, color: Color) {
-    switch pr.group {
-    case .needsYou: (pr.status.label, pr.status.color)
-    case .merging: (pr.queuePosition == nil ? "Auto-merge" : "Merging", Palette.merging)
-    case .open:
-      [.checking, .unknown].contains(pr.status)
-        ? ("Open", Palette.open) : (pr.status.label, Palette.open)
-    case .draft: ("Draft", Palette.draft)
-    case .merged: ("Merged", Palette.merged)
-    case nil: ("Closed", Palette.failed)
+  /// The tallest visible column sets the island height.
+  private func report(_ heights: [PRGroup: CGFloat]) {
+    let visible = Set(store.sections.map(\.group))
+    contentHeight = heights.filter { visible.contains($0.key) }.values.max() ?? 0
+  }
+
+  private func column(_ section: PRSection) -> some View {
+    VStack(alignment: .leading, spacing: 8) {
+      HStack(spacing: 6) {
+        GlyphView(glyph: section.group.glyph, size: 12).foregroundStyle(section.group.color)
+        Text(section.group.label).font(.system(size: 11.5, weight: .semibold))
+        Text("\(section.pullRequests.count)").font(.system(size: 11, weight: .semibold))
+          .monospacedDigit().foregroundStyle(.white.opacity(0.35))
+        Spacer(minLength: 0)
+      }
+      .padding(.horizontal, 4).padding(.top, 4)
+      ForEach(section.pullRequests.prefix(section.group == .merged ? 8 : 40)) { pr in
+        PRCard(pr: pr).transition(.opacity)
+      }
     }
+  }
+}
+
+private struct PRCard: View {
+  let pr: PullRequest
+  @State private var hovered = false
+
+  var body: some View {
+    Button {
+      NSWorkspace.shared.open(pr.url)
+    } label: {
+      VStack(alignment: .leading, spacing: 7) {
+        HStack(spacing: 6) {
+          RepoAvatar(url: pr.ownerAvatar, size: 14)
+          Text(verbatim: pr.repository.split(separator: "/").last.map(String.init) ?? "")
+            .lineLimit(1)
+          Spacer(minLength: 4)
+          Text(verbatim: "#\(pr.number)").monospacedDigit()
+        }
+        .font(.system(size: 10.5)).foregroundStyle(.white.opacity(0.45))
+        Text(pr.title).font(.system(size: 12, weight: .medium)).lineLimit(2)
+          .multilineTextAlignment(.leading)
+          .frame(maxWidth: .infinity, alignment: .leading)
+        HStack(spacing: 6) {
+          Text(pr.stateLabel.text).foregroundStyle(pr.stateLabel.color).lineLimit(1)
+          Spacer(minLength: 4)
+          if pr.state == "OPEN" { CheckBadge(pr: pr) }
+        }
+        .font(.system(size: 10.5, weight: .medium))
+      }
+      .padding(10)
+      .background(
+        RoundedRectangle(cornerRadius: 10, style: .continuous)
+          .fill(.white.opacity(hovered ? 0.085 : 0.045))
+      )
+      .contentShape(Rectangle())
+    }
+    .buttonStyle(PressableStyle())
+    .onHover { inside in withAnimation(.easeOut(duration: 0.12)) { hovered = inside } }
+    .help("Open \(pr.repository) #\(pr.number) on GitHub")
+    .accessibilityLabel("\(pr.title), \(pr.repository) number \(pr.number), \(pr.stateLabel.text)")
   }
 }
 

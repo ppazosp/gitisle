@@ -19,21 +19,31 @@ struct IslandMetrics: Equatable {
     return IslandMetrics(notchWidth: 0, notchHeight: 0, hasNotch: false)
   }
 
-  var closedWidth: CGFloat { hasNotch ? notchWidth + 250 : 320 }
-  /// Taller than the notch so the closed island reads as its own surface.
-  var closedHeight: CGFloat { hasNotch ? max(32, notchHeight) + 10 : 44 }
+  var closedWidth: CGFloat { hasNotch ? notchWidth + 150 : 200 }
+  var closedHeight: CGFloat { hasNotch ? max(32, notchHeight) : 38 }
   var topGap: CGFloat { hasNotch ? 0 : 8 }
   /// Concave flare where a notch-attached island meets the top of the screen.
   var ear: CGFloat { hasNotch ? 10 : 0 }
 
-  var bannerSize: CGSize { CGSize(width: max(closedWidth + 72, 400), height: closedHeight + 60) }
-  // Wide and short: pull requests and sessions sit side by side.
-  var expandedWidth: CGFloat { 860 }
+  /// At rest the island covers exactly the notch, so it is invisible; elsewhere it is a slim bar.
+  var idleSize: CGSize {
+    hasNotch ? CGSize(width: notchWidth, height: notchHeight) : CGSize(width: 130, height: 8)
+  }
+
+  func ear(for presentation: IslandStore.Presentation) -> CGFloat {
+    presentation == .idle ? 0 : ear
+  }
+
+  var bannerSize: CGSize { CGSize(width: max(closedWidth + 80, 380), height: closedHeight + 60) }
+  var expandedWidth: CGFloat { 600 }
+  /// The board needs room for up to five state columns.
+  var boardWidth: CGFloat { 920 }
   var maxExpandedHeight: CGFloat { 560 }
 
   func cornerRadius(for presentation: IslandStore.Presentation) -> CGFloat {
     switch presentation {
-    case .compact: hasNotch ? 16 : closedHeight / 2
+    case .idle: hasNotch ? 8 : 4
+    case .live: hasNotch ? 12 : closedHeight / 2
     case .banner: hasNotch ? 24 : 26
     case .expanded: 32
     }
@@ -182,7 +192,7 @@ final class IslandPanel: NSPanel {
   private var islandSize: CGSize {
     let measured = store.islandSize
     if measured.width > 0, measured.height > 0 { return measured }
-    return CGSize(width: metrics.closedWidth, height: metrics.closedHeight)
+    return metrics.idleSize
   }
 
   func show() {

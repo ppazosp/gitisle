@@ -7,12 +7,15 @@ screen, with Codex and Claude Code usage statistics one interaction away.
 
 Hover over the island briefly to expand it. Activity is the default view: one
 collapsible section per repository, with each PR's state shown the way GitHub
-shows it. Stats shows GitHub activity, tokens, models, and estimated API costs.
+shows it, or a board with one column per state. Filter it by repository and by
+today, 7 days, or all. Stats shows GitHub activity, tokens, models, and estimated
+API costs.
 
-When a PR merges, fails its checks, receives your review request, or starts
-merging, the island grows into a short banner. While one of your PRs is in the
-merge queue or set to auto-merge, the closed island shows its number and how
-long it has been merging.
+At rest the island covers only the notch. It appears while one of your PRs is
+merging, with its number and how long it has been merging, or while checks run
+on one of your PRs, with their progress. When a PR merges, fails its checks,
+receives your review request, or starts merging, the island grows into a short
+banner.
 
 ## What it shows
 
@@ -50,6 +53,7 @@ For a repeatable preview using example data:
 ```sh
 dist/GitIsle.app/Contents/MacOS/GitIsle --demo --expanded
 dist/GitIsle.app/Contents/MacOS/GitIsle --snapshot /absolute/path/activity.png
+dist/GitIsle.app/Contents/MacOS/GitIsle --snapshot /absolute/path/board.png --board
 dist/GitIsle.app/Contents/MacOS/GitIsle --snapshot /absolute/path/stats.png --stats
 dist/GitIsle.app/Contents/MacOS/GitIsle --snapshot /absolute/path/banner.png --banner
 dist/GitIsle.app/Contents/MacOS/GitIsle --snapshot /absolute/path/settings.png --settings
@@ -97,7 +101,8 @@ queries and usage history scans run independently. See
 
 ## Privacy and compatibility
 
-GitIsle talks to GitHub through your existing `gh` login. Local usage scans do
+GitIsle talks to GitHub through your existing `gh` login. Repository owner
+avatars load from GitHub's avatar host and are kept in memory only. Local usage scans do
 not query provider accounts; remote price refresh is disabled. There is no
 telemetry or GitIsle cloud service.
 

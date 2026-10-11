@@ -1,7 +1,8 @@
 # Architecture
 
 Activity is the default view: PRs grouped by repository, each showing its
-state. Statistics have their own tab. The island window never starts an agent
+state, or a board with one column per state, optionally limited to one
+repository. Statistics have their own tab. The island window never starts an agent
 or performs a GitHub write.
 
 ```mermaid
@@ -32,8 +33,8 @@ identified by PR and commit. Merge notifications use the observed merge time.
 The usage scanner reads Codex and Claude Code history and handles provider
 accounting, caches, and fork history.
 
-The island has three presentations: compact, a temporary event banner, and
-expanded. One shape morphs between them with a spring; content fades in after
+The island has four presentations: idle, which covers only the notch; live,
+while your PRs merge or run checks; a temporary event banner; and expanded. One shape morphs between them with a spring; content fades in after
 the shape starts growing and leaves before it shrinks. The expanded height
 follows the measured content, and that measured size is also the hit-test area.
 The store derives repository sections once per snapshot, so rendering never

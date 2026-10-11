@@ -73,6 +73,8 @@ public struct PullRequest: Codable, Hashable, Identifiable, Sendable {
   public var title: String
   public var url: URL
   public var author: String?
+  /// The repository owner's avatar, which GitHub shows as the repository's image.
+  public var ownerAvatar: URL?
   public var state: String
   public var isDraft: Bool
   public var reviewDecision: String?
@@ -95,7 +97,7 @@ public struct PullRequest: Codable, Hashable, Identifiable, Sendable {
     mergeable: String = "UNKNOWN", mergeStateStatus: String = "UNKNOWN", checks: String? = nil,
     checkSummary: CheckSummary? = nil, headOID: String = "", autoMerge: Bool = false,
     queuePosition: Int? = nil, mergingSince: Date? = nil, updatedAt: Date = Date(),
-    mergedAt: Date? = nil, author: String? = nil
+    mergedAt: Date? = nil, author: String? = nil, ownerAvatar: URL? = nil
   ) {
     self.id = id
     self.number = number
@@ -117,6 +119,7 @@ public struct PullRequest: Codable, Hashable, Identifiable, Sendable {
     self.updatedAt = updatedAt
     self.mergedAt = mergedAt
     self.author = author
+    self.ownerAvatar = ownerAvatar
   }
 
   /// In the merge queue, or set to merge automatically without a blocking problem.
@@ -209,6 +212,7 @@ public struct RepoSection: Identifiable, Equatable, Sendable {
 
   public var owner: String { repository.split(separator: "/").first.map(String.init) ?? "" }
   public var name: String { repository.split(separator: "/").last.map(String.init) ?? repository }
+  public var avatar: URL? { pullRequests.lazy.compactMap(\.ownerAvatar).first }
 
   /// PR counts per state, in display order, omitting empty states.
   public var counts: [(group: PRGroup, count: Int)] {

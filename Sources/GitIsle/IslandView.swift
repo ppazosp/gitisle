@@ -11,11 +11,20 @@ struct IslandView: View {
   var body: some View {
     let presentation = store.presentation
     let size = size(for: presentation)
-    let shape = IslandShape(ear: metrics.ear, radius: metrics.cornerRadius(for: presentation))
+    let ear = metrics.ear(for: presentation)
+    let shape = IslandShape(
+      ear: ear, radius: metrics.cornerRadius(for: presentation), attached: metrics.hasNotch)
     ZStack(alignment: .top) {
       if presentation == .expanded {
         ExpandedIsland(store: store, metrics: metrics, contentHeight: $contentHeight)
           .transition(.islandContent)
+      } else if presentation == .idle {
+        // Nothing to show; the island is still a hover and click target.
+        Color.clear.contentShape(Rectangle()).onTapGesture { store.expanded = true }
+          .accessibilityElement()
+          .accessibilityLabel("GitIsle")
+          .accessibilityHint("Expands the island")
+          .accessibilityAddTraits(.isButton)
       } else {
         VStack(spacing: 0) {
           CompactBar(store: store, metrics: metrics)
@@ -27,13 +36,15 @@ struct IslandView: View {
         .transition(.islandContent)
       }
     }
-    .padding(.horizontal, metrics.ear)
+    .padding(.horizontal, ear)
     .frame(width: size.width, height: size.height, alignment: .top)
     .background(.black)
     .clipShape(shape)
     .background {
       shape.fill(.black)
-        .shadow(color: .black.opacity(presentation == .compact ? 0 : 0.45), radius: 18, y: 10)
+        .shadow(
+          color: .black.opacity([.idle, .live].contains(presentation) ? 0 : 0.45), radius: 18,
+          y: 10)
     }
     .contentShape(shape)
     .foregroundStyle(.white)
@@ -51,15 +62,19 @@ struct IslandView: View {
 
   private func size(for presentation: IslandStore.Presentation) -> CGSize {
     switch presentation {
-    case .compact:
+    case .idle:
+      return metrics.idleSize
+    case .live:
       return CGSize(width: metrics.closedWidth + 2 * metrics.ear, height: metrics.closedHeight)
     case .banner:
       let banner = metrics.bannerSize
       return CGSize(width: banner.width + 2 * metrics.ear, height: banner.height)
     case .expanded:
       let chrome = ExpandedIsland.chromeHeight(metrics)
+      let board =
+        store.tab == .activity && store.activityLayout == .board && !store.showingSettings
       return CGSize(
-        width: metrics.expandedWidth + 2 * metrics.ear,
+        width: (board ? metrics.boardWidth : metrics.expandedWidth) + 2 * metrics.ear,
         height: min(metrics.maxExpandedHeight, chrome + contentHeight))
     }
   }
@@ -75,7 +90,7 @@ private struct CompactBar: View {
     Button {
       store.expanded = true
     } label: {
-      HStack(spacing: 7) {
+      HStack(spacing: 6) {
         leading
         if metrics.hasNotch {
           Spacer(minLength: metrics.notchWidth)
@@ -84,10 +99,10 @@ private struct CompactBar: View {
         }
         trailing
       }
-      .font(.system(size: 13.5, weight: .medium))
+      .font(.system(size: 13, weight: .semibold))
       .monospacedDigit()
       .lineLimit(1)
-      .padding(.horizontal, metrics.hasNotch ? 14 : 18)
+      .padding(.horizontal, metrics.hasNotch ? 12 : 16)
       .frame(maxWidth: .infinity, minHeight: metrics.closedHeight, maxHeight: metrics.closedHeight)
       .contentShape(Rectangle())
     }
@@ -96,54 +111,54 @@ private struct CompactBar: View {
     .accessibilityHint("Expands the island")
   }
 
+  // Icons and numbers only: the closed island is too small for sentences.
   @ViewBuilder private var leading: some View {
-    if store.githubError != nil && store.github == nil {
-      GlyphView(glyph: .sync, size: 15).foregroundStyle(Palette.attention)
-      Text("Offline").foregroundStyle(.secondary)
-    } else if store.github == nil {
-      GlyphView(glyph: .github, size: 16).foregroundStyle(.secondary)
-      Text("Connecting").foregroundStyle(.secondary)
-    } else if let first = store.merging.first {
-      GlyphView(glyph: .mergeQueue, size: 16).foregroundStyle(Palette.merging)
+    if let first = store.merging.first {
+      GlyphView(glyph: .mergeQueue, size: 15).foregroundStyle(Palette.merging)
         .phaseAnimator([1.0, 0.45]) { glyph, opacity in
           glyph.opacity(opacity)
         } animation: { _ in
           .easeInOut(duration: 1.1)
         }
-      Text(verbatim: "#\(first.number)")
-      if store.merging.count > 1 {
-        Text(verbatim: "+\(store.merging.count - 1)").foregroundStyle(.white.opacity(0.45))
+      number(first, more: store.merging.count - 1)
+    } else if let first = store.checking.first {
+      if let summary = first.checkSummary {
+        CheckRing(summary: summary, size: 14, lineWidth: 2.2)
+      } else {
+        GlyphView(glyph: .clock, size: 14).foregroundStyle(Palette.merging)
       }
-    } else if store.attention.isEmpty {
-      GlyphView(glyph: .checkFill, size: 15).foregroundStyle(Palette.open)
-      Text("All clear").foregroundStyle(.white.opacity(0.85))
-    } else {
-      GlyphView(glyph: .pullRequest, size: 16).foregroundStyle(Palette.open)
-      Text("\(store.attention.count) need you")
-        .contentTransition(.numericText(value: Double(store.attention.count)))
+      number(first, more: store.checking.count - 1)
+    }
+  }
+
+  @ViewBuilder private func number(_ pr: PullRequest, more: Int) -> some View {
+    Text(verbatim: "#\(pr.number)")
+    if more > 0 {
+      Text(verbatim: "+\(more)").foregroundStyle(.white.opacity(0.45))
     }
   }
 
   @ViewBuilder private var trailing: some View {
-    if let since = store.merging.first?.mergingSince {
+    if let first = store.merging.first, let since = first.mergingSince {
       // How long the PR has been merging; the system updates the timer without polling.
       Text(since, style: .timer)
         .foregroundStyle(Palette.merging)
         .multilineTextAlignment(.trailing)
         .fixedSize()
-    } else {
-      Text("\(store.openPRs.count) open")
-        .foregroundStyle(.white.opacity(0.5))
-        .contentTransition(.numericText(value: Double(store.openPRs.count)))
+    } else if store.merging.isEmpty, let summary = store.checking.first?.checkSummary {
+      Text(verbatim: "\(summary.passed)/\(summary.total)")
+        .foregroundStyle(.white.opacity(0.6))
+        .contentTransition(.numericText(value: Double(summary.passed)))
     }
   }
 
   private var accessibilityText: String {
-    var parts = ["GitIsle", "\(store.attention.count) pull requests need you"]
-    if !store.merging.isEmpty { parts.append("\(store.merging.count) merging") }
-    parts.append("\(store.openPRs.count) open")
+    var parts = ["GitIsle"]
+    if let pr = store.merging.first { parts.append("pull request \(pr.number) merging") }
+    if let pr = store.checking.first { parts.append("checks running on \(pr.number)") }
     return parts.joined(separator: ", ")
   }
+
 }
 
 // MARK: - Banner
@@ -198,7 +213,7 @@ private struct ExpandedIsland: View {
   @Binding var contentHeight: CGFloat
 
   static let headerHeight: CGFloat = 54
-  static let footerHeight: CGFloat = 46
+  static let footerHeight: CGFloat = 38
 
   static func chromeHeight(_ metrics: IslandMetrics) -> CGFloat {
     topInset(metrics) + headerHeight + footerHeight + 1
@@ -255,9 +270,11 @@ private struct ExpandedIsland: View {
       Spacer(minLength: 8)
       switch store.tab {
       case .activity:
+        RepositoryMenu(store: store)
         PillPicker(
           options: ActivityWindow.allCases.map { ($0, $0.label) },
           selection: $store.activityWindow, fontSize: 11)
+        LayoutToggle(layout: $store.activityLayout)
       case .stats:
         PillPicker(
           options: [(1, "Today"), (7, "7 days"), (30, "30 days")],
@@ -300,6 +317,78 @@ private struct ExpandedIsland: View {
     } else {
       Text("Waiting for GitHub")
     }
+  }
+}
+
+/// Limits Activity to one repository.
+private struct RepositoryMenu: View {
+  let store: IslandStore
+
+  var body: some View {
+    Menu {
+      Button("All repositories") { store.repositoryFilter = nil }
+      Divider()
+      ForEach(store.repositoryChoices, id: \.name) { choice in
+        Button(choice.name) { store.repositoryFilter = choice.name }
+      }
+    } label: {
+      HStack(spacing: 6) {
+        if let selected = store.repositoryFilter {
+          RepoAvatar(
+            url: store.repositoryChoices.first { $0.name == selected }?.avatar, size: 14)
+          Text(verbatim: selected.split(separator: "/").last.map(String.init) ?? selected)
+            .lineLimit(1).frame(maxWidth: 110, alignment: .leading)
+        } else {
+          GlyphView(glyph: .repo, size: 12)
+          Text("All repos")
+        }
+        GlyphView(glyph: .chevronDown, size: 10).foregroundStyle(.white.opacity(0.5))
+      }
+      .font(.system(size: 11, weight: .medium))
+      .foregroundStyle(.white.opacity(store.repositoryFilter == nil ? 0.6 : 0.95))
+      .padding(.horizontal, 10).padding(.vertical, 5)
+      .background(Capsule().fill(.white.opacity(store.repositoryFilter == nil ? 0.06 : 0.14)))
+      .contentShape(Capsule())
+    }
+    .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden).fixedSize()
+    .accessibilityLabel("Repository filter")
+  }
+}
+
+/// Switches Activity between the repository list and the state board.
+private struct LayoutToggle: View {
+  @Binding var layout: IslandStore.ActivityLayout
+  @Namespace private var namespace
+
+  var body: some View {
+    HStack(spacing: 0) {
+      ForEach(
+        [(IslandStore.ActivityLayout.list, Glyph.list, "List"), (.board, .board, "Board")],
+        id: \.0
+      ) { option, glyph, label in
+        let selected = option == layout
+        Button {
+          withAnimation(Motion.morph) { layout = option }
+        } label: {
+          GlyphView(glyph: glyph, size: 12)
+            .foregroundStyle(.white.opacity(selected ? 1 : 0.5))
+            .frame(width: 28, height: 22)
+            .background {
+              if selected {
+                Capsule().fill(.white.opacity(0.14))
+                  .matchedGeometryEffect(id: "layout", in: namespace)
+              }
+            }
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .help(label)
+        .accessibilityLabel(label)
+        .accessibilityAddTraits(selected ? .isSelected : [])
+      }
+    }
+    .padding(2)
+    .background(Capsule().fill(.white.opacity(0.06)))
   }
 }
 

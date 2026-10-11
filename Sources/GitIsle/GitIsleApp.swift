@@ -59,6 +59,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     }
     // `--agents` is the earlier name for the statistics preview.
     if arguments.contains("--stats") || arguments.contains("--agents") { store.tab = .stats }
+    if arguments.contains("--board") { store.activityLayout = .board }
     if arguments.contains("--banner"),
       let pr = store.github?.pullRequests.first(where: {
         $0.state == "MERGED"

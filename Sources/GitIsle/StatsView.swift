@@ -8,11 +8,11 @@ struct StatsView: View {
   var body: some View {
     MeasuredColumn {
       VStack(spacing: 10) {
-        // Equal-height columns: each card stretches to the tallest one.
+        GitHubStatsCard(
+          stats: store.githubStats, error: store.githubStatsError, days: store.usageDays,
+          openCount: store.openPRs.count)
+        // Equal-height columns: each card stretches to the taller one.
         HStack(alignment: .top, spacing: 10) {
-          GitHubStatsCard(
-            stats: store.githubStats, error: store.githubStatsError, days: store.usageDays,
-            openCount: store.openPRs.count)
           ForEach([AgentProvider.claude, .codex], id: \.self) { provider in
             UsageCard(
               provider: provider,
@@ -28,12 +28,15 @@ struct StatsView: View {
         .font(.system(size: 10)).foregroundStyle(.white.opacity(0.35))
         .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 6)
       }
-      .padding(.horizontal, 20).padding(.top, 14).padding(.bottom, 18)
+      .padding(.horizontal, 16).padding(.top, 12).padding(.bottom, 4)
     } onHeight: {
       contentHeight = $0
     }
   }
 }
+
+private let wideMetricColumns = Array(
+  repeating: GridItem(.flexible(), spacing: 8, alignment: .leading), count: 4)
 
 private let metricColumns = [
   GridItem(.flexible(), spacing: 8, alignment: .leading),
@@ -92,7 +95,7 @@ private struct GitHubStatsCard: View {
   var body: some View {
     Card(glyph: .github, tint: .white, title: "GitHub", badge: stats.map { "@\($0.login)" }) {
       if let stats, let window = stats.window(days: days) {
-        LazyVGrid(columns: metricColumns, alignment: .leading, spacing: 10) {
+        LazyVGrid(columns: wideMetricColumns, alignment: .leading, spacing: 10) {
           Metric(label: "Opened", value: "\(window.opened)", numeric: Double(window.opened))
           Metric(label: "Merged", value: "\(window.merged)", numeric: Double(window.merged))
           Metric(label: "Reviewed", value: "\(window.reviewed)", numeric: Double(window.reviewed))

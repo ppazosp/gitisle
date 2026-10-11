@@ -6,6 +6,7 @@ import SwiftUI
 struct IslandShape: Shape {
   var ear: CGFloat
   var radius: CGFloat
+  var attached: Bool
 
   var animatableData: AnimatablePair<CGFloat, CGFloat> {
     get { AnimatablePair(ear, radius) }
@@ -16,7 +17,7 @@ struct IslandShape: Shape {
   }
 
   func path(in rect: CGRect) -> Path {
-    guard ear > 0 else {
+    guard attached else {
       return RoundedRectangle(cornerRadius: radius, style: .continuous).path(in: rect)
     }
     let ear = min(ear, rect.width / 4, rect.height / 2)
@@ -101,6 +102,19 @@ extension PullRequest {
     case .merging: .mergeQueue
     case .needsYou, .open: .pullRequest
     case nil: .closed
+    }
+  }
+
+  /// The PR's state, with the specific reason when it needs you.
+  var stateLabel: (text: String, color: Color) {
+    switch group {
+    case .needsYou: (status.label, status.color)
+    case .merging: (queuePosition == nil ? "Auto-merge" : "Merging", Palette.merging)
+    case .open:
+      [.checking, .unknown].contains(status) ? ("Open", Palette.open) : (status.label, Palette.open)
+    case .draft: ("Draft", Palette.draft)
+    case .merged: ("Merged", Palette.merged)
+    case nil: ("Closed", Palette.failed)
     }
   }
 
@@ -300,6 +314,37 @@ struct DailyBars: View {
     .animation(Motion.snappy, value: highlight)
     .accessibilityElement(children: .ignore)
     .accessibilityLabel("Daily activity for the last \(values.count) days")
+  }
+}
+
+/// A repository's image: its owner's GitHub avatar, or the repository glyph until
+/// that loads. Images are kept in memory so re-rendering never fetches them again.
+struct RepoAvatar: View {
+  let url: URL?
+  var size: CGFloat = 18
+  @State private var image: NSImage?
+
+  @MainActor private static var cache: [URL: NSImage] = [:]
+
+  var body: some View {
+    Group {
+      if let image = image ?? url.flatMap({ Self.cache[$0] }) {
+        Image(nsImage: image).resizable().interpolation(.high)
+          .frame(width: size, height: size)
+          .clipShape(RoundedRectangle(cornerRadius: size * 0.28, style: .continuous))
+      } else {
+        GlyphView(glyph: .repo, size: size * 0.8).foregroundStyle(.white.opacity(0.5))
+          .frame(width: size, height: size)
+      }
+    }
+    .task(id: url) {
+      guard let url, Self.cache[url] == nil,
+        let (data, _) = try? await URLSession.shared.data(from: url),
+        let loaded = NSImage(data: data)
+      else { return }
+      Self.cache[url] = loaded
+      withAnimation(.easeOut(duration: 0.15)) { image = loaded }
+    }
   }
 }
 

@@ -4,12 +4,35 @@ import SwiftUI
 // Pull request glyphs are GitHub Octicons (MIT). The OpenAI and Claude marks come from
 // Simple Icons (CC0) and identify each provider. See THIRD_PARTY_NOTICES.md.
 enum Glyph: String, CaseIterable {
-  case github, repo, chevronDown, pullRequest, draft, merge, mergeQueue, closed, checkFill,
+  case github, board, list, repo, chevronDown, pullRequest, draft, merge, mergeQueue, closed,
+    checkFill,
     failFill, eye, gear, sync,
     clock, openai, claude
 
   private var source: (viewBox: String, path: String) {
     switch self {
+    case .board:
+      (
+        "0 0 16 16",
+        [
+          "M1.75 0h12.5C15.216 0 16 .784 16 1.75v12.5A1.75 1.75 0 0 1 14.25 16H1.75A1.75 1.",
+          "75 0 0 1 0 14.25V1.75C0 .784.784 0 1.75 0ZM1.5 1.75v12.5c0 .138.112.25.25.25h12.",
+          "5a.25.25 0 0 0 .25-.25V1.75a.25.25 0 0 0-.25-.25H1.75a.25.25 0 0 0-.25.25ZM11.75",
+          " 3a.75.75 0 0 1 .75.75v7.5a.75.75 0 0 1-1.5 0v-7.5a.75.75 0 0 1 .75-.75Zm-8.25.7",
+          "5a.75.75 0 0 1 1.5 0v5.5a.75.75 0 0 1-1.5 0ZM8 3a.75.75 0 0 1 .75.75v3.5a.75.75 ",
+          "0 0 1-1.5 0v-3.5A.75.75 0 0 1 8 3Z",
+        ].joined()
+      )
+    case .list:
+      (
+        "0 0 16 16",
+        [
+          "M5.75 2.5h8.5a.75.75 0 0 1 0 1.5h-8.5a.75.75 0 0 1 0-1.5Zm0 5h8.5a.75.75 0 0 1 0",
+          " 1.5h-8.5a.75.75 0 0 1 0-1.5Zm0 5h8.5a.75.75 0 0 1 0 1.5h-8.5a.75.75 0 0 1 0-1.5",
+          "ZM2 14a1 1 0 1 1 0-2 1 1 0 0 1 0 2Zm1-6a1 1 0 1 1-2 0 1 1 0 0 1 2 0ZM2 4a1 1 0 1",
+          " 1 0-2 1 1 0 0 1 0 2Z",
+        ].joined()
+      )
     case .repo:
       (
         "0 0 16 16",
