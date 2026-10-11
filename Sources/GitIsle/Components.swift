@@ -323,6 +323,9 @@ struct ShowMoreButton: View {
 struct RepoAvatar: View {
   let url: URL?
   var size: CGFloat = 18
+  /// People are shown in circles; repositories and organizations in rounded squares.
+  var circular = false
+  var placeholder: Glyph = .repo
   @State private var image: NSImage?
 
   @MainActor private static var cache: [URL: NSImage] = [:]
@@ -332,9 +335,10 @@ struct RepoAvatar: View {
       if let image = image ?? url.flatMap({ Self.cache[$0] }) {
         Image(nsImage: image).resizable().interpolation(.high)
           .frame(width: size, height: size)
-          .clipShape(RoundedRectangle(cornerRadius: size * 0.28, style: .continuous))
+          .clipShape(
+            RoundedRectangle(cornerRadius: circular ? size / 2 : size * 0.28, style: .continuous))
       } else {
-        GlyphView(glyph: .repo, size: size * 0.8).foregroundStyle(.white.opacity(0.5))
+        GlyphView(glyph: placeholder, size: size * 0.8).foregroundStyle(.white.opacity(0.5))
           .frame(width: size, height: size)
       }
     }

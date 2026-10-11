@@ -87,10 +87,7 @@ struct SettingsView: View {
     SettingsCard(glyph: .github, title: "GitHub") {
       SettingsRow("Account") {
         if let login = store.github?.login, store.githubError == nil {
-          HStack(spacing: 6) {
-            Circle().fill(Palette.open).frame(width: 6, height: 6)
-            Text(verbatim: "@\(login)").font(.system(size: 12, weight: .medium))
-          }
+          AccountChip(login: login)
         } else {
           Link(
             "Sign in with gh",
@@ -237,6 +234,41 @@ struct SettingsView: View {
       }
     }
     .animation(Motion.snappy, value: draft.currency)
+  }
+}
+
+/// The signed-in GitHub account: avatar, handle, and a connected check. Opens the profile.
+private struct AccountChip: View {
+  let login: String
+  @State private var hovered = false
+
+  private var avatar: URL? {
+    var parts = URLComponents(string: "https://avatars.githubusercontent.com")
+    parts?.path = "/\(login)"
+    parts?.queryItems = [URLQueryItem(name: "s", value: "64")]
+    return parts?.url
+  }
+
+  var body: some View {
+    Link(
+      destination: URL(string: "https://github.com/\(login)") ?? URL(string: "https://github.com")!
+    ) {
+      HStack(spacing: 7) {
+        RepoAvatar(url: avatar, size: 20, circular: true, placeholder: .github)
+        Text(verbatim: "@\(login)").font(.system(size: 12, weight: .semibold))
+          .foregroundStyle(.white)
+        Image(systemName: "checkmark.seal.fill")
+          .font(.system(size: 11)).foregroundStyle(Palette.open)
+      }
+      .padding(.leading, 3).padding(.trailing, 10).padding(.vertical, 3)
+      .background(Capsule().fill(.white.opacity(hovered ? 0.1 : 0.06)))
+      .overlay(Capsule().inset(by: 0.5).stroke(.white.opacity(0.08), lineWidth: 1))
+      .contentShape(Capsule())
+    }
+    .buttonStyle(.plain)
+    .onHover { inside in withAnimation(.easeOut(duration: 0.12)) { hovered = inside } }
+    .help("Signed in with the GitHub CLI. Opens your profile.")
+    .accessibilityLabel("Signed in to GitHub as \(login)")
   }
 }
 
