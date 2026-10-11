@@ -82,7 +82,10 @@ struct IslandView: View {
       let width = board ? metrics.boardWidth(columns: store.sections.count) : metrics.expandedWidth
       return CGSize(
         width: width + 2 * metrics.ear,
-        height: min(metrics.maxExpandedHeight, chrome + contentHeight))
+        height: min(
+          store.tab == .stats && !store.showingSettings
+            ? metrics.maxStatsHeight : metrics.maxExpandedHeight,
+          chrome + contentHeight))
     }
   }
 }

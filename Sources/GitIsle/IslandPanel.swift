@@ -46,12 +46,14 @@ struct IslandMetrics: Equatable {
     let content = CGFloat(columns) * column + CGFloat(max(0, columns - 1)) * spacing + 32
     return max(expandedWidth, content)
   }
-  /// Tall content such as Stats grows with the screen before it needs to scroll.
-  var maxExpandedHeight: CGFloat { min(860, max(420, screenHeight - 140)) }
+  /// The usual limit before expanded content scrolls.
+  var maxExpandedHeight: CGFloat { 560 }
+  /// Stats may grow with the screen so its cards fit before it needs to scroll.
+  var maxStatsHeight: CGFloat { min(860, max(maxExpandedHeight, screenHeight - 140)) }
 
   /// The transparent window holds the widest board and the tallest island, plus shadow.
   var panelSize: CGSize {
-    CGSize(width: boardWidth(columns: 4) + 2 * ear + 80, height: maxExpandedHeight + topGap + 60)
+    CGSize(width: boardWidth(columns: 4) + 2 * ear + 80, height: maxStatsHeight + topGap + 60)
   }
 
   func cornerRadius(for presentation: IslandStore.Presentation) -> CGFloat {
