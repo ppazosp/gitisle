@@ -60,6 +60,8 @@ enum Palette {
 enum Motion {
   /// Shape morphs between compact, banner, and expanded.
   static let morph = Animation.spring(response: 0.3, dampingFraction: 0.85)
+  /// Shrinking must not overshoot: a bounce below the resting size exposes what is behind it.
+  static let collapse = Animation.spring(response: 0.26, dampingFraction: 1)
   static let snappy = Animation.snappy(duration: 0.18)
 }
 

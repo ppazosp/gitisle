@@ -54,7 +54,12 @@ struct IslandView: View {
     } action: {
       store.islandSize = $0
     }
-    .animation(reduceMotion ? .easeInOut(duration: 0.15) : Motion.morph, value: presentation)
+    .animation(
+      reduceMotion
+        ? .easeInOut(duration: 0.15)
+        : [.idle, .live].contains(presentation) ? Motion.collapse : Motion.morph,
+      value: presentation
+    )
     .animation(reduceMotion ? nil : Motion.morph, value: contentHeight)
     .padding(.top, metrics.topGap)
     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
