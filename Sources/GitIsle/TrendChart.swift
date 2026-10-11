@@ -48,14 +48,14 @@ struct TrendChart: View {
     }
     VStack(alignment: .leading, spacing: 6) {
       Chart {
-        if style != .bars, let start = points.first(where: \.active)?.date,
-          let end = points.last?.date
+        // Bars colour the selected period; other styles mark where it starts, and only
+        // when it is shorter than the chart.
+        if style != .bars, points.first?.active == false,
+          let start = points.first(where: \.active)?.date
         {
-          RectangleMark(
-            xStart: .value("Start", start.addingTimeInterval(-43_200)),
-            xEnd: .value("End", end.addingTimeInterval(43_200))
-          )
-          .foregroundStyle(.white.opacity(0.05))
+          RuleMark(x: .value("Period start", start))
+            .foregroundStyle(.white.opacity(0.18))
+            .lineStyle(StrokeStyle(lineWidth: 1, dash: [3, 3]))
         }
         ForEach(points) { point in
           switch style {
