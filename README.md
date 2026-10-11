@@ -8,7 +8,7 @@ screen, with Codex and Claude Code usage statistics one interaction away.
 Hover over the island briefly to expand it. Activity is the default view: one
 collapsible section per repository, with each PR's state shown the way GitHub
 shows it, or a board with one column per state. Filter it by repository, by
-today, 7 days, or 30 days, and by state with the filter bar: press Draft, Ready,
+today, 7 days, or 30 days, and by state with the filter bar: press Draft, Open,
 Merging, or Merged to show only those states, and Needs you to show only PRs
 waiting on you. Filters combine and apply to both layouts. Stats shows GitHub activity, tokens, models, and estimated
 API costs. Each chart can show bars, a line, an area, or a running total, and the
@@ -23,7 +23,7 @@ banner.
 ## What it shows
 
 - your open PRs, requested reviews, and any extra repositories you watch, by
-  repository and by GitHub state (draft, ready, merging, merged), with PRs that
+  repository and by GitHub state (draft, open, merging, merged), with PRs that
   need you flagged, filtered by today, 7 days, or 30 days
 - passed, failed, and running checks for each PR, conflicts, review decisions,
   auto-merge, and merge-queue position

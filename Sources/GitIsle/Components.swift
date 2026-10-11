@@ -117,7 +117,7 @@ extension PullRequest {
     case .merging: (queuePosition == nil ? "Auto-merge" : "Merging", Palette.merging)
     case .open:
       [.checking, .unknown].contains(status)
-        ? ("Ready", Palette.open) : (status.label, Palette.open)
+        ? ("Open", Palette.open) : (status.label, Palette.open)
     case .draft: ("Draft", Palette.draft)
     case .merged: ("Merged", Palette.merged)
     case nil: ("Closed", Palette.failed)

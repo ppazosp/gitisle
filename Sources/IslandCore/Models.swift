@@ -170,7 +170,7 @@ public enum PRGroup: String, CaseIterable, Sendable {
   public var label: String {
     switch self {
     case .merging: "Merging"
-    case .open: "Ready"
+    case .open: "Open"
     case .draft: "Draft"
     case .merged: "Merged"
     }
