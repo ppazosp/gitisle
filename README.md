@@ -1,14 +1,13 @@
 # GitIsle
 
-Your agents and PRs, in one island.
+Your PRs, in one island.
 
 A native macOS companion that keeps GitHub pull requests at the top of your
-screen, with Codex and Claude Code activity one interaction away.
+screen, with Codex and Claude Code usage statistics one interaction away.
 
-Hover over the island briefly to expand it. Activity is the default view: PRs
-grouped the way GitHub shows them, with your running Codex and Claude Code
-sessions underneath. Stats shows GitHub activity, tokens, models, and estimated
-API costs.
+Hover over the island briefly to expand it. Activity is the default view: one
+collapsible section per repository, with each PR's state shown the way GitHub
+shows it. Stats shows GitHub activity, tokens, models, and estimated API costs.
 
 When a PR merges, fails its checks, receives your review request, or starts
 merging, the island grows into a short banner. While one of your PRs is in the
@@ -16,11 +15,11 @@ merge queue or set to auto-merge, the closed island shows it.
 
 ## What it shows
 
-- your open PRs, requested reviews, and any extra repositories you watch, grouped
-  as needs you, merging, open, draft, and merged, filtered by today, 7 days, or all
+- your open PRs, requested reviews, and any extra repositories you watch, by
+  repository and by state (needs you, merging, open, draft, merged), filtered by
+  today, 7 days, or all
 - passed, failed, and running checks for each PR, conflicts, review decisions,
   auto-merge, and merge-queue position
-- Codex desktop, Codex CLI, and Claude Code sessions on your Mac, with their titles
 - PRs you opened, merged, and reviewed, and your daily GitHub contributions
 - local token history, daily usage, and model breakdowns for today, 7 days, and 30 days
 
@@ -41,7 +40,7 @@ open dist/GitIsle.app
 ```
 
 The app supports Macs with a notch and external displays. Choose the display,
-hover delay, watched repositories, and local agent directories in Settings.
+hover delay, watched repositories, and local usage directories in Settings.
 Notifications and launch at login are optional. Enable them in Settings.
 
 For a repeatable preview using example data:
@@ -72,12 +71,6 @@ Dollar values estimate usage at API prices. They are separate from subscription
 payments and remaining plan quota. Cache tokens use the provider's categories;
 do not add the rows together to reconstruct a bill.
 
-The activity view observes existing local records. It does not start or resume
-agents or change their configuration. A working state older than 5 minutes
-becomes unknown because a crashed process can leave an unfinished start event.
-Long-running tasks with no new events can also show unknown. Claude approval
-requests that are absent from its transcript are not detectable in this version.
-
 GitHub refreshes every minute by default. GitHub statistics refresh every 10
 minutes. Reviewed counts PRs by others that you reviewed and that changed during
 the period. Errors retain the previous snapshot
@@ -96,7 +89,7 @@ The monitored wrapper writes `.artifacts/<name>.log` and a JSON result. It stops
 its own job after 5 minutes without output or 20 minutes in total.
 
 The app uses SwiftUI and AppKit. Provider work stays outside the UI. GitHub
-queries, agent activity, and history scans run independently. See
+queries and usage history scans run independently. See
 [the architecture](docs/architecture.md) and [source research](docs/research.md).
 
 ## Privacy and compatibility
@@ -109,9 +102,8 @@ Settings, GitHub snapshots, the event ledger, and usage caches stay under
 `~/Library/Application Support/GitIsle/`. GitIsle does not write to agent
 configuration, transcripts, authentication files, or credentials.
 
-Existing agent installations keep working as before. Session formats are
-version-dependent; unknown records are ignored, and uncertain activity is
-shown as unknown. The usage library is pinned to an exact upstream revision.
+Existing agent installations keep working as before. GitIsle only reads their
+usage history; the usage library is pinned to an exact upstream revision.
 
 ## Credits and license
 

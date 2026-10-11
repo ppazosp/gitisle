@@ -102,45 +102,6 @@ struct IslandCoreTests {
     #expect(selection.repositories == ["owner/app", "owner/tools"])
   }
 
-  @Test func desktopSessionIsIdentifiedFromOriginatorAndHandlesInterruptedTurns() throws {
-    let head = Data(
-      """
-      {"type":"session_meta","payload":{"id":"thread","cwd":"/projects/app","originator":"Codex Desktop","source":"vscode"}}
-      """.utf8)
-    let tail = Data(
-      """
-      {"type":"turn_context","payload":{"model":"example-model"}}
-      {"type":"event_msg","payload":{"type":"task_started"}}
-      {"type":"event_msg","payload":{"type":"turn_aborted"}}
-      {"unfinished":
-      """.utf8)
-    let session = try #require(
-      AgentLogReader.parse(
-        head: head, tail: tail, provider: .codex, fallbackID: "fallback", modified: Date()))
-    #expect(session.source == "Codex desktop")
-    #expect(session.model == "example-model")
-    #expect(session.phase == .interrupted)
-  }
-
-  @Test func claudeFinishedTurnRemainsFinishedAfterMetadataRows() throws {
-    let head = Data(
-      """
-      {"type":"user","sessionId":"session","cwd":"/projects/app","gitBranch":"feature","message":{"content":"private prompt"}}
-      """.utf8)
-    let tail = Data(
-      """
-      {"type":"assistant","sessionId":"session","message":{"model":"example-model","stop_reason":"tool_use","content":[{"type":"tool_use","name":"Bash","input":{"command":"private command"}}]}}
-      {"type":"assistant","message":{"model":"example-model","stop_reason":"end_turn","content":[]}}
-      {"type":"custom-title","customTitle":"private title"}
-      """.utf8)
-    let session = try #require(
-      AgentLogReader.parse(
-        head: head, tail: tail, provider: .claude, fallbackID: "fallback", modified: Date()))
-    #expect(session.phase == .finished)
-    #expect(session.activity == "Turn completed")
-    #expect(session.branch == "feature")
-  }
-
   @Test func invalidGithubRowsDoNotProduceInventedPRs() {
     #expect(throws: ProcessFailure.self) { try GitHubService.decode(["id": "missing-fields"]) }
   }

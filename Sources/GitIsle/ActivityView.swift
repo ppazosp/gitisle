@@ -5,69 +5,31 @@ import SwiftUI
 struct ActivityView: View {
   let store: IslandStore
   @Binding var contentHeight: CGFloat
-  @State private var pullRequestsHeight: CGFloat = 0
-  @State private var sessionsHeight: CGFloat = 0
 
   var body: some View {
-    HStack(alignment: .top, spacing: 0) {
-      MeasuredColumn {
-        pullRequests.padding(.horizontal, 10).padding(.bottom, 10)
-      } onHeight: {
-        pullRequestsHeight = $0
-        report()
-      }
-      .frame(maxWidth: .infinity)
-      Rectangle().fill(Palette.hairline).frame(width: 1).padding(.vertical, 12)
-      MeasuredColumn {
-        sessions.padding(.horizontal, 10).padding(.bottom, 10)
-      } onHeight: {
-        sessionsHeight = $0
-        report()
-      }
-      .frame(width: 370)
-    }
-  }
-
-  private func report() { contentHeight = max(pullRequestsHeight, sessionsHeight) }
-
-  private var pullRequests: some View {
-    VStack(alignment: .leading, spacing: 0) {
-      notices
-      if store.github != nil && store.sections.isEmpty {
-        EmptyState(
-          glyph: .checkFill,
-          text: store.activityWindow == .all
-            ? "You're all caught up" : "No PR activity \(windowPhrase)")
-      }
-      ForEach(store.sections) { section in
-        SectionHeader(
-          title: section.group.label, count: section.pullRequests.count,
-          glyph: section.group.glyph, color: section.group.color)
-        ForEach(section.pullRequests.prefix(section.group == .merged ? 6 : 40)) { pr in
-          PRRow(pr: pr)
-            .transition(.opacity.combined(with: .move(edge: .top)))
+    MeasuredColumn {
+      VStack(alignment: .leading, spacing: 10) {
+        notices
+        if store.github != nil && store.repositories.isEmpty {
+          EmptyState(
+            glyph: .checkFill,
+            text: store.activityWindow == .all
+              ? "You're all caught up" : "No PR activity \(windowPhrase)")
+        }
+        ForEach(store.repositories) { section in
+          RepositoryCard(
+            section: section, collapsed: store.collapsedRepositories.contains(section.id)
+          ) {
+            withAnimation(Motion.snappy) { store.toggleCollapsed(section.id) }
+          }
+          .transition(.opacity.combined(with: .move(edge: .top)))
         }
       }
+      .padding(.horizontal, 20).padding(.top, 14).padding(.bottom, 18)
+    } onHeight: {
+      contentHeight = $0
     }
-    .animation(Motion.snappy, value: store.sections)
-  }
-
-  private var sessions: some View {
-    VStack(alignment: .leading, spacing: 0) {
-      SectionHeader(
-        title: "Sessions", count: store.workingCount > 0 ? store.workingCount : nil,
-        glyph: nil)
-      if store.visibleSessions.isEmpty {
-        Text("No recent Codex or Claude Code sessions on this Mac.")
-          .font(.system(size: 11.5)).foregroundStyle(.white.opacity(0.4))
-          .padding(.horizontal, 8).padding(.vertical, 8)
-      }
-      ForEach(store.visibleSessions) { session in
-        SessionRow(session: session)
-          .transition(.opacity.combined(with: .move(edge: .top)))
-      }
-    }
-    .animation(Motion.snappy, value: store.visibleSessions)
+    .animation(Motion.snappy, value: store.repositories)
   }
 
   private var windowPhrase: String {
@@ -93,7 +55,6 @@ private struct Notice: View {
       .textSelection(.enabled)
       .padding(10).frame(maxWidth: .infinity, alignment: .leading)
       .background(RoundedRectangle(cornerRadius: 10).fill(Palette.attention.opacity(0.1)))
-      .padding(.top, 10)
   }
 }
 
@@ -106,6 +67,78 @@ private struct EmptyState: View {
       Text(text).font(.system(size: 12.5)).foregroundStyle(.white.opacity(0.6))
     }
     .frame(maxWidth: .infinity).padding(.vertical, 22)
+  }
+}
+
+/// A repository with its PRs. The header summarizes PR states and toggles the list.
+private struct RepositoryCard: View {
+  let section: RepoSection
+  let collapsed: Bool
+  let toggle: () -> Void
+  @State private var hovered = false
+
+  /// Merged PRs are history; a few are enough next to open work.
+  private var visible: [PullRequest] {
+    var merged = 0
+    return section.pullRequests.filter { pr in
+      guard pr.group == .merged else { return true }
+      merged += 1
+      return merged <= 5
+    }
+  }
+
+  var body: some View {
+    VStack(spacing: 0) {
+      Button(action: toggle) {
+        HStack(spacing: 9) {
+          GlyphView(glyph: .repo, size: 14).foregroundStyle(.white.opacity(0.5))
+          (Text(verbatim: "\(section.owner)/").foregroundStyle(.white.opacity(0.45))
+            + Text(verbatim: section.name).foregroundStyle(.white))
+            .font(.system(size: 13, weight: .semibold)).lineLimit(1)
+          Spacer(minLength: 12)
+          ForEach(section.counts, id: \.group) { item in
+            HStack(spacing: 4) {
+              GlyphView(glyph: item.group.glyph, size: 11)
+              Text("\(item.count)").monospacedDigit()
+                .contentTransition(.numericText(value: Double(item.count)))
+            }
+            .font(.system(size: 11, weight: .semibold))
+            .foregroundStyle(item.group.color)
+            .padding(.horizontal, 7).padding(.vertical, 3)
+            .background(Capsule().fill(item.group.color.opacity(0.13)))
+            .help("\(item.count) \(item.group.label.lowercased())")
+          }
+          GlyphView(glyph: .chevronDown, size: 12).foregroundStyle(.white.opacity(0.45))
+            .rotationEffect(.degrees(collapsed ? -90 : 0))
+            .padding(.leading, 2)
+        }
+        .padding(.horizontal, 14).padding(.vertical, 11)
+        .contentShape(Rectangle())
+      }
+      .buttonStyle(.plain)
+      .onHover { inside in withAnimation(.easeOut(duration: 0.12)) { hovered = inside } }
+      .accessibilityLabel(
+        "\(section.repository), \(section.pullRequests.count) pull requests, "
+          + (collapsed ? "collapsed" : "expanded"))
+      if !collapsed {
+        VStack(spacing: 0) {
+          Rectangle().fill(Palette.hairline).frame(height: 1).padding(.horizontal, 14)
+          VStack(spacing: 0) {
+            ForEach(visible) { pr in
+              PRRow(pr: pr)
+                .transition(.opacity.combined(with: .move(edge: .top)))
+            }
+          }
+          .padding(.horizontal, 6).padding(.vertical, 6)
+        }
+        .transition(.opacity.combined(with: .move(edge: .top)))
+      }
+    }
+    .background(
+      RoundedRectangle(cornerRadius: 14, style: .continuous)
+        .fill(.white.opacity(hovered ? 0.075 : 0.055))
+    )
+    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
   }
 }
 
@@ -123,11 +156,9 @@ struct PRRow: View {
         VStack(alignment: .leading, spacing: 3) {
           Text(pr.title).font(.system(size: 12.5, weight: .medium)).lineLimit(1)
           HStack(spacing: 4) {
-            Text(verbatim: "\(pr.repository) #\(pr.number)")
-            if let detail {
-              Text("·")
-              Text(detail.text).foregroundStyle(detail.color)
-            }
+            Text(verbatim: "#\(pr.number)")
+            Text("·")
+            Text(state.text).foregroundStyle(state.color)
             Text("·")
             Text(Format.age(pr.mergedAt ?? pr.updatedAt))
           }
@@ -154,80 +185,21 @@ struct PRRow: View {
     .buttonStyle(PressableStyle())
     .onHover { inside in withAnimation(.easeOut(duration: 0.12)) { hovered = inside } }
     .help("Open \(pr.repository) #\(pr.number) on GitHub")
-    .accessibilityLabel("\(pr.title), \(pr.repository) number \(pr.number), \(pr.status.label)")
+    .accessibilityLabel("\(pr.title), \(pr.repository) number \(pr.number), \(state.text)")
   }
 
-  /// The reason a PR is in its section, when the section alone does not say it.
-  private var detail: (text: String, color: Color)? {
+  /// The PR's state, with the specific reason when it needs you.
+  private var state: (text: String, color: Color) {
     switch pr.group {
     case .needsYou: (pr.status.label, pr.status.color)
-    case .merging: pr.queuePosition == nil ? ("Auto-merge", Palette.merging) : nil
+    case .merging: (pr.queuePosition == nil ? "Auto-merge" : "Merging", Palette.merging)
     case .open:
-      [.checking, .unknown].contains(pr.status) ? nil : (pr.status.label, .white.opacity(0.45))
-    default: nil
+      [.checking, .unknown].contains(pr.status)
+        ? ("Open", Palette.open) : (pr.status.label, Palette.open)
+    case .draft: ("Draft", Palette.draft)
+    case .merged: ("Merged", Palette.merged)
+    case nil: ("Closed", Palette.failed)
     }
-  }
-}
-
-struct SessionRow: View {
-  let session: AgentSession
-  @State private var hovered = false
-
-  var body: some View {
-    Button {
-      NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: session.directory)
-    } label: {
-      HStack(spacing: 10) {
-        GlyphView(glyph: session.provider.glyph, size: 14)
-          .foregroundStyle(session.provider.tint)
-          .frame(width: 26, height: 26)
-          .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(Palette.surface))
-          .opacity(session.isActive ? 1 : 0.6)
-        VStack(alignment: .leading, spacing: 3) {
-          Text(session.title ?? session.project)
-            .font(.system(size: 12.5, weight: .medium)).lineLimit(1)
-            .foregroundStyle(.white.opacity(session.isActive ? 1 : 0.65))
-          Text(meta).font(.system(size: 10.5)).foregroundStyle(.white.opacity(0.45))
-            .lineLimit(1)
-        }
-        Spacer(minLength: 8)
-        phase
-      }
-      .padding(.vertical, 6).padding(.horizontal, 8)
-      .frame(maxWidth: .infinity, alignment: .leading)
-      .background(
-        RoundedRectangle(cornerRadius: 9, style: .continuous)
-          .fill(.white.opacity(hovered ? 0.07 : 0))
-      )
-      .contentShape(Rectangle())
-    }
-    .buttonStyle(PressableStyle())
-    .onHover { inside in withAnimation(.easeOut(duration: 0.12)) { hovered = inside } }
-    .help("Show \(session.project) in Finder")
-  }
-
-  private var meta: String {
-    var parts = [session.title == nil ? session.source : session.project]
-    if let branch = session.branch { parts.append(branch) }
-    parts.append(session.activity)
-    return parts.joined(separator: " · ")
-  }
-
-  @ViewBuilder private var phase: some View {
-    HStack(spacing: 6) {
-      switch session.phase {
-      case .working:
-        PulseDot(color: Palette.open)
-        Text(Format.age(session.updatedAt)).foregroundStyle(.white.opacity(0.5))
-      case .waiting:
-        PulseDot(color: Palette.attention)
-        Text("Needs you").foregroundStyle(Palette.attention)
-      default:
-        Text("\(session.phase.label) · \(Format.age(session.updatedAt))")
-          .foregroundStyle(.white.opacity(0.35))
-      }
-    }
-    .font(.system(size: 10.5, weight: .medium)).monospacedDigit()
   }
 }
 

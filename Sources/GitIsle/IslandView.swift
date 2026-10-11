@@ -84,10 +84,10 @@ private struct CompactBar: View {
         }
         trailing
       }
-      .font(.system(size: 12, weight: .medium))
+      .font(.system(size: 13.5, weight: .medium))
       .monospacedDigit()
       .lineLimit(1)
-      .padding(.horizontal, metrics.hasNotch ? 10 : 14)
+      .padding(.horizontal, metrics.hasNotch ? 14 : 18)
       .frame(maxWidth: .infinity, minHeight: metrics.closedHeight, maxHeight: metrics.closedHeight)
       .contentShape(Rectangle())
     }
@@ -98,13 +98,13 @@ private struct CompactBar: View {
 
   @ViewBuilder private var leading: some View {
     if store.githubError != nil && store.github == nil {
-      GlyphView(glyph: .sync, size: 13).foregroundStyle(Palette.attention)
+      GlyphView(glyph: .sync, size: 15).foregroundStyle(Palette.attention)
       Text("Offline").foregroundStyle(.secondary)
     } else if store.github == nil {
-      GlyphView(glyph: .github, size: 14).foregroundStyle(.secondary)
+      GlyphView(glyph: .github, size: 16).foregroundStyle(.secondary)
       Text("Connecting").foregroundStyle(.secondary)
     } else if let first = store.merging.first {
-      GlyphView(glyph: .mergeQueue, size: 14).foregroundStyle(Palette.merging)
+      GlyphView(glyph: .mergeQueue, size: 16).foregroundStyle(Palette.merging)
         .phaseAnimator([1.0, 0.45]) { glyph, opacity in
           glyph.opacity(opacity)
         } animation: { _ in
@@ -116,38 +116,25 @@ private struct CompactBar: View {
       )
       .contentTransition(.numericText())
     } else if store.attention.isEmpty {
-      GlyphView(glyph: .checkFill, size: 13).foregroundStyle(Palette.open)
+      GlyphView(glyph: .checkFill, size: 15).foregroundStyle(Palette.open)
       Text("All clear").foregroundStyle(.white.opacity(0.85))
     } else {
-      GlyphView(glyph: .pullRequest, size: 14).foregroundStyle(Palette.open)
+      GlyphView(glyph: .pullRequest, size: 16).foregroundStyle(Palette.open)
       Text("\(store.attention.count) need you")
         .contentTransition(.numericText(value: Double(store.attention.count)))
     }
   }
 
-  @ViewBuilder private var trailing: some View {
-    let providers = store.workingProviders
-    if providers.isEmpty {
-      Text("\(store.openPRs.count) open")
-        .foregroundStyle(.white.opacity(0.5))
-        .contentTransition(.numericText(value: Double(store.openPRs.count)))
-    } else {
-      HStack(spacing: -3) {
-        ForEach(providers, id: \.self) { provider in
-          GlyphView(glyph: provider.glyph, size: 13).foregroundStyle(provider.tint)
-            .padding(2).background(Circle().fill(.black))
-        }
-      }
-      Text("\(store.workingCount)")
-        .foregroundStyle(.white.opacity(0.7))
-        .contentTransition(.numericText(value: Double(store.workingCount)))
-    }
+  private var trailing: some View {
+    Text("\(store.openPRs.count) open")
+      .foregroundStyle(.white.opacity(0.5))
+      .contentTransition(.numericText(value: Double(store.openPRs.count)))
   }
 
   private var accessibilityText: String {
     var parts = ["GitIsle", "\(store.attention.count) pull requests need you"]
     if !store.merging.isEmpty { parts.append("\(store.merging.count) merging") }
-    if store.workingCount > 0 { parts.append("\(store.workingCount) agents working") }
+    parts.append("\(store.openPRs.count) open")
     return parts.joined(separator: ", ")
   }
 }
@@ -203,15 +190,15 @@ private struct ExpandedIsland: View {
   let metrics: IslandMetrics
   @Binding var contentHeight: CGFloat
 
-  static let headerHeight: CGFloat = 44
-  static let footerHeight: CGFloat = 36
+  static let headerHeight: CGFloat = 54
+  static let footerHeight: CGFloat = 46
 
   static func chromeHeight(_ metrics: IslandMetrics) -> CGFloat {
     topInset(metrics) + headerHeight + footerHeight + 1
   }
 
   static func topInset(_ metrics: IslandMetrics) -> CGFloat {
-    metrics.hasNotch ? metrics.notchHeight : 6
+    metrics.hasNotch ? metrics.notchHeight + 4 : 10
   }
 
   var body: some View {
@@ -219,7 +206,7 @@ private struct ExpandedIsland: View {
       header
         .padding(.top, Self.topInset(metrics))
         .frame(height: Self.topInset(metrics) + Self.headerHeight, alignment: .bottom)
-      Rectangle().fill(Palette.hairline).frame(height: 1).padding(.horizontal, 16)
+      Rectangle().fill(Palette.hairline).frame(height: 1).padding(.horizontal, 28)
       Group {
         switch store.tab {
         case .activity: ActivityView(store: store, contentHeight: $contentHeight)
@@ -250,7 +237,7 @@ private struct ExpandedIsland: View {
           selection: $store.usageDays, fontSize: 11)
       }
     }
-    .padding(.horizontal, 16)
+    .padding(.horizontal, 28)
     .frame(height: Self.headerHeight)
   }
 
@@ -274,7 +261,7 @@ private struct ExpandedIsland: View {
       .accessibilityLabel("GitIsle settings")
       FooterButton(glyph: nil, label: "Collapse island") { store.dismiss() }
     }
-    .padding(.horizontal, 16)
+    .padding(.horizontal, 24)
   }
 
   private var refreshing: Bool { store.githubRefreshing || store.usageRefreshing }

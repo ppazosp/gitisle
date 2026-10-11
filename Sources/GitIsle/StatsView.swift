@@ -28,7 +28,7 @@ struct StatsView: View {
         .font(.system(size: 10)).foregroundStyle(.white.opacity(0.35))
         .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 6)
       }
-      .padding(.top, 12).padding(.horizontal, 10).padding(.bottom, 10)
+      .padding(.horizontal, 20).padding(.top, 14).padding(.bottom, 18)
     } onHeight: {
       contentHeight = $0
     }

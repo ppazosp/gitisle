@@ -66,6 +66,30 @@ struct ActivityTests {
     #expect(sections[1].pullRequests.map(\.id) == ["first", "second"])
   }
 
+  @Test func repositoriesThatNeedYouComeFirstWithPRsInStateOrder() {
+    func make(_ id: String, _ repository: String, updated: TimeInterval) -> PullRequest {
+      var request = pr(id, updated: updated)
+      request.repository = repository
+      return request
+    }
+    var draft = make("draft", "a/recent", updated: 0)
+    draft.isDraft = true
+    let open = make("open", "a/recent", updated: 5)
+    var review = make("review", "b/needs-you", updated: 500)
+    review.reviewRequested = true
+    var merged = make("merged", "b/needs-you", updated: 1)
+    merged.state = "MERGED"
+    let older = make("older", "c/older", updated: 900)
+
+    let sections = PRGrouping.repositories(
+      [draft, open, review, merged, older], window: .all, now: now, calendar: calendar)
+    #expect(sections.map(\.repository) == ["b/needs-you", "a/recent", "c/older"])
+    #expect(sections[0].pullRequests.map(\.id) == ["review", "merged"])
+    #expect(sections[1].pullRequests.map(\.id) == ["open", "draft"])
+    #expect(sections[0].counts.map(\.group) == [.needsYou, .merged])
+    #expect(sections[0].owner == "b" && sections[0].name == "needs-you")
+  }
+
   @Test func activityWindowUsesLocalDaysAndMergeTime() {
     let startOfToday = calendar.startOfDay(for: now)
     var mergedToday = pr("merged", updated: 0)
@@ -134,59 +158,5 @@ struct ActivityTests {
     let decoded = try JSONDecoder().decode(PullRequest.self, from: legacy)
     #expect(decoded.checkSummary == nil)
     #expect(decoded.author == nil)
-  }
-
-  @Test func claudeTitleChosenByPersonOutranksGeneratedNames() throws {
-    let head = Data(
-      """
-      {"type":"user","sessionId":"session","cwd":"/projects/app","message":{"content":"private prompt"}}
-      """.utf8)
-    let tail = Data(
-      """
-      {"type":"agent-name","agentName":"Generated name"}
-      {"type":"custom-title","customTitle":"  Chosen title  "}
-      {"type":"agent-name","agentName":"Later generated name"}
-      """.utf8)
-    let session = try #require(
-      AgentLogReader.parse(
-        head: head, tail: tail, provider: .claude, fallbackID: "fallback", modified: now))
-    #expect(session.title == "Chosen title")
-
-    let untitled = try #require(
-      AgentLogReader.parse(
-        head: head, tail: Data(), provider: .claude, fallbackID: "fallback", modified: now))
-    #expect(untitled.title == nil)
-  }
-
-  @Test func codexIndexKeepsTheLatestNonEmptyThreadName() {
-    let index = Data(
-      """
-      {"id":"a","thread_name":"First name","updated_at":"2026-10-11T10:00:00Z"}
-      {"id":"b","thread_name":"Other"}
-      {"id":"a","thread_name":"Renamed"}
-      {"id":"b","thread_name":"   "}
-      not json
-      """.utf8)
-    #expect(AgentLogReader.parseCodexIndex(index) == ["a": "Renamed", "b": "Other"])
-  }
-
-  @Test func codexSessionsPickUpTitlesFromTheIndex() async throws {
-    let home = FileManager.default.temporaryDirectory
-      .appendingPathComponent("gitisle-\(UUID().uuidString)")
-    defer { try? FileManager.default.removeItem(at: home) }
-    let sessions = home.appendingPathComponent("sessions/2026/10/11")
-    try FileManager.default.createDirectory(at: sessions, withIntermediateDirectories: true)
-    try Data(
-      """
-      {"type":"session_meta","payload":{"id":"thread","cwd":"/projects/app","originator":"codex_cli"}}
-      {"type":"event_msg","payload":{"type":"task_started"}}
-      """.utf8
-    ).write(to: sessions.appendingPathComponent("rollout-thread.jsonl"))
-    try Data(#"{"id":"thread","thread_name":"Ship the island"}"#.utf8)
-      .write(to: home.appendingPathComponent("session_index.jsonl"))
-    let reader = AgentLogReader()
-    let found = await reader.sessions(
-      codexHome: home, claudeHome: home.appendingPathComponent("missing"))
-    #expect(found.map(\.title) == ["Ship the island"])
   }
 }

@@ -12,7 +12,6 @@ final class IslandStore {
   var githubRefreshing = false
   var githubStats: GitHubStats?
   var githubStatsError: String?
-  private(set) var agents: [AgentSession] = []
   var usage: [AgentProvider: [UsageSummary]] = [:]
   var usageErrors: [AgentProvider: String] = [:]
   var usageRefreshing = false
@@ -42,13 +41,15 @@ final class IslandStore {
   private(set) var openPRs: [PullRequest] = []
   private(set) var attention: [PullRequest] = []
   private(set) var merging: [PullRequest] = []
-  private(set) var sections: [PRSection] = []
+  private(set) var repositories: [RepoSection] = []
+  /// Repositories collapsed in the activity list, remembered across launches.
+  private(set) var collapsedRepositories: Set<String> =
+    Set(UserDefaults.standard.stringArray(forKey: "collapsedRepositories") ?? [])
 
   /// The island's laid-out size, reported by the view and used for pointer hit-testing.
   @ObservationIgnored var islandSize: CGSize = .zero
 
   @ObservationIgnored private let githubService = GitHubService()
-  @ObservationIgnored private let agentReader = AgentLogReader()
   @ObservationIgnored private let usageService: UsageService
   @ObservationIgnored private var loops: [Task<Void, Never>] = []
   @ObservationIgnored private var hoverTask: Task<Void, Never>?
@@ -105,21 +106,16 @@ final class IslandStore {
     merging = open.filter(\.isMerging).sorted {
       ($0.queuePosition ?? .max, $1.updatedAt) < ($1.queuePosition ?? .max, $0.updatedAt)
     }
-    let fresh = PRGrouping.sections(all, window: activityWindow)
-    if fresh != sections { sections = fresh }
+    let fresh = PRGrouping.repositories(all, window: activityWindow)
+    if fresh != repositories { repositories = fresh }
   }
 
-  var workingCount: Int { agents.count(where: \.isActive) }
-  var workingProviders: [AgentProvider] {
-    AgentProvider.allCases.filter { provider in
-      agents.contains { $0.provider == provider && $0.isActive }
-    }
+  func toggleCollapsed(_ repository: String) {
+    if collapsedRepositories.remove(repository) == nil { collapsedRepositories.insert(repository) }
+    guard !isDemo else { return }
+    UserDefaults.standard.set(collapsedRepositories.sorted(), forKey: "collapsedRepositories")
   }
-  /// Active sessions first, then a few recently finished ones for context.
-  var visibleSessions: [AgentSession] {
-    let active = agents.filter(\.isActive)
-    return active + agents.filter { !$0.isActive }.prefix(max(0, 6 - active.count))
-  }
+
   var cached: Bool {
     githubError != nil
       || (github.map { Date().timeIntervalSince($0.fetchedAt) > settings.githubRefreshSeconds * 2 }
@@ -128,14 +124,6 @@ final class IslandStore {
 
   func start() {
     guard !isDemo, loops.isEmpty else { return }
-    loops.append(
-      Task { [weak self] in
-        while !Task.isCancelled {
-          guard let self else { return }
-          await refreshAgents()
-          do { try await Task.sleep(for: .seconds(2)) } catch { return }
-        }
-      })
     loops.append(
       Task { [weak self] in
         while !Task.isCancelled {
@@ -169,16 +157,6 @@ final class IslandStore {
     loops = []
     hoverTask?.cancel()
     notificationTask?.cancel()
-  }
-
-  func refreshAgents() async {
-    let paths = (settings.codexHome, settings.claudeHome)
-    let fresh = await agentReader.sessions(
-      codexHome: URL(fileURLWithPath: NSString(string: paths.0).expandingTildeInPath),
-      claudeHome: URL(fileURLWithPath: NSString(string: paths.1).expandingTildeInPath))
-    guard settings.codexHome == paths.0, settings.claudeHome == paths.1 else { return }
-    // Polling runs every 2 seconds; only publish real changes so the island does not re-render.
-    if fresh != agents { agents = fresh }
   }
 
   func refreshStats() async {
@@ -359,21 +337,6 @@ final class IslandStore {
         author: "example"),
     ]
     setGitHub(GitHubSnapshot(login: "example", pullRequests: prs))
-    agents = [
-      AgentSession(
-        id: "demo-claude", provider: .claude, source: "Claude Code", directory: "/example/app",
-        branch: "feat/island-motion", model: "claude-opus-5-5", phase: .working,
-        activity: "Using Edit", updatedAt: now.addingTimeInterval(-20),
-        title: "Island animations and live banners"),
-      AgentSession(
-        id: "demo-codex", provider: .codex, source: "Codex desktop", directory: "/example/tools",
-        branch: "feat/cache", model: "gpt-6", phase: .waiting, activity: "Approval requested",
-        updatedAt: now.addingTimeInterval(-75), title: "Cache workspace metadata"),
-      AgentSession(
-        id: "demo-codex-2", provider: .codex, source: "Codex CLI", directory: "/example/app",
-        branch: "main", model: "gpt-6", phase: .finished, activity: "Task completed",
-        updatedAt: now.addingTimeInterval(-1400), title: "Investigate flaky startup test"),
-    ]
     let calendar = Calendar.current
     let formatter = DateFormatter()
     formatter.dateFormat = "yyyy-MM-dd"

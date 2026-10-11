@@ -81,11 +81,11 @@ struct SettingsView: View {
             }
           ))
       }
-      Section("Local agents") {
+      Section("Usage statistics") {
         TextField("Codex home", text: $draft.codexHome)
         TextField("Claude Code home", text: $draft.claudeHome)
         Text(
-          "Desktop and CLI sessions share their provider's history. Models and tokens come from local records; missing values stay unavailable. Session summaries and caches stay on this Mac."
+          "Token and cost statistics come from each provider's local history. Desktop and CLI share the same history; missing values stay unavailable. Caches stay on this Mac."
         )
         .font(.caption).foregroundStyle(.secondary)
       }

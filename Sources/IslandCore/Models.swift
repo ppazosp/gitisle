@@ -198,7 +198,58 @@ public struct PRSection: Identifiable, Equatable, Sendable {
   public var id: PRGroup { group }
 }
 
+/// One repository's PRs, ordered by state as in `PRGroup` and then by activity.
+public struct RepoSection: Identifiable, Equatable, Sendable {
+  public var repository: String
+  public var pullRequests: [PullRequest]
+  public var id: String { repository }
+
+  public var owner: String { repository.split(separator: "/").first.map(String.init) ?? "" }
+  public var name: String { repository.split(separator: "/").last.map(String.init) ?? repository }
+
+  /// PR counts per state, in display order, omitting empty states.
+  public var counts: [(group: PRGroup, count: Int)] {
+    PRGroup.allCases.compactMap { group in
+      let count = pullRequests.count { $0.group == group }
+      return count > 0 ? (group, count) : nil
+    }
+  }
+
+  public static func == (lhs: RepoSection, rhs: RepoSection) -> Bool {
+    lhs.repository == rhs.repository && lhs.pullRequests == rhs.pullRequests
+  }
+}
+
 public enum PRGrouping {
+  /// Repositories that need you come first, then those merging, then by latest activity.
+  public static func repositories(
+    _ pullRequests: [PullRequest], window: ActivityWindow, now: Date = Date(),
+    calendar: Calendar = .current
+  ) -> [RepoSection] {
+    var order: [String] = []
+    var buckets: [String: [PullRequest]] = [:]
+    for section in sections(pullRequests, window: window, now: now, calendar: calendar) {
+      for pr in section.pullRequests {
+        if buckets[pr.repository] == nil { order.append(pr.repository) }
+        buckets[pr.repository, default: []].append(pr)
+      }
+    }
+    func rank(_ prs: [PullRequest]) -> Int {
+      PRGroup.allCases.firstIndex { group in prs.contains { $0.group == group } } ?? .max
+    }
+    func latest(_ prs: [PullRequest]) -> Date {
+      prs.map { $0.mergedAt ?? $0.updatedAt }.max() ?? .distantPast
+    }
+    return order.map { RepoSection(repository: $0, pullRequests: buckets[$0] ?? []) }
+      .sorted { lhs, rhs in
+        let (left, right) = (rank(lhs.pullRequests), rank(rhs.pullRequests))
+        if left != right { return left < right }
+        let (newer, older) = (latest(lhs.pullRequests), latest(rhs.pullRequests))
+        if newer != older { return newer > older }
+        return lhs.repository < rhs.repository
+      }
+  }
+
   public static func sections(
     _ pullRequests: [PullRequest], window: ActivityWindow, now: Date = Date(),
     calendar: Calendar = .current
@@ -249,44 +300,6 @@ public struct GitHubSnapshot: Codable, Sendable {
 public enum AgentProvider: String, Codable, CaseIterable, Sendable {
   case codex, claude
   public var label: String { self == .codex ? "Codex" : "Claude Code" }
-}
-
-public enum ActivityPhase: String, Codable, Sendable {
-  case working, waiting, finished, interrupted, unknown
-  public var label: String { rawValue.capitalized }
-}
-
-public struct AgentSession: Codable, Equatable, Identifiable, Sendable {
-  public var id: String
-  public var provider: AgentProvider
-  public var source: String
-  public var title: String?
-  public var directory: String
-  public var branch: String?
-  public var model: String?
-  public var phase: ActivityPhase
-  public var activity: String
-  public var updatedAt: Date
-
-  public init(
-    id: String, provider: AgentProvider, source: String, directory: String, branch: String? = nil,
-    model: String? = nil, phase: ActivityPhase, activity: String, updatedAt: Date,
-    title: String? = nil
-  ) {
-    self.id = id
-    self.provider = provider
-    self.source = source
-    self.title = title
-    self.directory = directory
-    self.branch = branch
-    self.model = model
-    self.phase = phase
-    self.activity = activity
-    self.updatedAt = updatedAt
-  }
-
-  public var project: String { URL(fileURLWithPath: directory).lastPathComponent }
-  public var isActive: Bool { phase == .working || phase == .waiting }
 }
 
 /// One value for a calendar day, keyed by its local `yyyy-MM-dd` date.

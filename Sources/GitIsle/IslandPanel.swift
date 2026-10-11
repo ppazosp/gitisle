@@ -19,8 +19,9 @@ struct IslandMetrics {
     return IslandMetrics(notchWidth: 0, notchHeight: 0, hasNotch: false)
   }
 
-  var closedWidth: CGFloat { hasNotch ? notchWidth + 224 : 300 }
-  var closedHeight: CGFloat { hasNotch ? max(32, notchHeight) : 38 }
+  var closedWidth: CGFloat { hasNotch ? notchWidth + 250 : 320 }
+  /// Taller than the notch so the closed island reads as its own surface.
+  var closedHeight: CGFloat { hasNotch ? max(32, notchHeight) + 10 : 44 }
   var topGap: CGFloat { hasNotch ? 0 : 8 }
   /// Concave flare where a notch-attached island meets the top of the screen.
   var ear: CGFloat { hasNotch ? 10 : 0 }
@@ -28,13 +29,13 @@ struct IslandMetrics {
   var bannerSize: CGSize { CGSize(width: max(closedWidth + 72, 400), height: closedHeight + 60) }
   // Wide and short: pull requests and sessions sit side by side.
   var expandedWidth: CGFloat { 860 }
-  var maxExpandedHeight: CGFloat { 500 }
+  var maxExpandedHeight: CGFloat { 560 }
 
   func cornerRadius(for presentation: IslandStore.Presentation) -> CGFloat {
     switch presentation {
-    case .compact: hasNotch ? 12 : closedHeight / 2
-    case .banner: hasNotch ? 22 : 24
-    case .expanded: 28
+    case .compact: hasNotch ? 16 : closedHeight / 2
+    case .banner: hasNotch ? 24 : 26
+    case .expanded: 32
     }
   }
 }
@@ -57,7 +58,7 @@ final class IslandPanel: NSPanel {
   init(store: IslandStore) {
     self.store = store
     panel = IslandPanel(
-      contentRect: NSRect(x: 0, y: 0, width: 960, height: 600),
+      contentRect: NSRect(x: 0, y: 0, width: 960, height: 660),
       styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
     panel.isFloatingPanel = true
     panel.becomesKeyOnlyIfNeeded = true

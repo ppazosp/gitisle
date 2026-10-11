@@ -24,7 +24,7 @@ import UserNotifications
         store.githubRefreshing || store.isDemo)
       SettingsLink { Text("Settings…") }
       Divider()
-      Text("\(store.openPRs.count) open PRs · \(store.workingCount) active agents")
+      Text("\(store.openPRs.count) open PRs · \(store.attention.count) need you")
       Divider()
       Button("Quit GitIsle") { NSApp.terminate(nil) }.keyboardShortcut("q")
     } label: {
@@ -108,14 +108,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
   private func diagnose(store: IslandStore) async {
     await store.refreshGitHub()
-    await store.refreshAgents()
     await store.refreshUsage()
     await store.refreshStats()
     let report: [String: Any] = [
       "githubConnected": store.githubError == nil && store.github != nil,
       "pullRequests": store.openPRs.count,
-      "agentSources": Array(Set(store.agents.map(\.source))).sorted(),
-      "titledSessions": store.agents.count { $0.title != nil },
       "githubStatsDays": store.githubStats?.windows.map(\.days) ?? [],
       "pullRequestsWithCheckCounts": store.openPRs.count { $0.checkSummary != nil },
       "usageProviders": store.usage.keys.map(\.rawValue).sorted(),

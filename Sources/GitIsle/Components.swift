@@ -277,29 +277,6 @@ struct CheckBadge: View {
   }
 }
 
-/// A softly breathing status dot for live work.
-struct PulseDot: View {
-  var color: Color
-  var size: CGFloat = 6
-  var animated = true
-  @State private var pulsing = false
-  @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-  var body: some View {
-    Circle().fill(color).frame(width: size, height: size)
-      .background {
-        Circle().fill(color.opacity(0.45))
-          .scaleEffect(pulsing ? 2.3 : 1).opacity(pulsing ? 0 : 0.8)
-      }
-      .onAppear {
-        guard animated, !reduceMotion else { return }
-        withAnimation(.easeOut(duration: 1.4).repeatForever(autoreverses: false)) {
-          pulsing = true
-        }
-      }
-  }
-}
-
 /// Daily bars with the selected trailing window highlighted.
 struct DailyBars: View {
   let values: [DailyValue]
