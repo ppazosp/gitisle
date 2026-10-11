@@ -28,7 +28,9 @@ struct ActivityView: View {
             Rectangle().fill(Palette.hairline).frame(height: 1).padding(.horizontal, 8)
           }
           RepositoryCard(
-            section: section, collapsed: store.collapsedRepositories.contains(section.id)
+            section: section, collapsed: store.collapsedRepositories.contains(section.id),
+            selectedStates: store.stateFilter,
+            toggleState: { group in withAnimation(Motion.snappy) { store.toggleState(group) } }
           ) {
             withAnimation(Motion.snappy) { store.toggleCollapsed(section.id) }
           }
@@ -85,6 +87,8 @@ private struct EmptyState: View {
 private struct RepositoryCard: View {
   let section: RepoSection
   let collapsed: Bool
+  let selectedStates: Set<PRGroup>
+  let toggleState: (PRGroup) -> Void
   let toggle: () -> Void
   @State private var hovered = false
 
@@ -100,41 +104,41 @@ private struct RepositoryCard: View {
 
   var body: some View {
     VStack(spacing: 0) {
-      Button(action: toggle) {
-        HStack(spacing: 9) {
-          RepoAvatar(url: section.avatar)
-          (Text(verbatim: "\(section.owner)/").foregroundStyle(.white.opacity(0.45))
-            + Text(verbatim: section.name).foregroundStyle(.white))
-            .font(.system(size: 13, weight: .semibold)).lineLimit(1)
-          Spacer(minLength: 12)
-          ForEach(section.counts, id: \.group) { item in
-            HStack(spacing: 4) {
-              GlyphView(glyph: item.group.glyph, size: 11)
-              Text("\(item.count)").monospacedDigit()
-                .contentTransition(.numericText(value: Double(item.count)))
-            }
-            .font(.system(size: 11, weight: .semibold))
-            .foregroundStyle(item.group.color)
-            .padding(.horizontal, 7).padding(.vertical, 3)
-            .background(Capsule().fill(item.group.color.opacity(0.13)))
-            .help("\(item.count) \(item.group.label.lowercased())")
+      // The header row collapses the section; the state chips are their own buttons,
+      // which take the click before the row does.
+      HStack(spacing: 9) {
+        RepoAvatar(url: section.avatar)
+        (Text(verbatim: "\(section.owner)/").foregroundStyle(.white.opacity(0.45))
+          + Text(verbatim: section.name).foregroundStyle(.white))
+          .font(.system(size: 13, weight: .semibold)).lineLimit(1)
+        Spacer(minLength: 12)
+        ForEach(section.counts, id: \.group) { item in
+          StateChip(
+            group: item.group, count: item.count,
+            selected: selectedStates.contains(item.group),
+            dimmed: !selectedStates.isEmpty && !selectedStates.contains(item.group)
+          ) {
+            toggleState(item.group)
           }
-          GlyphView(glyph: .chevronDown, size: 12).foregroundStyle(.white.opacity(0.45))
-            .rotationEffect(.degrees(collapsed ? -90 : 0))
-            .padding(.leading, 2)
         }
-        .padding(.horizontal, 10).padding(.vertical, 10)
-        .background(
-          RoundedRectangle(cornerRadius: 9, style: .continuous)
-            .fill(.white.opacity(hovered ? 0.06 : 0))
-        )
-        .contentShape(Rectangle())
+        GlyphView(glyph: .chevronDown, size: 12).foregroundStyle(.white.opacity(0.45))
+          .rotationEffect(.degrees(collapsed ? -90 : 0))
+          .padding(.leading, 2)
       }
-      .buttonStyle(.plain)
+      .padding(.horizontal, 10).padding(.vertical, 10)
+      .background(
+        RoundedRectangle(cornerRadius: 9, style: .continuous)
+          .fill(.white.opacity(hovered ? 0.06 : 0))
+      )
+      .contentShape(Rectangle())
+      .onTapGesture(perform: toggle)
       .onHover { inside in withAnimation(.easeOut(duration: 0.12)) { hovered = inside } }
+      .accessibilityElement(children: .contain)
       .accessibilityLabel(
         "\(section.repository), \(section.pullRequests.count) pull requests, "
-          + (collapsed ? "collapsed" : "expanded"))
+          + (collapsed ? "collapsed" : "expanded")
+      )
+      .accessibilityAction(named: collapsed ? "Expand" : "Collapse", toggle)
       // Rows stay in place and are revealed by a clipped height, so they never slide
       // over the header while the section opens or closes.
       VStack(spacing: 0) {
@@ -150,6 +154,40 @@ private struct RepositoryCard: View {
       .allowsHitTesting(!collapsed)
       .accessibilityHidden(collapsed)
     }
+  }
+}
+
+/// A state count that filters Activity to that state when pressed.
+private struct StateChip: View {
+  let group: PRGroup
+  let count: Int
+  let selected: Bool
+  let dimmed: Bool
+  let action: () -> Void
+  @State private var hovered = false
+
+  var body: some View {
+    Button(action: action) {
+      HStack(spacing: 4) {
+        GlyphView(glyph: group.glyph, size: 11)
+        Text("\(count)").monospacedDigit()
+          .contentTransition(.numericText(value: Double(count)))
+      }
+      .font(.system(size: 11, weight: .semibold))
+      .foregroundStyle(group.color)
+      .padding(.horizontal, 7).padding(.vertical, 3)
+      .background(
+        Capsule().fill(group.color.opacity(selected ? 0.28 : hovered ? 0.2 : 0.13))
+      )
+      .overlay(Capsule().strokeBorder(group.color.opacity(selected ? 0.9 : 0), lineWidth: 1))
+      .opacity(dimmed && !hovered ? 0.4 : 1)
+      .contentShape(Capsule())
+    }
+    .buttonStyle(.plain)
+    .onHover { inside in withAnimation(.easeOut(duration: 0.12)) { hovered = inside } }
+    .help(selected ? "Show all states" : "Show only \(group.label.lowercased())")
+    .accessibilityLabel("\(count) \(group.label.lowercased())")
+    .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
   }
 }
 

@@ -58,6 +58,10 @@ final class IslandStore {
       regroup()
     }
   }
+  /// PR states selected from repository headers. Empty shows every state.
+  var stateFilter: Set<PRGroup> = [] {
+    didSet { if stateFilter != oldValue { regroup() } }
+  }
   var activityLayout: ActivityLayout =
     ActivityLayout(rawValue: UserDefaults.standard.string(forKey: "activityLayout") ?? "") ?? .list
   {
@@ -162,10 +166,16 @@ final class IslandStore {
       repositoryChoices = choices
     }
     let scoped = repositoryFilter.map { name in all.filter { $0.repository == name } } ?? all
-    let fresh = PRGrouping.repositories(scoped, window: activityWindow)
+    let fresh = PRGrouping.repositories(scoped, window: activityWindow, states: stateFilter)
     if fresh != repositories { repositories = fresh }
-    let columns = PRGrouping.sections(scoped, window: activityWindow)
+    let columns = PRGrouping.sections(scoped, window: activityWindow).filter {
+      stateFilter.isEmpty || stateFilter.contains($0.group)
+    }
     if columns != sections { sections = columns }
+  }
+
+  func toggleState(_ group: PRGroup) {
+    if stateFilter.remove(group) == nil { stateFilter.insert(group) }
   }
 
   func toggleCollapsed(_ repository: String) {

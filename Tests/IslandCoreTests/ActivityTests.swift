@@ -88,6 +88,19 @@ struct ActivityTests {
     #expect(sections[1].pullRequests.map(\.id) == ["open", "draft"])
     #expect(sections[0].counts.map(\.group) == [.needsYou, .merged])
     #expect(sections[0].owner == "b" && sections[0].name == "needs-you")
+
+    let drafts = PRGrouping.repositories(
+      [draft, open, review, merged, older], window: .all, states: [.draft], now: now,
+      calendar: calendar)
+    #expect(drafts.map(\.repository) == ["a/recent"])
+    #expect(drafts[0].pullRequests.map(\.id) == ["draft"])
+    // Counts ignore the state filter so other states can still be selected.
+    #expect(drafts[0].counts.map(\.group) == [.open, .draft])
+
+    let combined = PRGrouping.repositories(
+      [draft, open, review, merged, older], window: .all, states: [.draft, .merged], now: now,
+      calendar: calendar)
+    #expect(combined.map(\.repository) == ["b/needs-you", "a/recent"])
   }
 
   @Test func activityWindowUsesLocalDaysAndMergeTime() {

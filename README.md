@@ -7,8 +7,9 @@ screen, with Codex and Claude Code usage statistics one interaction away.
 
 Hover over the island briefly to expand it. Activity is the default view: one
 collapsible section per repository, with each PR's state shown the way GitHub
-shows it, or a board with one column per state. Filter it by repository and by
-today, 7 days, or all. Stats shows GitHub activity, tokens, models, and estimated
+shows it, or a board with one column per state. Filter it by repository, by
+today, 7 days, or all, and by state: press the state counts in a repository
+header to show only those states, and press again to clear. Stats shows GitHub activity, tokens, models, and estimated
 API costs.
 
 At rest the island covers only the notch. It appears while one of your PRs is

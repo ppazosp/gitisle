@@ -205,33 +205,44 @@ public struct PRSection: Identifiable, Equatable, Sendable {
 }
 
 /// One repository's PRs, ordered by state as in `PRGroup` and then by activity.
+public struct StateCount: Equatable, Sendable {
+  public var group: PRGroup
+  public var count: Int
+}
+
 public struct RepoSection: Identifiable, Equatable, Sendable {
   public var repository: String
+  /// The PRs shown, after any state filter.
   public var pullRequests: [PullRequest]
+  /// PR counts per state before the state filter, in display order, omitting empty states,
+  /// so every state stays available to filter by.
+  public var counts: [StateCount]
   public var id: String { repository }
+
+  public init(repository: String, pullRequests: [PullRequest], counts: [StateCount]? = nil) {
+    self.repository = repository
+    self.pullRequests = pullRequests
+    self.counts =
+      counts
+      ?? PRGroup.allCases.compactMap { group in
+        let count = pullRequests.count { $0.group == group }
+        return count > 0 ? StateCount(group: group, count: count) : nil
+      }
+  }
 
   public var owner: String { repository.split(separator: "/").first.map(String.init) ?? "" }
   public var name: String { repository.split(separator: "/").last.map(String.init) ?? repository }
   public var avatar: URL? { pullRequests.lazy.compactMap(\.ownerAvatar).first }
 
-  /// PR counts per state, in display order, omitting empty states.
-  public var counts: [(group: PRGroup, count: Int)] {
-    PRGroup.allCases.compactMap { group in
-      let count = pullRequests.count { $0.group == group }
-      return count > 0 ? (group, count) : nil
-    }
-  }
-
-  public static func == (lhs: RepoSection, rhs: RepoSection) -> Bool {
-    lhs.repository == rhs.repository && lhs.pullRequests == rhs.pullRequests
-  }
 }
 
 public enum PRGrouping {
   /// Repositories that need you come first, then those merging, then by latest activity.
+  /// An empty `states` set shows every state. Repositories with no PR in the selected
+  /// states are left out; order and counts ignore the state filter so they stay stable.
   public static func repositories(
-    _ pullRequests: [PullRequest], window: ActivityWindow, now: Date = Date(),
-    calendar: Calendar = .current
+    _ pullRequests: [PullRequest], window: ActivityWindow, states: Set<PRGroup> = [],
+    now: Date = Date(), calendar: Calendar = .current
   ) -> [RepoSection] {
     var order: [String] = []
     var buckets: [String: [PullRequest]] = [:]
@@ -247,7 +258,7 @@ public enum PRGrouping {
     func latest(_ prs: [PullRequest]) -> Date {
       prs.map { $0.mergedAt ?? $0.updatedAt }.max() ?? .distantPast
     }
-    return order.map { RepoSection(repository: $0, pullRequests: buckets[$0] ?? []) }
+    let ordered = order.map { RepoSection(repository: $0, pullRequests: buckets[$0] ?? []) }
       .sorted { lhs, rhs in
         let (left, right) = (rank(lhs.pullRequests), rank(rhs.pullRequests))
         if left != right { return left < right }
@@ -255,6 +266,13 @@ public enum PRGrouping {
         if newer != older { return newer > older }
         return lhs.repository < rhs.repository
       }
+    guard !states.isEmpty else { return ordered }
+    return ordered.compactMap { section in
+      let shown = section.pullRequests.filter { $0.group.map(states.contains) ?? false }
+      guard !shown.isEmpty else { return nil }
+      return RepoSection(
+        repository: section.repository, pullRequests: shown, counts: section.counts)
+    }
   }
 
   public static func sections(
