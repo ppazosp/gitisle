@@ -32,7 +32,10 @@ final class IslandStore {
   var tab: IslandTab = .activity
   /// Settings replace the expanded content; the island stays open while they are shown.
   var showingSettings = false
-  var activityWindow: ActivityWindow = .all {
+  /// A menu opened from the island draws outside its shape; leaving the shape for it
+  /// must not collapse the island.
+  @ObservationIgnored var menuOpen = false
+  var activityWindow: ActivityWindow = .month {
     didSet { if activityWindow != oldValue { regroup() } }
   }
   var usageDays = 1
@@ -58,7 +61,15 @@ final class IslandStore {
       regroup()
     }
   }
-  /// PR states selected from repository headers. Empty shows every state.
+  /// PR counts per state after the repository and time filters, for the state filter bar.
+  private(set) var stateCounts: [StateCount] = []
+  /// PRs that need you after the repository and time filters, for the filter bar.
+  private(set) var needsYouCount = 0
+  /// Shows only PRs that need you; combines with `stateFilter`.
+  var needsYouOnly = false {
+    didSet { if needsYouOnly != oldValue { regroup() } }
+  }
+  /// PR states selected in the filter bar. Empty shows every state.
   var stateFilter: Set<PRGroup> = [] {
     didSet { if stateFilter != oldValue { regroup() } }
   }
@@ -140,7 +151,7 @@ final class IslandStore {
     let all = github?.pullRequests ?? []
     let open = all.filter { $0.state == "OPEN" }
     openPRs = open
-    attention = open.filter { $0.group == .needsYou }
+    attention = open.filter(\.needsYou)
     let mine = open.filter { $0.author != nil && $0.author == github?.login }
     merging = mine.filter(\.isMerging).sorted {
       ($0.queuePosition ?? .max, $1.updatedAt) < ($1.queuePosition ?? .max, $0.updatedAt)
@@ -166,10 +177,19 @@ final class IslandStore {
       repositoryChoices = choices
     }
     let scoped = repositoryFilter.map { name in all.filter { $0.repository == name } } ?? all
-    let fresh = PRGrouping.repositories(scoped, window: activityWindow, states: stateFilter)
+    let fresh = PRGrouping.repositories(
+      scoped, window: activityWindow, states: stateFilter, needsYouOnly: needsYouOnly)
     if fresh != repositories { repositories = fresh }
-    let columns = PRGrouping.sections(scoped, window: activityWindow).filter {
-      stateFilter.isEmpty || stateFilter.contains($0.group)
+    let unfiltered = PRGrouping.sections(scoped, window: activityWindow)
+    let counts = unfiltered.map { StateCount(group: $0.group, count: $0.pullRequests.count) }
+    if counts != stateCounts { stateCounts = counts }
+    let attention = unfiltered.reduce(0) { $0 + $1.pullRequests.count(where: \.needsYou) }
+    if attention != needsYouCount { needsYouCount = attention }
+    let columns = unfiltered.compactMap { section -> PRSection? in
+      guard stateFilter.isEmpty || stateFilter.contains(section.group) else { return nil }
+      guard needsYouOnly else { return section }
+      let shown = section.pullRequests.filter(\.needsYou)
+      return shown.isEmpty ? nil : PRSection(group: section.group, pullRequests: shown)
     }
     if columns != sections { sections = columns }
   }
@@ -346,7 +366,7 @@ final class IslandStore {
         return
       }
       // Leaving the island must not throw away settings that are being edited.
-      if !Task.isCancelled, inside || !showingSettings { expanded = inside }
+      if !Task.isCancelled, inside || (!showingSettings && !menuOpen) { expanded = inside }
     }
   }
 

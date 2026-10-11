@@ -39,8 +39,8 @@ struct ActivityTests {
     #expect(draft.group == .draft)
     #expect(queued.group == .merging)
     #expect(autoMerge.group == .merging)
-    #expect(review.group == .needsYou)
-    #expect(waiting.group == .open)
+    #expect(review.group == .open && review.needsYou)
+    #expect(waiting.group == .open && !waiting.needsYou)
     #expect(merged.group == .merged)
     #expect(closed.group == nil)
   }
@@ -50,7 +50,7 @@ struct ActivityTests {
     request.autoMerge = true
     request.checks = "FAILURE"
     #expect(!request.isMerging)
-    #expect(request.group == .needsYou)
+    #expect(request.group == .open && request.needsYou)
   }
 
   @Test func sectionsKeepGroupOrderAndQueueOrder() {
@@ -61,8 +61,8 @@ struct ActivityTests {
     var review = pr("review")
     review.reviewRequested = true
     let sections = PRGrouping.sections(
-      [second, review, first], window: .all, now: now, calendar: calendar)
-    #expect(sections.map(\.group) == [.needsYou, .merging])
+      [second, review, first], window: .month, now: now, calendar: calendar)
+    #expect(sections.map(\.group) == [.open, .merging])
     #expect(sections[1].pullRequests.map(\.id) == ["first", "second"])
   }
 
@@ -82,15 +82,16 @@ struct ActivityTests {
     let older = make("older", "c/older", updated: 900)
 
     let sections = PRGrouping.repositories(
-      [draft, open, review, merged, older], window: .all, now: now, calendar: calendar)
+      [draft, open, review, merged, older], window: .month, now: now, calendar: calendar)
     #expect(sections.map(\.repository) == ["b/needs-you", "a/recent", "c/older"])
     #expect(sections[0].pullRequests.map(\.id) == ["review", "merged"])
     #expect(sections[1].pullRequests.map(\.id) == ["open", "draft"])
-    #expect(sections[0].counts.map(\.group) == [.needsYou, .merged])
+    #expect(sections[0].counts.map(\.group) == [.open, .merged])
+    #expect(sections[0].needsYou == 1)
     #expect(sections[0].owner == "b" && sections[0].name == "needs-you")
 
     let drafts = PRGrouping.repositories(
-      [draft, open, review, merged, older], window: .all, states: [.draft], now: now,
+      [draft, open, review, merged, older], window: .month, states: [.draft], now: now,
       calendar: calendar)
     #expect(drafts.map(\.repository) == ["a/recent"])
     #expect(drafts[0].pullRequests.map(\.id) == ["draft"])
@@ -98,9 +99,24 @@ struct ActivityTests {
     #expect(drafts[0].counts.map(\.group) == [.open, .draft])
 
     let combined = PRGrouping.repositories(
-      [draft, open, review, merged, older], window: .all, states: [.draft, .merged], now: now,
+      [draft, open, review, merged, older], window: .month, states: [.draft, .merged], now: now,
       calendar: calendar)
     #expect(combined.map(\.repository) == ["b/needs-you", "a/recent"])
+
+    let waiting = PRGrouping.repositories(
+      [draft, open, review, merged, older], window: .month, needsYouOnly: true, now: now,
+      calendar: calendar)
+    #expect(waiting.flatMap(\.pullRequests).map(\.id) == ["review"])
+  }
+
+  @Test func prsWaitingOnYouLeadTheReadyForReviewColumn() {
+    let quiet = pr("quiet", updated: 0)
+    var review = pr("review", updated: 600)
+    review.reviewRequested = true
+    let sections = PRGrouping.sections(
+      [quiet, review], window: .month, now: now, calendar: calendar)
+    #expect(sections.map(\.group) == [.open])
+    #expect(sections[0].pullRequests.map(\.id) == ["review", "quiet"])
   }
 
   @Test func activityWindowUsesLocalDaysAndMergeTime() {
@@ -121,6 +137,12 @@ struct ActivityTests {
     #expect(
       ActivityWindow.week.includes(
         startOfToday.addingTimeInterval(-6 * 86_400), now: now, calendar: calendar))
+    #expect(
+      ActivityWindow.month.includes(
+        startOfToday.addingTimeInterval(-29 * 86_400), now: now, calendar: calendar))
+    #expect(
+      !ActivityWindow.month.includes(
+        startOfToday.addingTimeInterval(-29 * 86_400 - 1), now: now, calendar: calendar))
     #expect(
       !ActivityWindow.week.includes(
         startOfToday.addingTimeInterval(-6 * 86_400 - 1), now: now, calendar: calendar))

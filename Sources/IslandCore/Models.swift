@@ -129,7 +129,7 @@ public struct PullRequest: Codable, Hashable, Identifiable, Sendable {
     return ![.failed, .conflicts, .changesRequested].contains(status)
   }
 
-  /// The GitHub-style section this PR belongs to. Closed PRs are not shown.
+  /// The GitHub state this PR is in. Closed PRs are not shown.
   public var group: PRGroup? {
     switch state {
     case "MERGED": return .merged
@@ -138,9 +138,12 @@ public struct PullRequest: Codable, Hashable, Identifiable, Sendable {
     }
     if isDraft { return .draft }
     if isMerging { return .merging }
-    if status.needsAttention { return .needsYou }
     return .open
   }
+
+  /// An open PR waiting on you: a review request, failed checks, conflicts, requested
+  /// changes, or ready to merge. This flags a PR within its state; it is not a state.
+  public var needsYou: Bool { group == .open && status.needsAttention }
 
   public var status: PRStatus {
     if state == "MERGED" { return .merged }
@@ -162,13 +165,12 @@ public struct PullRequest: Codable, Hashable, Identifiable, Sendable {
 }
 
 public enum PRGroup: String, CaseIterable, Sendable {
-  case needsYou, merging, open, draft, merged
+  case open, merging, draft, merged
 
   public var label: String {
     switch self {
-    case .needsYou: "Needs you"
     case .merging: "Merging"
-    case .open: "Open"
+    case .open: "Ready"
     case .draft: "Draft"
     case .merged: "Merged"
     }
@@ -177,24 +179,28 @@ public enum PRGroup: String, CaseIterable, Sendable {
 
 /// A time filter for activity. `days` counts today as the first day.
 public enum ActivityWindow: String, CaseIterable, Codable, Sendable {
-  case today, week, all
+  case today, week, month
 
   public var label: String {
     switch self {
     case .today: "Today"
     case .week: "7 days"
-    case .all: "All"
+    case .month: "30 days"
+    }
+  }
+
+  public var days: Int {
+    switch self {
+    case .today: 1
+    case .week: 7
+    case .month: 30
     }
   }
 
   public func includes(_ date: Date, now: Date = Date(), calendar: Calendar = .current) -> Bool {
-    switch self {
-    case .all: return true
-    case .today: return date >= calendar.startOfDay(for: now)
-    case .week:
-      let start = calendar.date(byAdding: .day, value: -6, to: calendar.startOfDay(for: now))!
-      return date >= start
-    }
+    let start = calendar.date(
+      byAdding: .day, value: -(days - 1), to: calendar.startOfDay(for: now))!
+    return date >= start
   }
 }
 
@@ -202,26 +208,42 @@ public struct PRSection: Identifiable, Equatable, Sendable {
   public var group: PRGroup
   public var pullRequests: [PullRequest]
   public var id: PRGroup { group }
+
+  public init(group: PRGroup, pullRequests: [PullRequest]) {
+    self.group = group
+    self.pullRequests = pullRequests
+  }
 }
 
 /// One repository's PRs, ordered by state as in `PRGroup` and then by activity.
 public struct StateCount: Equatable, Sendable {
   public var group: PRGroup
   public var count: Int
+
+  public init(group: PRGroup, count: Int) {
+    self.group = group
+    self.count = count
+  }
 }
 
 public struct RepoSection: Identifiable, Equatable, Sendable {
   public var repository: String
   /// The PRs shown, after any state filter.
   public var pullRequests: [PullRequest]
+  /// PRs that need you, before the state filter.
+  public var needsYou: Int
   /// PR counts per state before the state filter, in display order, omitting empty states,
   /// so every state stays available to filter by.
   public var counts: [StateCount]
   public var id: String { repository }
 
-  public init(repository: String, pullRequests: [PullRequest], counts: [StateCount]? = nil) {
+  public init(
+    repository: String, pullRequests: [PullRequest], counts: [StateCount]? = nil,
+    needsYou: Int? = nil
+  ) {
     self.repository = repository
     self.pullRequests = pullRequests
+    self.needsYou = needsYou ?? pullRequests.count(where: \.needsYou)
     self.counts =
       counts
       ?? PRGroup.allCases.compactMap { group in
@@ -238,11 +260,12 @@ public struct RepoSection: Identifiable, Equatable, Sendable {
 
 public enum PRGrouping {
   /// Repositories that need you come first, then those merging, then by latest activity.
-  /// An empty `states` set shows every state. Repositories with no PR in the selected
-  /// states are left out; order and counts ignore the state filter so they stay stable.
+  /// An empty `states` set shows every state; `needsYouOnly` keeps only PRs that need you.
+  /// Repositories with nothing left are omitted; order and counts ignore the filters so
+  /// they stay stable while filtering.
   public static func repositories(
     _ pullRequests: [PullRequest], window: ActivityWindow, states: Set<PRGroup> = [],
-    now: Date = Date(), calendar: Calendar = .current
+    needsYouOnly: Bool = false, now: Date = Date(), calendar: Calendar = .current
   ) -> [RepoSection] {
     var order: [String] = []
     var buckets: [String: [PullRequest]] = [:]
@@ -252,8 +275,10 @@ public enum PRGrouping {
         buckets[pr.repository, default: []].append(pr)
       }
     }
+    // Repositories that need you come first, then by their most advanced open work.
     func rank(_ prs: [PullRequest]) -> Int {
-      PRGroup.allCases.firstIndex { group in prs.contains { $0.group == group } } ?? .max
+      if prs.contains(where: \.needsYou) { return 0 }
+      return 1 + (PRGroup.allCases.firstIndex { group in prs.contains { $0.group == group } } ?? 99)
     }
     func latest(_ prs: [PullRequest]) -> Date {
       prs.map { $0.mergedAt ?? $0.updatedAt }.max() ?? .distantPast
@@ -266,12 +291,16 @@ public enum PRGrouping {
         if newer != older { return newer > older }
         return lhs.repository < rhs.repository
       }
-    guard !states.isEmpty else { return ordered }
+    guard !states.isEmpty || needsYouOnly else { return ordered }
     return ordered.compactMap { section in
-      let shown = section.pullRequests.filter { $0.group.map(states.contains) ?? false }
+      let shown = section.pullRequests.filter { pr in
+        (states.isEmpty || (pr.group.map(states.contains) ?? false))
+          && (!needsYouOnly || pr.needsYou)
+      }
       guard !shown.isEmpty else { return nil }
       return RepoSection(
-        repository: section.repository, pullRequests: shown, counts: section.counts)
+        repository: section.repository, pullRequests: shown, counts: section.counts,
+        needsYou: section.needsYou)
     }
   }
 
@@ -295,6 +324,11 @@ public enum PRGrouping {
         }
       case .merged:
         rows.sort { ($0.mergedAt ?? $0.updatedAt) > ($1.mergedAt ?? $1.updatedAt) }
+      case .open:
+        // PRs waiting on you lead their column.
+        rows.sort { lhs, rhs in
+          lhs.needsYou != rhs.needsYou ? lhs.needsYou : lhs.updatedAt > rhs.updatedAt
+        }
       default:
         rows.sort { $0.updatedAt > $1.updatedAt }
       }
@@ -309,11 +343,14 @@ public struct GitHubSnapshot: Codable, Sendable {
   public var fetchedAt: Date
   public var selection: String
   public var isLimited: Bool
+  /// More merged PRs exist in the last 30 days than were fetched; only the newest are kept.
+  public var mergedLimited: Bool?
 
   public init(
     login: String, pullRequests: [PullRequest], fetchedAt: Date = Date(), selection: String = "",
-    isLimited: Bool = false
+    isLimited: Bool = false, mergedLimited: Bool = false
   ) {
+    self.mergedLimited = mergedLimited
     self.login = login
     self.pullRequests = pullRequests
     self.fetchedAt = fetchedAt

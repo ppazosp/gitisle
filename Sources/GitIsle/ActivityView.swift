@@ -20,7 +20,7 @@ struct ActivityView: View {
         if store.github != nil && store.repositories.isEmpty {
           EmptyState(
             glyph: .checkFill,
-            text: store.activityWindow == .all
+            text: store.activityWindow == .month
               ? "You're all caught up" : "No PR activity \(windowPhrase)")
         }
         ForEach(store.repositories) { section in
@@ -29,8 +29,7 @@ struct ActivityView: View {
           }
           RepositoryCard(
             section: section, collapsed: store.collapsedRepositories.contains(section.id),
-            selectedStates: store.stateFilter,
-            toggleState: { group in withAnimation(Motion.snappy) { store.toggleState(group) } }
+            showsEverything: !store.stateFilter.isEmpty || store.needsYouOnly,
           ) {
             withAnimation(Motion.snappy) { store.toggleCollapsed(section.id) }
           }
@@ -45,7 +44,7 @@ struct ActivityView: View {
   }
 
   private var windowPhrase: String {
-    store.activityWindow == .today ? "today" : "in the last 7 days"
+    store.activityWindow == .today ? "today" : "in the last \(store.activityWindow.days) days"
   }
 
   @ViewBuilder private var notices: some View {
@@ -55,7 +54,7 @@ struct ActivityView: View {
     if store.github?.isLimited == true {
       Notice(
         text:
-          "Showing the first 100 PRs in each group. Narrow the watched repositories in Settings.")
+          "Showing the first 400 PRs in each group. Narrow the watched repositories in Settings.")
     }
   }
 }
@@ -87,13 +86,15 @@ private struct EmptyState: View {
 private struct RepositoryCard: View {
   let section: RepoSection
   let collapsed: Bool
-  let selectedStates: Set<PRGroup>
-  let toggleState: (PRGroup) -> Void
+  /// A state filter is a request to see those PRs, so nothing is shortened.
+  let showsEverything: Bool
   let toggle: () -> Void
   @State private var hovered = false
+  @State private var showsAllMerged = false
 
-  /// Merged PRs are history; a few are enough next to open work.
+  /// Merged PRs are history; a few are enough next to open work until asked for more.
   private var visible: [PullRequest] {
+    guard !showsEverything, !showsAllMerged else { return section.pullRequests }
     var merged = 0
     return section.pullRequests.filter { pr in
       guard pr.group == .merged else { return true }
@@ -104,22 +105,34 @@ private struct RepositoryCard: View {
 
   var body: some View {
     VStack(spacing: 0) {
-      // The header row collapses the section; the state chips are their own buttons,
-      // which take the click before the row does.
       HStack(spacing: 9) {
         RepoAvatar(url: section.avatar)
         (Text(verbatim: "\(section.owner)/").foregroundStyle(.white.opacity(0.45))
           + Text(verbatim: section.name).foregroundStyle(.white))
           .font(.system(size: 13, weight: .semibold)).lineLimit(1)
         Spacer(minLength: 12)
-        ForEach(section.counts, id: \.group) { item in
-          StateChip(
-            group: item.group, count: item.count,
-            selected: selectedStates.contains(item.group),
-            dimmed: !selectedStates.isEmpty && !selectedStates.contains(item.group)
-          ) {
-            toggleState(item.group)
+        if section.needsYou > 0 {
+          HStack(spacing: 4) {
+            GlyphView(glyph: .eye, size: 11)
+            Text("\(section.needsYou)").monospacedDigit()
           }
+          .font(.system(size: 11, weight: .semibold))
+          .foregroundStyle(Palette.attention)
+          .padding(.horizontal, 7).padding(.vertical, 3)
+          .background(Capsule().fill(Palette.attention.opacity(0.13)))
+          .help("\(section.needsYou) need you")
+        }
+        ForEach(section.counts, id: \.group) { item in
+          HStack(spacing: 4) {
+            GlyphView(glyph: item.group.glyph, size: 11)
+            Text("\(item.count)").monospacedDigit()
+              .contentTransition(.numericText(value: Double(item.count)))
+          }
+          .font(.system(size: 11, weight: .semibold))
+          .foregroundStyle(item.group.color)
+          .padding(.horizontal, 7).padding(.vertical, 3)
+          .background(Capsule().fill(item.group.color.opacity(0.13)))
+          .help("\(item.count) \(item.group.label.lowercased())")
         }
         GlyphView(glyph: .chevronDown, size: 12).foregroundStyle(.white.opacity(0.45))
           .rotationEffect(.degrees(collapsed ? -90 : 0))
@@ -142,8 +155,15 @@ private struct RepositoryCard: View {
       // Rows stay in place and are revealed by a clipped height, so they never slide
       // over the header while the section opens or closes.
       VStack(spacing: 0) {
+        let visible = self.visible
         ForEach(visible) { pr in
           PRRow(pr: pr).transition(.opacity)
+        }
+        if visible.count < section.pullRequests.count {
+          ShowMoreButton(hidden: section.pullRequests.count - visible.count) {
+            withAnimation(Motion.snappy) { showsAllMerged = true }
+          }
+          .padding(.horizontal, 8).padding(.top, 2)
         }
       }
       .padding(.bottom, 8)
@@ -157,10 +177,100 @@ private struct RepositoryCard: View {
   }
 }
 
-/// A state count that filters Activity to that state when pressed.
+/// State filters for Activity, shared by the list and the board. Pressing a state shows
+/// only PRs in it; pressing again clears it, and several states combine.
+struct StateFilterBar: View {
+  let store: IslandStore
+
+  var body: some View {
+    HStack(spacing: 6) {
+      NeedsYouChip(
+        count: store.needsYouCount, selected: store.needsYouOnly
+      ) {
+        withAnimation(Motion.morph) { store.needsYouOnly.toggle() }
+      }
+      Rectangle().fill(Palette.hairline).frame(width: 1, height: 16).padding(.horizontal, 2)
+      ForEach(PRGroup.boardOrder, id: \.self) { group in
+        let count = store.stateCounts.first { $0.group == group }?.count ?? 0
+        let selected = store.stateFilter.contains(group)
+        // Merged history is capped at the newest 400; say so rather than undercount.
+        let capped =
+          group == .merged && store.github?.mergedLimited == true && store.activityWindow == .month
+        StateChip(
+          group: group, count: count, capped: capped, selected: selected,
+          dimmed: !store.stateFilter.isEmpty && !selected
+        ) {
+          withAnimation(Motion.morph) { store.toggleState(group) }
+        }
+        .disabled(count == 0 && !selected)
+        .opacity(count == 0 && !selected ? 0.35 : 1)
+      }
+      Spacer(minLength: 4)
+      if !store.stateFilter.isEmpty || store.needsYouOnly {
+        Button {
+          withAnimation(Motion.morph) {
+            store.stateFilter = []
+            store.needsYouOnly = false
+          }
+        } label: {
+          Image(systemName: "xmark").font(.system(size: 9, weight: .bold))
+            .foregroundStyle(.white.opacity(0.6))
+            .frame(width: 20, height: 20)
+            .background(Circle().fill(.white.opacity(0.08)))
+            .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .help("Clear filters")
+        .accessibilityLabel("Clear filters")
+        .transition(.opacity)
+      }
+    }
+    .animation(Motion.snappy, value: store.stateFilter)
+    .animation(Motion.snappy, value: store.needsYouOnly)
+  }
+}
+
+/// Shows only PRs waiting on you, within whichever states are selected.
+private struct NeedsYouChip: View {
+  let count: Int
+  let selected: Bool
+  let action: () -> Void
+  @State private var hovered = false
+
+  var body: some View {
+    Button(action: action) {
+      HStack(spacing: 5) {
+        GlyphView(glyph: .eye, size: 11)
+        Text("Needs you").lineLimit(1).fixedSize()
+        Text("\(count)").monospacedDigit().opacity(0.7)
+          .contentTransition(.numericText(value: Double(count)))
+      }
+      .font(.system(size: 11, weight: .semibold))
+      .foregroundStyle(Palette.attention)
+      .padding(.horizontal, 8).padding(.vertical, 4)
+      .background(
+        Capsule().fill(Palette.attention.opacity(selected ? 0.28 : hovered ? 0.2 : 0.11))
+      )
+      .overlay(
+        Capsule().inset(by: 0.5).stroke(
+          Palette.attention.opacity(selected ? 0.9 : 0), lineWidth: 1)
+      )
+      .contentShape(Capsule())
+    }
+    .buttonStyle(.plain)
+    .disabled(count == 0 && !selected)
+    .opacity(count == 0 && !selected ? 0.35 : 1)
+    .onHover { inside in withAnimation(.easeOut(duration: 0.12)) { hovered = inside } }
+    .help(selected ? "Show every PR" : "Show only PRs waiting on you")
+    .accessibilityLabel("Needs you, \(count)")
+    .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
+  }
+}
+
 private struct StateChip: View {
   let group: PRGroup
   let count: Int
+  var capped = false
   let selected: Bool
   let dimmed: Bool
   let action: () -> Void
@@ -168,27 +278,31 @@ private struct StateChip: View {
 
   var body: some View {
     Button(action: action) {
-      HStack(spacing: 4) {
+      HStack(spacing: 5) {
         GlyphView(glyph: group.glyph, size: 11)
-        Text("\(count)").monospacedDigit()
+        Text(group.label).lineLimit(1).fixedSize()
+        Text(capped ? "\(count)+" : "\(count)").monospacedDigit().opacity(0.7)
           .contentTransition(.numericText(value: Double(count)))
       }
       .font(.system(size: 11, weight: .semibold))
       .foregroundStyle(group.color)
-      .padding(.horizontal, 7).padding(.vertical, 3)
+      .padding(.horizontal, 8).padding(.vertical, 4)
       .background(
-        Capsule().fill(group.color.opacity(selected ? 0.28 : hovered ? 0.2 : 0.13))
+        Capsule().fill(group.color.opacity(selected ? 0.28 : hovered ? 0.2 : 0.11))
       )
       .overlay(
         Capsule().inset(by: 0.5).stroke(group.color.opacity(selected ? 0.9 : 0), lineWidth: 1)
       )
-      .opacity(dimmed && !hovered ? 0.4 : 1)
+      .opacity(dimmed && !hovered ? 0.45 : 1)
       .contentShape(Capsule())
     }
     .buttonStyle(.plain)
     .onHover { inside in withAnimation(.easeOut(duration: 0.12)) { hovered = inside } }
-    .help(selected ? "Show all states" : "Show only \(group.label.lowercased())")
-    .accessibilityLabel("\(count) \(group.label.lowercased())")
+    .help(
+      selected
+        ? "Stop filtering by \(group.label.lowercased())" : "Filter by \(group.label.lowercased())"
+    )
+    .accessibilityLabel("\(group.label), \(count)")
     .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
   }
 }
@@ -245,6 +359,7 @@ private struct BoardView: View {
   let store: IslandStore
   @Binding var contentHeight: CGFloat
   @State private var heights: [PRGroup: CGFloat] = [:]
+  @State private var expanded: Set<PRGroup> = []
 
   var body: some View {
     Group {
@@ -290,6 +405,11 @@ private struct BoardView: View {
     contentHeight = heights.filter { visible.contains($0.key) }.values.max() ?? 0
   }
 
+  /// Long columns show their newest cards first; a state filter or "show more" lifts that.
+  private func shortened(_ section: PRSection) -> Bool {
+    store.stateFilter.isEmpty && !store.needsYouOnly && !expanded.contains(section.group)
+  }
+
   private func column(_ section: PRSection) -> some View {
     VStack(alignment: .leading, spacing: 8) {
       HStack(spacing: 6) {
@@ -300,8 +420,14 @@ private struct BoardView: View {
         Spacer(minLength: 0)
       }
       .padding(.horizontal, 4).padding(.top, 4)
-      ForEach(section.pullRequests.prefix(section.group == .merged ? 8 : 40)) { pr in
+      let limit = shortened(section) ? 8 : section.pullRequests.count
+      ForEach(section.pullRequests.prefix(limit)) { pr in
         PRCard(pr: pr).transition(.opacity)
+      }
+      if section.pullRequests.count > limit {
+        ShowMoreButton(hidden: section.pullRequests.count - limit) {
+          withAnimation(Motion.snappy) { _ = expanded.insert(section.group) }
+        }
       }
     }
   }

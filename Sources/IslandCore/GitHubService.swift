@@ -28,14 +28,15 @@ public actor GitHubService {
     let query = """
       query($search: String!, $after: String) {
         viewer { login }
-        search(query: $search, type: ISSUE, first: 25, after: $after) {
+        search(query: $search, type: ISSUE, first: 100, after: $after) {
           nodes { ...PRFields }
           pageInfo { hasNextPage endCursor }
         }
       }
       \(Self.fields)
       """
-    let since = Date().addingTimeInterval(-7 * 86_400).formatted(
+    // Merged history covers the longest activity window, 30 days.
+    let since = Date().addingTimeInterval(-30 * 86_400).formatted(
       .iso8601.year().month().day().dateSeparator(.dash))
     var groups = [
       ("mine", "is:pr is:open author:@me"),
@@ -48,6 +49,7 @@ public actor GitHubService {
     var login = ""
     var prs: [String: PullRequest] = [:]
     var limited = false
+    var mergedLimited = false
     for (name, search) in groups {
       var cursor: String?
       var seenCursors = Set<String>()
@@ -75,7 +77,9 @@ public actor GitHubService {
         }
         guard more else { break }
         if page == 3 {
-          limited = true
+          // Merged PRs are sorted newest first, so a cap keeps the most recent ones;
+          // that is history, not missing open work.
+          if name == "merged" { mergedLimited = true } else { limited = true }
           break
         }
         guard let next = info["endCursor"] as? String, seenCursors.insert(next).inserted else {
@@ -107,12 +111,12 @@ public actor GitHubService {
         }
       }
       for pr in previous.pullRequests where pr.state != "OPEN" && prs[pr.id] == nil {
-        if Date().timeIntervalSince(pr.updatedAt) < 7 * 86_400 { prs[pr.id] = pr }
+        if Date().timeIntervalSince(pr.updatedAt) < 30 * 86_400 { prs[pr.id] = pr }
       }
     }
     return GitHubSnapshot(
       login: login, pullRequests: prs.values.sorted { $0.updatedAt > $1.updatedAt },
-      selection: selection.fingerprint, isLimited: limited)
+      selection: selection.fingerprint, isLimited: limited, mergedLimited: mergedLimited)
   }
 
   private func request(query: String, variables: [String: Any]) async throws -> [String:

@@ -78,11 +78,11 @@ extension AnyTransition {
 extension PRGroup {
   /// Board columns follow a PR's life from left to right; "needs you" sits where a PR
   /// waits on you between review and merging.
-  static let boardOrder: [PRGroup] = [.draft, .open, .needsYou, .merging, .merged]
+  static let boardOrder: [PRGroup] = [.draft, .open, .merging, .merged]
 
   var glyph: Glyph {
     switch self {
-    case .needsYou, .open: .pullRequest
+    case .open: .pullRequest
     case .merging: .mergeQueue
     case .draft: .draft
     case .merged: .merge
@@ -91,7 +91,6 @@ extension PRGroup {
 
   var color: Color {
     switch self {
-    case .needsYou: Palette.attention
     case .open: Palette.open
     case .merging: Palette.merging
     case .draft: Palette.draft
@@ -106,7 +105,7 @@ extension PullRequest {
     case .merged: .merge
     case .draft: .draft
     case .merging: .mergeQueue
-    case .needsYou, .open: .pullRequest
+    case .open: .pullRequest
     case nil: .closed
     }
   }
@@ -114,10 +113,11 @@ extension PullRequest {
   /// The PR's state, with the specific reason when it needs you.
   var stateLabel: (text: String, color: Color) {
     switch group {
-    case .needsYou: (status.label, status.color)
+    case .open where needsYou: (status.label, status.color)
     case .merging: (queuePosition == nil ? "Auto-merge" : "Merging", Palette.merging)
     case .open:
-      [.checking, .unknown].contains(status) ? ("Open", Palette.open) : (status.label, Palette.open)
+      [.checking, .unknown].contains(status)
+        ? ("Ready", Palette.open) : (status.label, Palette.open)
     case .draft: ("Draft", Palette.draft)
     case .merged: ("Merged", Palette.merged)
     case nil: ("Closed", Palette.failed)
@@ -129,7 +129,7 @@ extension PullRequest {
     case .merged: Palette.merged
     case .draft: Palette.draft
     case .merging: Palette.merging
-    case .needsYou, .open: Palette.open
+    case .open: Palette.open
     case nil: Palette.failed
     }
   }
@@ -289,6 +289,32 @@ struct CheckBadge: View {
       default: Circle().fill(Palette.merging).frame(width: 7, height: 7).frame(width: 13)
       }
     }
+  }
+}
+
+/// A row that reveals the rest of a shortened list.
+struct ShowMoreButton: View {
+  let hidden: Int
+  let action: () -> Void
+  @State private var hovered = false
+
+  var body: some View {
+    Button(action: action) {
+      HStack(spacing: 6) {
+        Image(systemName: "chevron.down").font(.system(size: 9, weight: .bold))
+        Text("Show \(hidden) more")
+      }
+      .font(.system(size: 11, weight: .medium))
+      .foregroundStyle(.white.opacity(hovered ? 0.85 : 0.5))
+      .frame(maxWidth: .infinity).padding(.vertical, 7)
+      .background(
+        RoundedRectangle(cornerRadius: 8, style: .continuous)
+          .fill(.white.opacity(hovered ? 0.07 : 0.035))
+      )
+      .contentShape(Rectangle())
+    }
+    .buttonStyle(.plain)
+    .onHover { inside in withAnimation(.easeOut(duration: 0.12)) { hovered = inside } }
   }
 }
 

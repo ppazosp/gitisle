@@ -35,9 +35,14 @@ struct IslandMetrics: Equatable {
   }
 
   var bannerSize: CGSize { CGSize(width: max(closedWidth + 80, 380), height: closedHeight + 60) }
-  var expandedWidth: CGFloat { 600 }
-  /// The board needs room for up to five state columns.
-  var boardWidth: CGFloat { 920 }
+  var expandedWidth: CGFloat { 640 }
+  /// The board grows with its columns and never gets narrower than the list.
+  func boardWidth(columns: Int) -> CGFloat {
+    let column: CGFloat = 176
+    let spacing: CGFloat = 10
+    let content = CGFloat(columns) * column + CGFloat(max(0, columns - 1)) * spacing + 32
+    return max(expandedWidth, content)
+  }
   var maxExpandedHeight: CGFloat { 560 }
 
   func cornerRadius(for presentation: IslandStore.Presentation) -> CGFloat {
@@ -64,11 +69,12 @@ final class IslandPanel: NSPanel {
   private var timer: Timer?
   private var observers: [NSObjectProtocol] = []
   private var mouseWasInside = false
+  private var lastPointer: NSPoint?
 
   init(store: IslandStore) {
     self.store = store
     panel = IslandPanel(
-      contentRect: NSRect(x: 0, y: 0, width: 960, height: 660),
+      contentRect: NSRect(x: 0, y: 0, width: 1040, height: 660),
       styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
     panel.isFloatingPanel = true
     panel.becomesKeyOnlyIfNeeded = true
@@ -98,6 +104,15 @@ final class IslandPanel: NSPanel {
       self?.trackPointer()
       return event
     }
+    // Menus (repository filter, chart style, display picker) open outside the island.
+    observers.append(
+      NotificationCenter.default.addObserver(
+        forName: NSMenu.didBeginTrackingNotification, object: nil, queue: .main
+      ) { [weak self] _ in Task { @MainActor in self?.store.menuOpen = true } })
+    observers.append(
+      NotificationCenter.default.addObserver(
+        forName: NSMenu.didEndTrackingNotification, object: nil, queue: .main
+      ) { [weak self] _ in Task { @MainActor in self?.menuClosed() } })
     observers.append(
       NotificationCenter.default.addObserver(
         forName: NSApplication.didChangeScreenParametersNotification,
@@ -172,6 +187,13 @@ final class IslandPanel: NSPanel {
     }
   }
 
+  /// Once a menu closes, collapse only if the pointer really is outside the island.
+  private func menuClosed() {
+    store.menuOpen = false
+    trackPointer()
+    if !mouseWasInside { store.setHovered(false) }
+  }
+
   private func trackPointer() {
     guard !CommandLine.arguments.contains("--snapshot") else { return }
     guard panel.isVisible else { return }
@@ -182,11 +204,16 @@ final class IslandPanel: NSPanel {
       width: size.width, height: size.height)
     let radius = metrics.cornerRadius(for: store.presentation)
     let inside = NSBezierPath(roundedRect: rect, xRadius: radius, yRadius: radius).contains(point)
+    let moved = point != lastPointer
+    lastPointer = point
     panel.ignoresMouseEvents = !inside
-    if inside != mouseWasInside {
-      mouseWasInside = inside
-      store.setHovered(inside)
-    }
+    guard inside != mouseWasInside else { return }
+    // When the island narrows under a still pointer (for example switching from the board
+    // to the list), the island left the pointer, not the other way round. Stay open until
+    // the pointer itself moves outside.
+    if !inside && !moved && store.expanded { return }
+    mouseWasInside = inside
+    store.setHovered(inside)
   }
 
   private var islandSize: CGSize {

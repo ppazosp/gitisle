@@ -75,11 +75,13 @@ struct IslandView: View {
       let banner = metrics.bannerSize
       return CGSize(width: banner.width + 2 * metrics.ear, height: banner.height)
     case .expanded:
-      let chrome = ExpandedIsland.chromeHeight(metrics)
+      let chrome = ExpandedIsland.chromeHeight(
+        metrics, filterBar: ExpandedIsland.showsFilterBar(store))
       let board =
         store.tab == .activity && store.activityLayout == .board && !store.showingSettings
+      let width = board ? metrics.boardWidth(columns: store.sections.count) : metrics.expandedWidth
       return CGSize(
-        width: (board ? metrics.boardWidth : metrics.expandedWidth) + 2 * metrics.ear,
+        width: width + 2 * metrics.ear,
         height: min(metrics.maxExpandedHeight, chrome + contentHeight))
     }
   }
@@ -218,10 +220,16 @@ private struct ExpandedIsland: View {
   @Binding var contentHeight: CGFloat
 
   static let headerHeight: CGFloat = 54
+  static let filterBarHeight: CGFloat = 36
   static let footerHeight: CGFloat = 38
 
-  static func chromeHeight(_ metrics: IslandMetrics) -> CGFloat {
-    topInset(metrics) + headerHeight + footerHeight + 1
+  static func chromeHeight(_ metrics: IslandMetrics, filterBar: Bool) -> CGFloat {
+    topInset(metrics) + headerHeight + (filterBar ? filterBarHeight : 0) + footerHeight + 1
+  }
+
+  /// State filters belong to Activity, in both layouts.
+  static func showsFilterBar(_ store: IslandStore) -> Bool {
+    store.tab == .activity && !store.showingSettings
   }
 
   static func topInset(_ metrics: IslandMetrics) -> CGFloat {
@@ -233,6 +241,12 @@ private struct ExpandedIsland: View {
       header
         .padding(.top, Self.topInset(metrics))
         .frame(height: Self.topInset(metrics) + Self.headerHeight, alignment: .bottom)
+      if Self.showsFilterBar(store) {
+        StateFilterBar(store: store)
+          .padding(.horizontal, 28)
+          .frame(height: Self.filterBarHeight, alignment: .top)
+          .transition(.opacity)
+      }
       Rectangle().fill(Palette.hairline).frame(height: 1).padding(.horizontal, 28)
       Group {
         if store.showingSettings {
