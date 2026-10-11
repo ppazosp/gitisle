@@ -111,24 +111,6 @@ extension PullRequest {
     }
   }
 
-  /// One word for why a PR needs you, when its icons do not already say it.
-  /// Failed checks are shown by the check icon, so they need no word.
-  var reason: (text: String, color: Color)? {
-    guard group == .needsYou else { return nil }
-    let text: String
-    switch status {
-    case .failed: return nil
-    case .review: text = "Review"
-    case .changesRequested: text = "Changes"
-    case .conflicts: text = "Conflicts"
-    case .ready: text = "Ready"
-    case .behind: text = "Behind"
-    case .blocked: text = "Blocked"
-    default: text = status.label
-    }
-    return (text, status.color)
-  }
-
   /// The PR's state, with the specific reason when it needs you.
   var stateLabel: (text: String, color: Color) {
     switch group {
@@ -289,54 +271,29 @@ struct CheckRing: View {
 struct CheckBadge: View {
   let pr: PullRequest
 
-  /// Icon only: a cross if anything failed, progress while running, a check when green.
-  /// The counts stay available in the tooltip.
   var body: some View {
-    Group {
-      if let summary = pr.checkSummary {
-        Group {
-          if summary.failed > 0 {
-            GlyphView(glyph: .failFill, size: 13).foregroundStyle(Palette.failed)
-          } else if summary.pending > 0 {
-            CheckRing(summary: summary)
-          } else {
-            GlyphView(glyph: .checkFill, size: 13).foregroundStyle(Palette.open)
-          }
+    if let summary = pr.checkSummary {
+      HStack(spacing: 5) {
+        if summary.failed > 0 {
+          Text("\(summary.failed) failed").foregroundStyle(Palette.failed)
+        } else if summary.pending > 0 {
+          Text("\(summary.passed)/\(summary.total)").foregroundStyle(.secondary)
         }
-        .help("\(summary.passed) passed · \(summary.failed) failed · \(summary.pending) running")
-      } else if let checks = pr.checks {
-        switch checks {
-        case "SUCCESS": GlyphView(glyph: .checkFill, size: 13).foregroundStyle(Palette.open)
-        case "FAILURE", "ERROR":
-          GlyphView(glyph: .failFill, size: 13).foregroundStyle(Palette.failed)
-        default: Circle().fill(Palette.merging).frame(width: 7, height: 7).frame(width: 13)
+        if summary.failed == 0 && summary.pending == 0 {
+          GlyphView(glyph: .checkFill, size: 13).foregroundStyle(Palette.open)
+        } else {
+          CheckRing(summary: summary)
         }
       }
+      .font(.system(size: 10.5, weight: .medium)).monospacedDigit()
+      .help("\(summary.passed) passed · \(summary.failed) failed · \(summary.pending) running")
+    } else if let checks = pr.checks {
+      switch checks {
+      case "SUCCESS": GlyphView(glyph: .checkFill, size: 13).foregroundStyle(Palette.open)
+      case "FAILURE", "ERROR": GlyphView(glyph: .failFill, size: 13).foregroundStyle(Palette.failed)
+      default: Circle().fill(Palette.merging).frame(width: 7, height: 7).frame(width: 13)
+      }
     }
-    .accessibilityLabel(accessibilityText)
-  }
-
-  private var accessibilityText: String {
-    guard let summary = pr.checkSummary else { return "Checks \(pr.checks ?? "unknown")" }
-    return "\(summary.passed) checks passed, \(summary.failed) failed, \(summary.pending) running"
-  }
-}
-
-/// Merge-queue position as the queue icon and a number.
-struct QueueBadge: View {
-  let position: Int
-
-  var body: some View {
-    HStack(spacing: 3) {
-      GlyphView(glyph: .mergeQueue, size: 10)
-      Text(verbatim: "\(position)").monospacedDigit()
-    }
-    .font(.system(size: 10.5, weight: .semibold))
-    .foregroundStyle(Palette.merging)
-    .padding(.horizontal, 6).padding(.vertical, 2)
-    .background(Capsule().fill(Palette.merging.opacity(0.14)))
-    .help("Position \(position) in the merge queue")
-    .accessibilityLabel("Position \(position) in the merge queue")
   }
 }
 
