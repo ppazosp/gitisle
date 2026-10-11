@@ -220,24 +220,15 @@ private struct ExpandedIsland: View {
         .padding(.top, Self.topInset(metrics))
         .frame(height: Self.topInset(metrics) + Self.headerHeight, alignment: .bottom)
       Rectangle().fill(Palette.hairline).frame(height: 1).padding(.horizontal, 16)
-      ScrollView {
-        Group {
-          switch store.tab {
-          case .activity: ActivityView(store: store)
-          case .stats: StatsView(store: store)
-          }
+      Group {
+        switch store.tab {
+        case .activity: ActivityView(store: store, contentHeight: $contentHeight)
+        case .stats: StatsView(store: store, contentHeight: $contentHeight)
         }
-        .padding(.horizontal, 10).padding(.bottom, 10)
-        .onGeometryChange(for: CGFloat.self) {
-          $0.size.height
-        } action: {
-          contentHeight = $0
-        }
-        .id(store.tab)
-        .transition(.opacity.animation(.easeOut(duration: 0.16)))
       }
-      .scrollIndicators(.never)
-      .frame(maxHeight: .infinity)
+      .id(store.tab)
+      .transition(.opacity.animation(.easeOut(duration: 0.16)))
+      .frame(maxHeight: .infinity, alignment: .top)
       footer.frame(height: Self.footerHeight)
     }
   }

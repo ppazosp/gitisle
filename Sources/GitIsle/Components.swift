@@ -326,6 +326,24 @@ struct DailyBars: View {
   }
 }
 
+/// A vertically scrolling column that reports its content's natural height,
+/// so the island can grow to fit and only scroll once it reaches its maximum.
+struct MeasuredColumn<Content: View>: View {
+  @ViewBuilder let content: Content
+  let onHeight: (CGFloat) -> Void
+
+  var body: some View {
+    ScrollView {
+      content.onGeometryChange(for: CGFloat.self) {
+        $0.size.height
+      } action: {
+        onHeight($0)
+      }
+    }
+    .scrollIndicators(.never)
+  }
+}
+
 struct SectionHeader: View {
   let title: String
   var count: Int?

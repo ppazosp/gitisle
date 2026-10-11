@@ -3,28 +3,42 @@ import SwiftUI
 
 struct StatsView: View {
   let store: IslandStore
+  @Binding var contentHeight: CGFloat
 
   var body: some View {
-    VStack(spacing: 10) {
-      GitHubStatsCard(
-        stats: store.githubStats, error: store.githubStatsError, days: store.usageDays,
-        openCount: store.openPRs.count)
-      ForEach([AgentProvider.claude, .codex], id: \.self) { provider in
-        UsageCard(
-          provider: provider,
-          summary: store.usage[provider]?.first { $0.days == store.usageDays },
-          history: store.usage[provider]?.first { $0.days == 30 }?.daily ?? [],
-          days: store.usageDays, error: store.usageErrors[provider])
+    MeasuredColumn {
+      VStack(spacing: 10) {
+        // Equal-height columns: each card stretches to the tallest one.
+        HStack(alignment: .top, spacing: 10) {
+          GitHubStatsCard(
+            stats: store.githubStats, error: store.githubStatsError, days: store.usageDays,
+            openCount: store.openPRs.count)
+          ForEach([AgentProvider.claude, .codex], id: \.self) { provider in
+            UsageCard(
+              provider: provider,
+              summary: store.usage[provider]?.first { $0.days == store.usageDays },
+              history: store.usage[provider]?.first { $0.days == 30 }?.daily ?? [],
+              days: store.usageDays, error: store.usageErrors[provider])
+          }
+        }
+        .fixedSize(horizontal: false, vertical: true)
+        Text(
+          "Tokens come from local history. Costs are estimates at API prices, separate from your plan."
+        )
+        .font(.system(size: 10)).foregroundStyle(.white.opacity(0.35))
+        .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 6)
       }
-      Text(
-        "Tokens come from local history. Costs are estimates at API prices, separate from your plan."
-      )
-      .font(.system(size: 10)).foregroundStyle(.white.opacity(0.35))
-      .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 6)
+      .padding(.top, 12).padding(.horizontal, 10).padding(.bottom, 10)
+    } onHeight: {
+      contentHeight = $0
     }
-    .padding(.top, 12)
   }
 }
+
+private let metricColumns = [
+  GridItem(.flexible(), spacing: 8, alignment: .leading),
+  GridItem(.flexible(), spacing: 8, alignment: .leading),
+]
 
 private struct Card<Content: View>: View {
   let glyph: Glyph
@@ -47,7 +61,7 @@ private struct Card<Content: View>: View {
       content
     }
     .padding(14)
-    .frame(maxWidth: .infinity, alignment: .leading)
+    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Palette.surface))
   }
 }
@@ -60,7 +74,7 @@ private struct Metric: View {
   var body: some View {
     VStack(alignment: .leading, spacing: 2) {
       Text(value)
-        .font(.system(size: 20, weight: .semibold, design: .rounded)).monospacedDigit()
+        .font(.system(size: 19, weight: .semibold, design: .rounded)).monospacedDigit()
         .contentTransition(numeric.map { .numericText(value: $0) } ?? .opacity)
         .lineLimit(1).minimumScaleFactor(0.7)
       Text(label).font(.system(size: 10.5)).foregroundStyle(.white.opacity(0.45))
@@ -78,7 +92,7 @@ private struct GitHubStatsCard: View {
   var body: some View {
     Card(glyph: .github, tint: .white, title: "GitHub", badge: stats.map { "@\($0.login)" }) {
       if let stats, let window = stats.window(days: days) {
-        HStack(spacing: 8) {
+        LazyVGrid(columns: metricColumns, alignment: .leading, spacing: 10) {
           Metric(label: "Opened", value: "\(window.opened)", numeric: Double(window.opened))
           Metric(label: "Merged", value: "\(window.merged)", numeric: Double(window.merged))
           Metric(label: "Reviewed", value: "\(window.reviewed)", numeric: Double(window.reviewed))
@@ -116,7 +130,7 @@ private struct UsageCard: View {
       badgeColor: Palette.attention
     ) {
       if let summary {
-        HStack(spacing: 8) {
+        LazyVGrid(columns: metricColumns, alignment: .leading, spacing: 10) {
           Metric(
             label: "Tokens", value: Format.count(summary.tokens),
             numeric: summary.tokens.map(Double.init))
@@ -146,16 +160,19 @@ private struct UsageCard: View {
     let peak = Double(max(1, top.compactMap(\.tokens).max() ?? 1))
     return VStack(spacing: 6) {
       ForEach(top) { model in
-        HStack(spacing: 8) {
-          Text(model.name).font(.system(size: 11)).foregroundStyle(.white.opacity(0.7))
-            .lineLimit(1).frame(width: 150, alignment: .leading)
+        VStack(spacing: 4) {
+          HStack(spacing: 8) {
+            Text(model.name).font(.system(size: 11)).foregroundStyle(.white.opacity(0.7))
+              .lineLimit(1)
+            Spacer(minLength: 4)
+            Text(Format.count(model.tokens)).font(.system(size: 10.5)).monospacedDigit()
+              .foregroundStyle(.white.opacity(0.5))
+          }
           GeometryReader { proxy in
             Capsule().fill(provider.tint.opacity(0.55))
               .frame(width: max(3, proxy.size.width * Double(model.tokens ?? 0) / peak))
           }
-          .frame(height: 4)
-          Text(Format.count(model.tokens)).font(.system(size: 10.5)).monospacedDigit()
-            .foregroundStyle(.white.opacity(0.5)).frame(width: 44, alignment: .trailing)
+          .frame(height: 3)
         }
       }
     }

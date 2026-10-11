@@ -4,8 +4,33 @@ import SwiftUI
 
 struct ActivityView: View {
   let store: IslandStore
+  @Binding var contentHeight: CGFloat
+  @State private var pullRequestsHeight: CGFloat = 0
+  @State private var sessionsHeight: CGFloat = 0
 
   var body: some View {
+    HStack(alignment: .top, spacing: 0) {
+      MeasuredColumn {
+        pullRequests.padding(.horizontal, 10).padding(.bottom, 10)
+      } onHeight: {
+        pullRequestsHeight = $0
+        report()
+      }
+      .frame(maxWidth: .infinity)
+      Rectangle().fill(Palette.hairline).frame(width: 1).padding(.vertical, 12)
+      MeasuredColumn {
+        sessions.padding(.horizontal, 10).padding(.bottom, 10)
+      } onHeight: {
+        sessionsHeight = $0
+        report()
+      }
+      .frame(width: 370)
+    }
+  }
+
+  private func report() { contentHeight = max(pullRequestsHeight, sessionsHeight) }
+
+  private var pullRequests: some View {
     VStack(alignment: .leading, spacing: 0) {
       notices
       if store.github != nil && store.sections.isEmpty {
@@ -23,6 +48,12 @@ struct ActivityView: View {
             .transition(.opacity.combined(with: .move(edge: .top)))
         }
       }
+    }
+    .animation(Motion.snappy, value: store.sections)
+  }
+
+  private var sessions: some View {
+    VStack(alignment: .leading, spacing: 0) {
       SectionHeader(
         title: "Sessions", count: store.workingCount > 0 ? store.workingCount : nil,
         glyph: nil)
@@ -36,7 +67,6 @@ struct ActivityView: View {
           .transition(.opacity.combined(with: .move(edge: .top)))
       }
     }
-    .animation(Motion.snappy, value: store.sections)
     .animation(Motion.snappy, value: store.visibleSessions)
   }
 

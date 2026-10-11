@@ -26,8 +26,9 @@ struct IslandMetrics {
   var ear: CGFloat { hasNotch ? 10 : 0 }
 
   var bannerSize: CGSize { CGSize(width: max(closedWidth + 72, 400), height: closedHeight + 60) }
-  var expandedWidth: CGFloat { 540 }
-  var maxExpandedHeight: CGFloat { 600 }
+  // Wide and short: pull requests and sessions sit side by side.
+  var expandedWidth: CGFloat { 860 }
+  var maxExpandedHeight: CGFloat { 500 }
 
   func cornerRadius(for presentation: IslandStore.Presentation) -> CGFloat {
     switch presentation {
@@ -56,7 +57,7 @@ final class IslandPanel: NSPanel {
   init(store: IslandStore) {
     self.store = store
     panel = IslandPanel(
-      contentRect: NSRect(x: 0, y: 0, width: 640, height: 680),
+      contentRect: NSRect(x: 0, y: 0, width: 960, height: 600),
       styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
     panel.isFloatingPanel = true
     panel.becomesKeyOnlyIfNeeded = true
