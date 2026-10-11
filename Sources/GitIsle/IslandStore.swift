@@ -7,21 +7,45 @@ import UserNotifications
 @MainActor @Observable
 final class IslandStore {
   var settings: AppSettings
-  var github: GitHubSnapshot?
+  private(set) var github: GitHubSnapshot?
   var githubError: String?
   var githubRefreshing = false
-  var agents: [AgentSession] = []
+  var githubStats: GitHubStats?
+  var githubStatsError: String?
+  private(set) var agents: [AgentSession] = []
   var usage: [AgentProvider: [UsageSummary]] = [:]
   var usageErrors: [AgentProvider: String] = [:]
   var usageRefreshing = false
   var events: [IslandEvent] = []
   var recentEvent: IslandEvent?
-  var expanded = false
-  var tab: IslandTab = .github
+  /// Other changes that arrived with `recentEvent`.
+  var recentEventExtra = 0
+  var expanded = false {
+    didSet {
+      // Expanding shows the full context, so a pending banner has done its job.
+      if expanded, recentEvent != nil {
+        notificationTask?.cancel()
+        recentEvent = nil
+      }
+    }
+  }
+  var tab: IslandTab = .activity
+  var activityWindow: ActivityWindow = .all {
+    didSet { if activityWindow != oldValue { regroup() } }
+  }
   var usageDays = 1
   var hovered = false
   var persistenceError: String?
   var isDemo: Bool
+
+  // Derived once per GitHub snapshot so rendering never re-filters the PR list.
+  private(set) var openPRs: [PullRequest] = []
+  private(set) var attention: [PullRequest] = []
+  private(set) var merging: [PullRequest] = []
+  private(set) var sections: [PRSection] = []
+
+  /// The island's laid-out size, reported by the view and used for pointer hit-testing.
+  @ObservationIgnored var islandSize: CGSize = .zero
 
   @ObservationIgnored private let githubService = GitHubService()
   @ObservationIgnored private let agentReader = AgentLogReader()
@@ -31,10 +55,21 @@ final class IslandStore {
   @ObservationIgnored private var notificationTask: Task<Void, Never>?
   @ObservationIgnored private var lastGitHubRefresh = Date.distantPast
   @ObservationIgnored private var lastUsageRefresh = Date.distantPast
+  @ObservationIgnored private var lastStatsRefresh = Date.distantPast
+  @ObservationIgnored private var statsRefreshing = false
 
   enum IslandTab: String, CaseIterable {
-    case github = "GitHub"
-    case agents = "Agents"
+    case activity = "Activity"
+    case stats = "Stats"
+  }
+
+  enum Presentation: Equatable {
+    case compact, banner, expanded
+  }
+
+  var presentation: Presentation {
+    if expanded { return .expanded }
+    return recentEvent == nil ? .compact : .banner
   }
 
   init(demo: Bool = false) {
@@ -54,11 +89,37 @@ final class IslandStore {
         events = (try? JSONDecoder().decode([IslandEvent].self, from: data)) ?? []
       }
     } catch { persistenceError = error.localizedDescription }
+    regroup()
   }
 
-  var openPRs: [PullRequest] { (github?.pullRequests ?? []).filter { $0.state == "OPEN" } }
-  var attention: [PullRequest] { openPRs.filter { $0.status.needsAttention } }
-  var workingCount: Int { agents.filter(\.isActive).count }
+  private func setGitHub(_ snapshot: GitHubSnapshot?) {
+    github = snapshot
+    regroup()
+  }
+
+  private func regroup() {
+    let all = github?.pullRequests ?? []
+    let open = all.filter { $0.state == "OPEN" }
+    openPRs = open
+    attention = open.filter { $0.group == .needsYou }
+    merging = open.filter(\.isMerging).sorted {
+      ($0.queuePosition ?? .max, $1.updatedAt) < ($1.queuePosition ?? .max, $0.updatedAt)
+    }
+    let fresh = PRGrouping.sections(all, window: activityWindow)
+    if fresh != sections { sections = fresh }
+  }
+
+  var workingCount: Int { agents.count(where: \.isActive) }
+  var workingProviders: [AgentProvider] {
+    AgentProvider.allCases.filter { provider in
+      agents.contains { $0.provider == provider && $0.isActive }
+    }
+  }
+  /// Active sessions first, then a few recently finished ones for context.
+  var visibleSessions: [AgentSession] {
+    let active = agents.filter(\.isActive)
+    return active + agents.filter { !$0.isActive }.prefix(max(0, 6 - active.count))
+  }
   var cached: Bool {
     githubError != nil
       || (github.map { Date().timeIntervalSince($0.fetchedAt) > settings.githubRefreshSeconds * 2 }
@@ -93,6 +154,14 @@ final class IslandStore {
           do { try await Task.sleep(for: .seconds(10)) } catch { return }
         }
       })
+    loops.append(
+      Task { [weak self] in
+        while !Task.isCancelled {
+          guard let self else { return }
+          if Date().timeIntervalSince(lastStatsRefresh) > 600 { await refreshStats() }
+          do { try await Task.sleep(for: .seconds(30)) } catch { return }
+        }
+      })
   }
 
   func stop() {
@@ -108,7 +177,21 @@ final class IslandStore {
       codexHome: URL(fileURLWithPath: NSString(string: paths.0).expandingTildeInPath),
       claudeHome: URL(fileURLWithPath: NSString(string: paths.1).expandingTildeInPath))
     guard settings.codexHome == paths.0, settings.claudeHome == paths.1 else { return }
-    agents = fresh
+    // Polling runs every 2 seconds; only publish real changes so the island does not re-render.
+    if fresh != agents { agents = fresh }
+  }
+
+  func refreshStats() async {
+    guard !isDemo, !statsRefreshing else { return }
+    statsRefreshing = true
+    defer {
+      statsRefreshing = false
+      lastStatsRefresh = Date()
+    }
+    do {
+      githubStats = try await githubService.stats()
+      githubStatsError = nil
+    } catch { githubStatsError = error.localizedDescription }
   }
 
   func refreshGitHub() async {
@@ -133,10 +216,12 @@ final class IslandStore {
       try JSONEncoder().encode(newEvents).write(to: AppFiles.events, options: .atomic)
       try JSONEncoder().encode(fresh).write(to: AppFiles.snapshot, options: .atomic)
       events = newEvents
-      github = fresh
+      setGitHub(fresh)
       githubError = nil
-      if let latest = changes.first { showEvent(latest) }
-      for event in changes { notify(event) }
+      if let latest = changes.min(by: { $0.kind.bannerPriority < $1.kind.bannerPriority }) {
+        showEvent(latest, extra: changes.count - 1)
+      }
+      for event in changes where event.notifiesSystem { notify(event) }
     } catch { githubError = error.localizedDescription }
   }
 
@@ -181,6 +266,7 @@ final class IslandStore {
       persistenceError = nil
       lastGitHubRefresh = .distantPast
       lastUsageRefresh = .distantPast
+      lastStatsRefresh = .distantPast
     } catch { persistenceError = error.localizedDescription }
   }
 
@@ -201,11 +287,16 @@ final class IslandStore {
     expanded = false
   }
 
-  func showEvent(_ event: IslandEvent) {
+  func showEvent(_ event: IslandEvent, extra: Int = 0) {
     recentEvent = event
+    recentEventExtra = extra
     notificationTask?.cancel()
     notificationTask = Task { [weak self] in
-      do { try await Task.sleep(for: .seconds(5)) } catch { return }
+      do {
+        try await Task.sleep(for: .seconds(5))
+        // Keep the banner while the pointer rests on it.
+        while self?.hovered == true { try await Task.sleep(for: .seconds(0.5)) }
+      } catch { return }
       self?.recentEvent = nil
     }
   }
@@ -233,43 +324,98 @@ final class IslandStore {
 
   private func loadDemo() {
     let now = Date()
+    let link = URL(string: "https://github.com/ppazosp/gitisle")!
+    let hour = 3600.0
     let prs = [
       PullRequest(
         id: "demo1", number: 428, repository: "example/app", title: "Improve sandbox startup",
-        url: URL(string: "https://github.com/ppazosp/gitisle")!, reviewRequested: true,
-        checks: "SUCCESS"),
+        url: link, reviewRequested: true, checks: "SUCCESS",
+        checkSummary: CheckSummary(passed: 6, failed: 0, pending: 0),
+        updatedAt: now.addingTimeInterval(-0.4 * hour), author: "teammate"),
       PullRequest(
         id: "demo2", number: 431, repository: "example/app", title: "Add project shortcuts",
-        url: URL(string: "https://github.com/ppazosp/gitisle")!, checks: "FAILURE"),
+        url: link, checks: "FAILURE", checkSummary: CheckSummary(passed: 4, failed: 1, pending: 0),
+        updatedAt: now.addingTimeInterval(-1.2 * hour), author: "example"),
       PullRequest(
         id: "demo3", number: 433, repository: "example/tools", title: "Cache workspace metadata",
-        url: URL(string: "https://github.com/ppazosp/gitisle")!, checks: "PENDING", autoMerge: true),
+        url: link, checks: "PENDING", checkSummary: CheckSummary(passed: 3, failed: 0, pending: 2),
+        autoMerge: true, queuePosition: 2, updatedAt: now.addingTimeInterval(-0.1 * hour),
+        author: "example"),
+      PullRequest(
+        id: "demo4", number: 436, repository: "example/app", title: "Polish the island animations",
+        url: link, reviewDecision: "REVIEW_REQUIRED", mergeStateStatus: "BLOCKED",
+        checks: "PENDING", checkSummary: CheckSummary(passed: 2, failed: 0, pending: 3),
+        updatedAt: now.addingTimeInterval(-2 * hour), author: "example"),
+      PullRequest(
+        id: "demo5", number: 437, repository: "example/tools", title: "Sketch the stats view",
+        url: link, isDraft: true, checks: "SUCCESS",
+        checkSummary: CheckSummary(passed: 5, failed: 0, pending: 0),
+        updatedAt: now.addingTimeInterval(-26 * hour), author: "example"),
+      PullRequest(
+        id: "demo6", number: 425, repository: "example/app", title: "Native GitHub island",
+        url: link, state: "MERGED", checks: "SUCCESS",
+        checkSummary: CheckSummary(passed: 6, failed: 0, pending: 0),
+        updatedAt: now.addingTimeInterval(-3 * hour), mergedAt: now.addingTimeInterval(-3 * hour),
+        author: "example"),
     ]
-    github = GitHubSnapshot(login: "example", pullRequests: prs)
+    setGitHub(GitHubSnapshot(login: "example", pullRequests: prs))
     agents = [
       AgentSession(
-        id: "demo-codex", provider: .codex, source: "Codex desktop", directory: "/example/app",
-        branch: "feat/startup", model: "GPT-6", phase: .working, activity: "Running checks",
-        updatedAt: now),
+        id: "demo-claude", provider: .claude, source: "Claude Code", directory: "/example/app",
+        branch: "feat/island-motion", model: "claude-opus-5-5", phase: .working,
+        activity: "Using Edit", updatedAt: now.addingTimeInterval(-20),
+        title: "Island animations and live banners"),
       AgentSession(
-        id: "demo-claude", provider: .claude, source: "Claude Code", directory: "/example/tools",
-        branch: "feat/cache", model: "Sonnet", phase: .finished, activity: "Turn completed",
-        updatedAt: now),
+        id: "demo-codex", provider: .codex, source: "Codex desktop", directory: "/example/tools",
+        branch: "feat/cache", model: "gpt-6", phase: .waiting, activity: "Approval requested",
+        updatedAt: now.addingTimeInterval(-75), title: "Cache workspace metadata"),
+      AgentSession(
+        id: "demo-codex-2", provider: .codex, source: "Codex CLI", directory: "/example/app",
+        branch: "main", model: "gpt-6", phase: .finished, activity: "Task completed",
+        updatedAt: now.addingTimeInterval(-1400), title: "Investigate flaky startup test"),
     ]
-    for provider in AgentProvider.allCases {
-      var summaries: [UsageSummary] = []
-      for days: Int in [1, 7, 30] {
-        let tokens = 760_000 * days
-        let cost = 4.21 * Double(days)
-        let model = UsageModel(
-          name: provider == .codex ? "GPT-6" : "Sonnet", tokens: tokens, estimatedCost: cost)
-        let summary = UsageSummary(
-          provider: provider, days: days, tokens: 760_000 * days, inputTokens: 650_000 * days,
-          outputTokens: 110_000 * days, cachedTokens: 420_000 * days, cacheCreationTokens: 0,
-          estimatedCost: cost, models: [model], partial: false, updatedAt: now)
-        summaries.append(summary)
+    let calendar = Calendar.current
+    let formatter = DateFormatter()
+    formatter.dateFormat = "yyyy-MM-dd"
+    func series(_ seed: Double) -> [DailyValue] {
+      (0..<30).reversed().map { offset in
+        let day = calendar.date(byAdding: .day, value: -offset, to: now)!
+        let wave = (sin(Double(offset) * 0.9 + seed) + 1.2) * (offset % 7 > 4 ? 0.3 : 1)
+        return DailyValue(day: formatter.string(from: day), value: (wave * 900_000).rounded())
       }
-      usage[provider] = summaries
     }
+    for provider in AgentProvider.allCases {
+      let daily = series(provider == .codex ? 0.4 : 2.1)
+      usage[provider] = [1, 7, 30].map { days in
+        let window = Array(daily.suffix(days))
+        let tokens = Int(window.reduce(0) { $0 + $1.value })
+        let cost = Double(tokens) / 1_000_000 * (provider == .codex ? 4.1 : 6.3)
+        let models =
+          provider == .codex
+          ? [
+            UsageModel(name: "gpt-6", tokens: tokens * 7 / 10, estimatedCost: cost * 0.8),
+            UsageModel(name: "gpt-6-mini", tokens: tokens * 3 / 10, estimatedCost: cost * 0.2),
+          ]
+          : [
+            UsageModel(
+              name: "claude-opus-5-5", tokens: tokens * 6 / 10, estimatedCost: cost * 0.75),
+            UsageModel(
+              name: "claude-sonnet-5-5", tokens: tokens * 4 / 10, estimatedCost: cost * 0.25),
+          ]
+        return UsageSummary(
+          provider: provider, days: days, tokens: tokens, inputTokens: tokens * 85 / 100,
+          outputTokens: tokens * 15 / 100, cachedTokens: tokens * 55 / 100,
+          cacheCreationTokens: tokens / 20, estimatedCost: cost, models: models, daily: window,
+          partial: false, updatedAt: now)
+      }
+    }
+    githubStats = GitHubStats(
+      login: "example",
+      windows: [
+        .init(days: 1, opened: 3, merged: 2, reviewed: 1),
+        .init(days: 7, opened: 14, merged: 11, reviewed: 6),
+        .init(days: 30, opened: 52, merged: 44, reviewed: 23),
+      ],
+      daily: series(4.2).map { DailyValue(day: $0.day, value: ($0.value / 120_000).rounded()) })
   }
 }

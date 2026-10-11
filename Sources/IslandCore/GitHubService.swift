@@ -5,8 +5,14 @@ public actor GitHubService {
     fragment PRFields on PullRequest {
       id number title url state isDraft updatedAt mergedAt mergeable mergeStateStatus reviewDecision
       headRefOid autoMergeRequest { enabledAt } mergeQueueEntry { position }
-      repository { nameWithOwner }
-      commits(last: 1) { nodes { commit { statusCheckRollup { state } } } }
+      repository { nameWithOwner } author { login }
+      commits(last: 1) { nodes { commit { statusCheckRollup {
+        state
+        contexts(first: 0) {
+          checkRunCountsByState { state count }
+          statusContextCountsByState { state count }
+        }
+      } } } }
     }
     """
 
@@ -147,16 +153,89 @@ public actor GitHubService {
     let commits = (row["commits"] as? [String: Any])?["nodes"] as? [[String: Any]]
     let commit = commits?.last?["commit"] as? [String: Any]
     let rollup = commit?["statusCheckRollup"] as? [String: Any]
+    let contexts = rollup?["contexts"] as? [String: Any]
+    let counts = ["checkRunCountsByState", "statusContextCountsByState"].flatMap { key in
+      (contexts?[key] as? [[String: Any]] ?? []).compactMap { entry -> (String, Int)? in
+        guard let state = entry["state"] as? String, let count = entry["count"] as? Int else {
+          return nil
+        }
+        return (state, count)
+      }
+    }
+    let summary = CheckSummary(counts: counts)
     let queue = row["mergeQueueEntry"] as? [String: Any]
     return PullRequest(
       id: id, number: number, repository: repo, title: title, url: url, state: state,
       isDraft: row["isDraft"] as? Bool ?? false, reviewDecision: row["reviewDecision"] as? String,
       mergeable: row["mergeable"] as? String ?? "UNKNOWN",
       mergeStateStatus: row["mergeStateStatus"] as? String ?? "UNKNOWN",
-      checks: rollup?["state"] as? String, headOID: row["headRefOid"] as? String ?? "",
+      checks: rollup?["state"] as? String, checkSummary: summary.total > 0 ? summary : nil,
+      headOID: row["headRefOid"] as? String ?? "",
       autoMerge: row["autoMergeRequest"] is [String: Any],
       queuePosition: queue?["position"] as? Int,
-      updatedAt: updatedAt, mergedAt: (row["mergedAt"] as? String).flatMap(Dates.parse))
+      updatedAt: updatedAt, mergedAt: (row["mergedAt"] as? String).flatMap(Dates.parse),
+      author: (row["author"] as? [String: Any])?["login"] as? String)
+  }
+
+  /// Personal PR counts for today, 7 days, and 30 days, plus daily contributions.
+  /// Search counts include organizations that the contribution graph may hide.
+  public func stats(now: Date = Date(), calendar: Calendar = .current) async throws -> GitHubStats {
+    let windows = [1, 7, 30]
+    var variables: [String: Any] = [:]
+    var fields: [String] = []
+    var declarations = ["$from: DateTime!", "$to: DateTime!"]
+    let today = calendar.startOfDay(for: now)
+    for days in windows {
+      let start = calendar.date(byAdding: .day, value: -(days - 1), to: today)!
+      let since = start.formatted(.iso8601)
+      let searches = [
+        ("opened", "is:pr author:@me created:>=\(since)"),
+        ("merged", "is:pr author:@me is:merged merged:>=\(since)"),
+        ("reviewed", "is:pr reviewed-by:@me -author:@me updated:>=\(since)"),
+      ]
+      for (name, search) in searches {
+        let key = "\(name)\(days)"
+        variables[key] = search
+        declarations.append("$\(key): String!")
+        fields.append("\(key): search(query: $\(key), type: ISSUE, first: 0) { issueCount }")
+      }
+    }
+    let first = calendar.date(byAdding: .day, value: -29, to: today)!
+    variables["from"] = first.formatted(.iso8601)
+    variables["to"] = now.formatted(.iso8601)
+    let query = """
+      query(\(declarations.joined(separator: ", "))) {
+        viewer { login contributionsCollection(from: $from, to: $to) {
+          contributionCalendar { weeks { contributionDays { date contributionCount } } }
+        } }
+        \(fields.joined(separator: "\n  "))
+      }
+      """
+    let response = try await request(query: query, variables: variables)
+    guard let data = response["data"] as? [String: Any],
+      let viewer = data["viewer"] as? [String: Any], let login = viewer["login"] as? String
+    else { throw ProcessFailure.failed("GitHub returned incomplete statistics.") }
+    func count(_ key: String) throws -> Int {
+      guard let value = (data[key] as? [String: Any])?["issueCount"] as? Int else {
+        throw ProcessFailure.failed("GitHub returned incomplete statistics.")
+      }
+      return value
+    }
+    let results = try windows.map { days in
+      GitHubStats.Window(
+        days: days, opened: try count("opened\(days)"), merged: try count("merged\(days)"),
+        reviewed: try count("reviewed\(days)"))
+    }
+    let collection = viewer["contributionsCollection"] as? [String: Any]
+    let weeks =
+      (collection?["contributionCalendar"] as? [String: Any])?["weeks"] as? [[String: Any]] ?? []
+    let daily = weeks.flatMap { $0["contributionDays"] as? [[String: Any]] ?? [] }
+      .compactMap { day -> DailyValue? in
+        guard let date = day["date"] as? String, let count = day["contributionCount"] as? Int
+        else { return nil }
+        return DailyValue(day: date, value: Double(count))
+      }
+    return GitHubStats(login: login, windows: results, daily: daily, fetchedAt: now)
   }
 }
 

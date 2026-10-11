@@ -1,7 +1,8 @@
 # Architecture
 
-GitHub is the default view. Agent activity and statistics share a second tab.
-The island window never starts an agent or performs a GitHub write.
+Activity is the default view: PRs grouped by state, then local agent sessions.
+Statistics have their own tab. The island window never starts an agent or
+performs a GitHub write.
 
 ```mermaid
 flowchart LR
@@ -16,8 +17,8 @@ flowchart LR
   U --> B[Open PR in browser]
 ```
 
-`IslandCore` owns normalized PRs, activity records, GitHub queries, bounded
-subprocess execution, and event comparisons. Its tests use local fixtures.
+`IslandCore` owns normalized PRs, PR grouping and time windows, activity
+records, GitHub queries, bounded subprocess execution, and event comparisons. Its tests use local fixtures.
 `GitIsle` owns the usage-library adapter, UI, settings, cache, and notifications.
 
 Each collector runs independently. GitHub queries have a process deadline and
@@ -34,6 +35,13 @@ Codex desktop and CLI share the same history directory. Activity uses each
 thread's identity rather than assigning one desktop process to one thread.
 Claude subagent files do not replace the state of their parent session.
 The usage scanner handles provider accounting, caches, and fork history.
+
+The island has three presentations: compact, a temporary event banner, and
+expanded. One shape morphs between them with a spring; content fades in after
+the shape starts growing and leaves before it shrinks. The expanded height
+follows the measured content, and that measured size is also the hit-test area.
+The store derives PR sections once per snapshot and publishes agent sessions
+only when they change, so polling does not redraw the island.
 
 The window targets a selected display. It uses a non-activating panel so hover
 does not take keyboard focus. Mouse handling follows the visible island shape;

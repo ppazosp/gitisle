@@ -7,6 +7,7 @@ public actor AgentLogReader {
     var session: AgentSession
   }
   private var cache: [String: Cached] = [:]
+  private var codexIndex: (modified: Date, size: Int, titles: [String: String])?
 
   public init() {}
 
@@ -59,11 +60,46 @@ public actor AgentLogReader {
       }
     }
     cache = cache.filter { seen.contains($0.key) }
+    let titles = codexTitles(codexHome: codexHome)
+    for index in found.indices where found[index].provider == .codex {
+      let thread = String(found[index].id.dropFirst("codex:".count))
+      if let title = titles[thread] { found[index].title = title }
+    }
     let grouped = Dictionary(grouping: found, by: \.id)
     return grouped.values.compactMap { $0.max(by: { $0.updatedAt < $1.updatedAt }) }
       .sorted { lhs, rhs in
         lhs.isActive != rhs.isActive ? lhs.isActive : lhs.updatedAt > rhs.updatedAt
       }
+  }
+
+  /// Codex keeps thread names in an append-only index; the last entry for a thread wins.
+  private func codexTitles(codexHome: URL) -> [String: String] {
+    let file = codexHome.appendingPathComponent("session_index.jsonl")
+    guard
+      let attributes = try? file.resourceValues(forKeys: [
+        .contentModificationDateKey, .fileSizeKey,
+      ]),
+      let modified = attributes.contentModificationDate
+    else { return [:] }
+    let size = attributes.fileSize ?? 0
+    if let codexIndex, codexIndex.modified == modified, codexIndex.size == size {
+      return codexIndex.titles
+    }
+    let titles = (try? Data(contentsOf: file)).map(Self.parseCodexIndex) ?? [:]
+    codexIndex = (modified, size, titles)
+    return titles
+  }
+
+  public static func parseCodexIndex(_ data: Data) -> [String: String] {
+    var titles: [String: String] = [:]
+    for line in data.split(separator: 10) {
+      guard let row = (try? JSONSerialization.jsonObject(with: Data(line))) as? [String: Any],
+        let id = row["id"] as? String, let name = row["thread_name"] as? String
+      else { continue }
+      let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+      if !trimmed.isEmpty { titles[id] = trimmed }
+    }
+    return titles
   }
 
   private static func read(file: URL, provider: AgentProvider, modified: Date) -> AgentSession? {
@@ -95,13 +131,29 @@ public actor AgentLogReader {
     var phase: ActivityPhase = .unknown
     var activity = "Recent session"
     var timestamp = modified
+    // Claude records several title kinds; a title the person chose outranks generated ones.
+    var titles: [String: String] = [:]
+    let titleKeys = [
+      ("custom-title", "customTitle"), ("agent-name", "agentName"), ("ai-title", "aiTitle"),
+      ("summary", "summary"),
+    ]
+    func readTitle(_ row: [String: Any]) {
+      guard provider == .claude, let type = row["type"] as? String,
+        let key = titleKeys.first(where: { $0.0 == type })?.1,
+        let value = (row[key] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines),
+        !value.isEmpty
+      else { return }
+      titles[type] = value
+    }
     func rows(_ data: Data, maximum: Int = .max) -> [[String: Any]] {
       data.split(separator: 10).prefix(maximum).compactMap { line in
         (try? JSONSerialization.jsonObject(with: Data(line))) as? [String: Any]
       }
     }
     // Never retain prompts, code, command arguments, or transcript content in the app model.
+    // Session titles are short summaries that the agent already shows in its own UI.
     for row in rows(head, maximum: 8) {
+      readTitle(row)
       if provider == .codex, row["type"] as? String == "session_meta",
         let payload = row["payload"] as? [String: Any]
       {
@@ -121,6 +173,7 @@ public actor AgentLogReader {
       }
     }
     for row in rows(tail) {
+      readTitle(row)
       let type = row["type"] as? String ?? ""
       let payload = row["payload"] as? [String: Any] ?? [:]
       if provider == .codex {
@@ -183,6 +236,7 @@ public actor AgentLogReader {
     guard !directory.isEmpty else { return nil }
     return AgentSession(
       id: "\(provider.rawValue):\(id)", provider: provider, source: source, directory: directory,
-      branch: branch, model: model, phase: phase, activity: activity, updatedAt: timestamp)
+      branch: branch, model: model, phase: phase, activity: activity, updatedAt: timestamp,
+      title: titleKeys.lazy.compactMap { titles[$0.0] }.first)
   }
 }

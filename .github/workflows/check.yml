@@ -24,8 +24,9 @@ jobs:
         run: python3 scripts/monitored.py package bash scripts/build-app.sh
       - name: Render native previews
         run: |
-          python3 scripts/monitored.py github-preview dist/GitIsle.app/Contents/MacOS/GitIsle --snapshot .artifacts/github.png
-          python3 scripts/monitored.py agents-preview dist/GitIsle.app/Contents/MacOS/GitIsle --snapshot .artifacts/agents.png --agents
+          python3 scripts/monitored.py activity-preview dist/GitIsle.app/Contents/MacOS/GitIsle --snapshot .artifacts/activity.png
+          python3 scripts/monitored.py stats-preview dist/GitIsle.app/Contents/MacOS/GitIsle --snapshot .artifacts/stats.png --stats
+          python3 scripts/monitored.py banner-preview dist/GitIsle.app/Contents/MacOS/GitIsle --snapshot .artifacts/banner.png --banner
       - uses: actions/upload-artifact@v4
         if: always()
         with:

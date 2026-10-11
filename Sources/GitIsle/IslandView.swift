@@ -5,338 +5,332 @@ import SwiftUI
 struct IslandView: View {
   @Bindable var store: IslandStore
   let metrics: IslandMetrics
+  @State private var contentHeight: CGFloat = 220
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
   var body: some View {
-    VStack(spacing: 0) {
-      VStack(spacing: 0) {
-        if store.expanded { expandedContent } else { compactContent }
+    let presentation = store.presentation
+    let size = size(for: presentation)
+    let shape = IslandShape(ear: metrics.ear, radius: metrics.cornerRadius(for: presentation))
+    ZStack(alignment: .top) {
+      if presentation == .expanded {
+        ExpandedIsland(store: store, metrics: metrics, contentHeight: $contentHeight)
+          .transition(.islandContent)
+      } else {
+        VStack(spacing: 0) {
+          CompactBar(store: store, metrics: metrics)
+          if presentation == .banner, let event = store.recentEvent {
+            EventBanner(event: event, extra: store.recentEventExtra)
+              .transition(.islandContent)
+          }
+        }
+        .transition(.islandContent)
       }
-      .frame(
-        width: store.expanded ? 460 : metrics.closedWidth,
-        height: store.expanded ? metrics.expandedHeight(for: store) : metrics.closedHeight,
-        alignment: .top
-      )
-      .background(.black)
-      .clipShape(RoundedRectangle(cornerRadius: store.expanded ? 26 : 20, style: .continuous))
-      .shadow(color: .black.opacity(0.2), radius: 14, y: 8)
-      .foregroundStyle(.white)
-      .preferredColorScheme(.dark)
-      .animation(reduceMotion ? nil : .snappy(duration: 0.23), value: store.expanded)
-      .padding(.top, metrics.topGap)
-      Spacer(minLength: 0)
     }
+    .padding(.horizontal, metrics.ear)
+    .frame(width: size.width, height: size.height, alignment: .top)
+    .background(.black)
+    .clipShape(shape)
+    .background {
+      shape.fill(.black)
+        .shadow(color: .black.opacity(presentation == .compact ? 0 : 0.45), radius: 18, y: 10)
+    }
+    .contentShape(shape)
+    .foregroundStyle(.white)
+    .environment(\.colorScheme, .dark)
+    .onGeometryChange(for: CGSize.self) {
+      $0.size
+    } action: {
+      store.islandSize = $0
+    }
+    .animation(reduceMotion ? .easeInOut(duration: 0.15) : Motion.morph, value: presentation)
+    .animation(reduceMotion ? nil : Motion.morph, value: contentHeight)
+    .padding(.top, metrics.topGap)
     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
   }
 
-  private var compactContent: some View {
+  private func size(for presentation: IslandStore.Presentation) -> CGSize {
+    switch presentation {
+    case .compact:
+      return CGSize(width: metrics.closedWidth + 2 * metrics.ear, height: metrics.closedHeight)
+    case .banner:
+      let banner = metrics.bannerSize
+      return CGSize(width: banner.width + 2 * metrics.ear, height: banner.height)
+    case .expanded:
+      let chrome = ExpandedIsland.chromeHeight(metrics)
+      return CGSize(
+        width: metrics.expandedWidth + 2 * metrics.ear,
+        height: min(metrics.maxExpandedHeight, chrome + contentHeight))
+    }
+  }
+}
+
+// MARK: - Compact
+
+private struct CompactBar: View {
+  let store: IslandStore
+  let metrics: IslandMetrics
+
+  var body: some View {
     Button {
       store.expanded = true
     } label: {
-      HStack(spacing: 8) {
-        Image(systemName: store.recentEvent == nil ? "arrow.triangle.pull" : "arrow.triangle.merge")
-          .foregroundStyle(store.recentEvent?.kind == .merged ? .purple : .white)
-        Text(
-          store.recentEvent.map { $0.kind == .merged ? "Merged" : $0.kind.label }
-            ?? (store.githubError != nil
-              ? "Offline"
-              : store.github == nil ? "Connecting" : "\(store.attention.count) need you")
-        )
-        .font(.system(size: 11, weight: .medium)).lineLimit(1)
+      HStack(spacing: 7) {
+        leading
         if metrics.hasNotch {
-          Spacer().frame(width: metrics.notchWidth)
+          Spacer(minLength: metrics.notchWidth)
         } else {
-          Spacer(minLength: 8)
+          Spacer(minLength: 10)
         }
-        Circle().fill(store.workingCount > 0 ? Color.green : Color.secondary).frame(
-          width: 5, height: 5)
-        Text(
-          store.workingCount > 0 ? "\(store.workingCount) working" : "\(store.openPRs.count) PRs"
-        )
-        .font(.system(size: 11)).foregroundStyle(.secondary).monospacedDigit()
+        trailing
       }
-      .padding(.horizontal, 12).frame(maxWidth: .infinity, minHeight: metrics.closedHeight)
+      .font(.system(size: 12, weight: .medium))
+      .monospacedDigit()
+      .lineLimit(1)
+      .padding(.horizontal, metrics.hasNotch ? 10 : 14)
+      .frame(maxWidth: .infinity, minHeight: metrics.closedHeight, maxHeight: metrics.closedHeight)
       .contentShape(Rectangle())
     }
     .buttonStyle(.plain)
-    .accessibilityLabel(
-      "GitIsle: \(store.attention.count) pull requests need attention. Expand island.")
+    .accessibilityLabel(accessibilityText)
+    .accessibilityHint("Expands the island")
   }
 
-  private var expandedContent: some View {
-    VStack(alignment: .leading, spacing: 0) {
-      HStack {
-        Text("GitIsle").font(.system(size: 12, weight: .medium)).foregroundStyle(.secondary)
-        Spacer()
-        SettingsLink { Image(systemName: "gearshape").frame(width: 32, height: 28) }.buttonStyle(
-          .plain
-        )
-        .accessibilityLabel("GitIsle settings")
-        Button {
-          store.dismiss()
-        } label: {
-          Image(systemName: "minus").frame(width: 32, height: 28)
+  @ViewBuilder private var leading: some View {
+    if store.githubError != nil && store.github == nil {
+      GlyphView(glyph: .sync, size: 13).foregroundStyle(Palette.attention)
+      Text("Offline").foregroundStyle(.secondary)
+    } else if store.github == nil {
+      GlyphView(glyph: .github, size: 14).foregroundStyle(.secondary)
+      Text("Connecting").foregroundStyle(.secondary)
+    } else if let first = store.merging.first {
+      GlyphView(glyph: .mergeQueue, size: 14).foregroundStyle(Palette.merging)
+        .phaseAnimator([1.0, 0.45]) { glyph, opacity in
+          glyph.opacity(opacity)
+        } animation: { _ in
+          .easeInOut(duration: 1.1)
         }
-        .buttonStyle(.plain).accessibilityLabel("Collapse island")
-      }
-      .padding(.top, metrics.hasNotch ? metrics.notchHeight + 4 : 12)
-      HStack(spacing: 22) {
-        ForEach(IslandStore.IslandTab.allCases, id: \.self) { tab in
-          Button {
-            store.tab = tab
-          } label: {
-            HStack(spacing: 6) {
-              Text(tab.rawValue).font(.system(size: 13, weight: .medium))
-              Text("\(tab == .github ? store.openPRs.count : store.workingCount)").font(
-                .system(size: 11)
-              ).foregroundStyle(.secondary)
-            }
-            .padding(.vertical, 10)
-            .foregroundStyle(store.tab == tab ? .white : .gray)
-            .overlay(alignment: .bottom) {
-              if store.tab == tab { Rectangle().fill(.white).frame(height: 1) }
-            }
-          }.buttonStyle(.plain).accessibilityAddTraits(store.tab == tab ? .isSelected : [])
-        }
-        Spacer()
-        if store.githubRefreshing || store.usageRefreshing { ProgressView().controlSize(.mini) }
-      }
-      Divider().overlay(.white.opacity(0.12))
-      ScrollView {
-        if store.tab == .github { githubContent } else { agentsContent }
-      }
-      .scrollIndicators(.hidden)
-      .frame(maxHeight: .infinity)
-      Divider().overlay(.white.opacity(0.12))
-      HStack {
-        if store.isDemo {
-          Text("Example data")
-        } else if let github = store.github {
-          Text(
-            store.cached
-              ? "Cached · \(github.fetchedAt.formatted(.relative(presentation: .named)))"
-              : "Updated \(github.fetchedAt.formatted(.relative(presentation: .named)))")
-        } else {
-          Text("Waiting for GitHub")
-        }
-        Spacer()
-        Button("Refresh") {
-          Task {
-            await store.refreshGitHub()
-            await store.refreshUsage()
-          }
-        }
-        .buttonStyle(.plain).disabled(
-          store.githubRefreshing || store.usageRefreshing || store.isDemo)
-      }.font(.system(size: 11)).foregroundStyle(.secondary).padding(.vertical, 12)
-    }
-    .padding(.horizontal, 20)
-  }
-
-  private var githubContent: some View {
-    VStack(alignment: .leading, spacing: 4) {
-      if let error = store.githubError {
-        Text(error).font(.system(size: 11)).foregroundStyle(.orange).textSelection(.enabled)
-          .padding(.vertical, 10)
-      }
-      if store.github?.isLimited == true {
-        Text(
-          "Showing the first 100 PRs in each group. Narrow the watched repositories in Settings."
-        )
-        .font(.system(size: 11)).foregroundStyle(.orange).padding(.top, 8)
-      }
-      if store.github != nil && store.openPRs.isEmpty {
-        Label("You're all caught up", systemImage: "checkmark.circle")
-          .font(.system(size: 14)).foregroundStyle(.secondary).padding(.vertical, 30)
-      }
-      if !store.attention.isEmpty {
-        sectionLabel("Needs your attention")
-        ForEach(store.attention) { PRRow(pr: $0) }
-      }
-      let progressing = store.openPRs.filter { !$0.status.needsAttention }
-      if !progressing.isEmpty {
-        sectionLabel("In progress")
-        ForEach(progressing) { PRRow(pr: $0) }
-      }
-      let merged = (store.github?.pullRequests ?? []).filter { $0.state == "MERGED" }.prefix(5)
-      if !merged.isEmpty {
-        sectionLabel("Recently merged")
-        ForEach(Array(merged)) { PRRow(pr: $0) }
-      }
-      if !store.events.isEmpty {
-        sectionLabel("Recent changes")
-        ForEach(Array(store.events.prefix(5))) { event in
-          Button {
-            NSWorkspace.shared.open(event.url)
-          } label: {
-            HStack(alignment: .top, spacing: 8) {
-              Image(systemName: event.kind.symbol).foregroundStyle(event.kind.color)
-              VStack(alignment: .leading, spacing: 3) {
-                Text(event.title).lineLimit(2)
-                Text(event.occurredAt, style: .relative).foregroundStyle(.secondary)
-              }
-            }.font(.system(size: 11)).padding(.vertical, 6).frame(
-              maxWidth: .infinity, alignment: .leading)
-          }.buttonStyle(.plain)
-        }
-      }
-    }
-    .padding(.bottom, 10)
-  }
-
-  private var agentsContent: some View {
-    VStack(alignment: .leading, spacing: 8) {
-      sectionLabel("On this Mac")
-      if store.agents.isEmpty {
-        Text("No recent agent activity. Start a local Codex or Claude Code session.")
-          .font(.system(size: 12)).foregroundStyle(.secondary).padding(.vertical, 14)
-      }
-      ForEach(Array(store.agents.prefix(8))) { session in
-        Button {
-          NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: session.directory)
-        } label: {
-          HStack(alignment: .top, spacing: 10) {
-            Circle().fill(
-              session.phase == .working ? .green : session.phase == .waiting ? .orange : .gray
-            )
-            .frame(width: 6, height: 6).padding(.top, 5)
-            VStack(alignment: .leading, spacing: 4) {
-              HStack {
-                Text(session.source).fontWeight(.medium)
-                Spacer()
-                Text(session.phase.label).foregroundStyle(.secondary)
-              }
-              Text("\(session.project) · \(session.activity)").foregroundStyle(.secondary)
-                .lineLimit(1)
-              Text([session.model, session.branch].compactMap { $0 }.joined(separator: " · "))
-                .foregroundStyle(.secondary).lineLimit(1)
-            }.font(.system(size: 11))
-          }.padding(.vertical, 5).contentShape(Rectangle())
-        }.buttonStyle(.plain)
-      }
-      Divider().padding(.top, 6)
-      HStack {
-        Text("Usage history").font(.system(size: 12, weight: .medium))
-        Spacer()
-        Picker("Period", selection: $store.usageDays) {
-          Text("Today").tag(1)
-          Text("7 days").tag(7)
-          Text("30 days").tag(30)
-        }.labelsHidden().pickerStyle(.segmented).frame(width: 204)
-      }.padding(.vertical, 8)
-      ForEach(AgentProvider.allCases, id: \.self) { provider in
-        UsageBlock(
-          provider: provider, summary: store.usage[provider]?.first { $0.days == store.usageDays },
-          error: store.usageErrors[provider])
-      }
       Text(
-        "Tokens are recorded locally. Costs are estimates at API prices, separate from your subscription bill. Activity reflects local events; older sessions show an unknown state."
+        verbatim: store.merging.count == 1
+          ? "Merging #\(first.number)" : "\(store.merging.count) merging"
       )
-      .font(.system(size: 10)).foregroundStyle(.secondary).padding(.vertical, 8)
-    }.padding(.bottom, 8)
+      .contentTransition(.numericText())
+    } else if store.attention.isEmpty {
+      GlyphView(glyph: .checkFill, size: 13).foregroundStyle(Palette.open)
+      Text("All clear").foregroundStyle(.white.opacity(0.85))
+    } else {
+      GlyphView(glyph: .pullRequest, size: 14).foregroundStyle(Palette.open)
+      Text("\(store.attention.count) need you")
+        .contentTransition(.numericText(value: Double(store.attention.count)))
+    }
   }
 
-  private func sectionLabel(_ label: String) -> some View {
-    Text(label).font(.system(size: 11)).foregroundStyle(.secondary).padding(.top, 14).padding(
-      .bottom, 3)
+  @ViewBuilder private var trailing: some View {
+    let providers = store.workingProviders
+    if providers.isEmpty {
+      Text("\(store.openPRs.count) open")
+        .foregroundStyle(.white.opacity(0.5))
+        .contentTransition(.numericText(value: Double(store.openPRs.count)))
+    } else {
+      HStack(spacing: -3) {
+        ForEach(providers, id: \.self) { provider in
+          GlyphView(glyph: provider.glyph, size: 13).foregroundStyle(provider.tint)
+            .padding(2).background(Circle().fill(.black))
+        }
+      }
+      Text("\(store.workingCount)")
+        .foregroundStyle(.white.opacity(0.7))
+        .contentTransition(.numericText(value: Double(store.workingCount)))
+    }
+  }
+
+  private var accessibilityText: String {
+    var parts = ["GitIsle", "\(store.attention.count) pull requests need you"]
+    if !store.merging.isEmpty { parts.append("\(store.merging.count) merging") }
+    if store.workingCount > 0 { parts.append("\(store.workingCount) agents working") }
+    return parts.joined(separator: ", ")
   }
 }
 
-struct PRRow: View {
-  let pr: PullRequest
-  @State private var hovered = false
+// MARK: - Banner
+
+private struct EventBanner: View {
+  let event: IslandEvent
+  let extra: Int
+
   var body: some View {
     Button {
-      NSWorkspace.shared.open(pr.url)
+      NSWorkspace.shared.open(event.url)
     } label: {
-      HStack(alignment: .center, spacing: 10) {
-        Image(systemName: pr.status.symbol).foregroundStyle(pr.status.color).frame(width: 16)
-        VStack(alignment: .leading, spacing: 4) {
-          Text(pr.title).font(.system(size: 12, weight: .medium)).lineLimit(2)
-          Text("\(pr.repository) #\(pr.number)").font(.system(size: 10)).foregroundStyle(.secondary)
-            .lineLimit(1)
-          if pr.autoMerge, pr.state == "OPEN" {
-            Text("Auto-merge enabled").font(.system(size: 10)).foregroundStyle(.secondary)
+      HStack(spacing: 11) {
+        GlyphView(glyph: event.kind.eventGlyph, size: 16)
+          .foregroundStyle(event.kind.color)
+          .frame(width: 32, height: 32)
+          .background(Circle().fill(event.kind.color.opacity(0.18)))
+        VStack(alignment: .leading, spacing: 2) {
+          HStack(spacing: 6) {
+            Text(event.kind.eventTitle).font(.system(size: 13, weight: .semibold))
+            Text(reference).font(.system(size: 11)).foregroundStyle(.white.opacity(0.45))
           }
+          Text(event.detail).font(.system(size: 12)).foregroundStyle(.white.opacity(0.7))
         }
-        Spacer(minLength: 6)
-        Text(pr.queuePosition.map { "Queue #\($0)" } ?? pr.status.label).font(.system(size: 10))
-          .foregroundStyle(pr.status.color).multilineTextAlignment(.trailing).frame(maxWidth: 100)
-      }.padding(.vertical, 9).padding(.horizontal, 6).frame(
-        maxWidth: .infinity, alignment: .leading
-      )
-      .contentShape(Rectangle()).background(
-        hovered ? Color.white.opacity(0.07) : .clear, in: RoundedRectangle(cornerRadius: 8))
-    }.buttonStyle(.plain).onHover { hovered = $0 }
-      .help("Open \(pr.repository) #\(pr.number) on GitHub")
+        .lineLimit(1)
+        Spacer(minLength: 4)
+        if extra > 0 {
+          Text("+\(extra)").font(.system(size: 11, weight: .semibold)).monospacedDigit()
+            .padding(.horizontal, 7).padding(.vertical, 3)
+            .background(Capsule().fill(.white.opacity(0.1)))
+        }
+      }
+      .padding(.horizontal, 16).padding(.bottom, 12).padding(.top, 2)
+      .contentShape(Rectangle())
+    }
+    .buttonStyle(.plain)
+    .accessibilityLabel("\(event.kind.eventTitle): \(event.detail)")
+    .accessibilityHint("Opens the pull request on GitHub")
+  }
+
+  /// "owner/repo #12" from the stored "owner/repo #12 · Merged" title.
+  private var reference: String {
+    event.title.components(separatedBy: " · ").first ?? event.title
   }
 }
 
-struct UsageBlock: View {
-  let provider: AgentProvider
-  let summary: UsageSummary?
-  let error: String?
+// MARK: - Expanded
+
+private struct ExpandedIsland: View {
+  @Bindable var store: IslandStore
+  let metrics: IslandMetrics
+  @Binding var contentHeight: CGFloat
+
+  static let headerHeight: CGFloat = 44
+  static let footerHeight: CGFloat = 36
+
+  static func chromeHeight(_ metrics: IslandMetrics) -> CGFloat {
+    topInset(metrics) + headerHeight + footerHeight + 1
+  }
+
+  static func topInset(_ metrics: IslandMetrics) -> CGFloat {
+    metrics.hasNotch ? metrics.notchHeight : 6
+  }
+
   var body: some View {
-    VStack(alignment: .leading, spacing: 7) {
-      HStack {
-        Text(provider.label).fontWeight(.medium)
-        Spacer()
-        if summary?.partial == true { Text("Partial history").foregroundStyle(.orange) }
-      }
-      if let error { Text(error).foregroundStyle(.orange).lineLimit(3) }
-      if let summary {
-        usageRow(
-          "Recorded tokens",
-          summary.tokens.map { $0.formatted(.number.notation(.compactName)) } ?? "Unavailable")
-        usageRow("Input / output", "\(count(summary.inputTokens)) / \(count(summary.outputTokens))")
-        usageRow(
-          "Cache read / write",
-          "\(count(summary.cachedTokens)) / \(count(summary.cacheCreationTokens))")
-        usageRow(
-          "Estimated API cost",
-          summary.estimatedCost.map { $0.formatted(.currency(code: "USD")) } ?? "Unavailable")
-        ForEach(Array(summary.models.prefix(5))) { model in
-          HStack {
-            Text(model.name).lineLimit(1).foregroundStyle(.secondary)
-            Spacer()
-            Text(count(model.tokens)).monospacedDigit()
+    VStack(spacing: 0) {
+      header
+        .padding(.top, Self.topInset(metrics))
+        .frame(height: Self.topInset(metrics) + Self.headerHeight, alignment: .bottom)
+      Rectangle().fill(Palette.hairline).frame(height: 1).padding(.horizontal, 16)
+      ScrollView {
+        Group {
+          switch store.tab {
+          case .activity: ActivityView(store: store)
+          case .stats: StatsView(store: store)
           }
         }
-      } else if error == nil {
-        Text("Reading local history…").foregroundStyle(.secondary)
+        .padding(.horizontal, 10).padding(.bottom, 10)
+        .onGeometryChange(for: CGFloat.self) {
+          $0.size.height
+        } action: {
+          contentHeight = $0
+        }
+        .id(store.tab)
+        .transition(.opacity.animation(.easeOut(duration: 0.16)))
       }
-    }.font(.system(size: 11)).padding(.vertical, 10)
+      .scrollIndicators(.never)
+      .frame(maxHeight: .infinity)
+      footer.frame(height: Self.footerHeight)
+    }
   }
-  private func count(_ value: Int?) -> String {
-    value.map { $0.formatted(.number.notation(.compactName)) } ?? "—"
+
+  private var header: some View {
+    HStack(spacing: 8) {
+      PillPicker(
+        options: IslandStore.IslandTab.allCases.map { ($0, $0.rawValue) },
+        selection: $store.tab)
+      Spacer(minLength: 8)
+      switch store.tab {
+      case .activity:
+        PillPicker(
+          options: ActivityWindow.allCases.map { ($0, $0.label) },
+          selection: $store.activityWindow, fontSize: 11)
+      case .stats:
+        PillPicker(
+          options: [(1, "Today"), (7, "7 days"), (30, "30 days")],
+          selection: $store.usageDays, fontSize: 11)
+      }
+    }
+    .padding(.horizontal, 16)
+    .frame(height: Self.headerHeight)
   }
-  private func usageRow(_ label: String, _ value: String) -> some View {
-    HStack {
-      Text(label).foregroundStyle(.secondary)
+
+  private var footer: some View {
+    HStack(spacing: 4) {
+      status.font(.system(size: 10.5)).foregroundStyle(.white.opacity(0.4)).lineLimit(1)
       Spacer()
-      Text(value).monospacedDigit()
+      FooterButton(glyph: .sync, label: "Refresh", spinning: refreshing) {
+        Task {
+          async let github: Void = store.refreshGitHub()
+          async let usage: Void = store.refreshUsage()
+          async let stats: Void = store.refreshStats()
+          _ = await (github, usage, stats)
+        }
+      }
+      .disabled(refreshing || store.isDemo)
+      SettingsLink {
+        GlyphView(glyph: .gear, size: 13).frame(width: 26, height: 24).contentShape(Rectangle())
+      }
+      .buttonStyle(.plain).foregroundStyle(.white.opacity(0.55))
+      .accessibilityLabel("GitIsle settings")
+      FooterButton(glyph: nil, label: "Collapse island") { store.dismiss() }
+    }
+    .padding(.horizontal, 16)
+  }
+
+  private var refreshing: Bool { store.githubRefreshing || store.usageRefreshing }
+
+  @ViewBuilder private var status: some View {
+    if store.isDemo {
+      Text("Example data")
+    } else if let github = store.github {
+      let age = github.fetchedAt.formatted(.relative(presentation: .named))
+      Text(store.cached ? "Cached · \(age)" : "Updated \(age)")
+    } else {
+      Text("Waiting for GitHub")
     }
   }
 }
 
-extension PRStatus {
-  var color: Color {
-    switch self {
-    case .failed, .conflicts, .changesRequested: .red
-    case .review, .waiting, .behind, .blocked: .orange
-    case .ready: .green
-    case .merged: .purple
-    case .checking, .queued: .blue
-    default: .gray
+private struct FooterButton: View {
+  let glyph: Glyph?
+  let label: String
+  var spinning = false
+  let action: () -> Void
+  @State private var hovered = false
+
+  var body: some View {
+    Button(action: action) {
+      Group {
+        if let glyph, spinning {
+          // Each turn ends where the next starts, so stopping never rewinds the glyph.
+          GlyphView(glyph: glyph, size: 13)
+            .phaseAnimator([0.0, 1.0]) { view, turn in
+              view.rotationEffect(.degrees(turn * 360))
+            } animation: { turn in
+              turn == 1 ? .linear(duration: 0.9) : nil
+            }
+        } else if let glyph {
+          GlyphView(glyph: glyph, size: 13)
+        } else {
+          Image(systemName: "chevron.up").font(.system(size: 11, weight: .semibold))
+        }
+      }
+      .frame(width: 26, height: 24)
+      .background(RoundedRectangle(cornerRadius: 6).fill(.white.opacity(hovered ? 0.08 : 0)))
+      .contentShape(Rectangle())
     }
-  }
-  var symbol: String {
-    switch self {
-    case .merged, .queued: "arrow.triangle.merge"
-    case .failed, .conflicts, .changesRequested: "exclamationmark.circle"
-    case .checking: "clock"
-    case .ready: "checkmark.circle"
-    default: "arrow.triangle.pull"
-    }
+    .buttonStyle(.plain)
+    .foregroundStyle(.white.opacity(hovered ? 0.9 : 0.55))
+    .onHover { hovered = $0 }
+    .accessibilityLabel(label)
   }
 }
