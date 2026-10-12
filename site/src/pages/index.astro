@@ -39,7 +39,7 @@ const promises = [
         </p>
         <div class="hero-actions" data-intro>
           <a class="cta" href={REPO}>
-            <img src="/logo.svg" alt="" width="28" height="28" />
+            <img src="/logo.png" alt="" width="28" height="28" />
             Get GitIsle on GitHub
           </a>
           <a class="hero-link" href="#install">Install in one line →</a>
@@ -152,7 +152,7 @@ const promises = [
 
     <section class="section join" aria-labelledby="join-title">
       <div class="container join-inner">
-        <img class="join-logo reveal" src="/logo.svg" alt="GitIsle" width="120" height="120" />
+        <img class="join-logo reveal" src="/app-icon.png" alt="GitIsle" width="120" height="120" />
         <h2 id="join-title" class="join-title reveal">Put your PRs in the notch.</h2>
         <p class="join-sub reveal">Free and open source, under the MIT license.</p>
         <a class="cta reveal" href={REPO}>
@@ -543,8 +543,8 @@ const promises = [
   .join-logo {
     width: clamp(96px, 14vw, 150px);
     height: auto;
-    border-radius: 24%;
-    box-shadow: 0 30px 80px rgba(0, 0, 0, 0.25);
+    /* The icon carries its own rounded shape, so the shadow follows its alpha. */
+    filter: drop-shadow(0 30px 40px rgba(0, 0, 0, 0.25));
   }
   .join-title {
     margin: 18px 0 0;
