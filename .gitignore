@@ -5,3 +5,10 @@ dist/
 .DS_Store
 *.xcuserstate
 __pycache__/
+
+# Landing page and launch video
+site/node_modules/
+site/dist/
+site/.astro/
+video/node_modules/
+video/renders/

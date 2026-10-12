@@ -1,131 +1,148 @@
-# GitIsle
+<p align="center">
+  <img src="docs/images/logo.png" width="112" alt="GitIsle logo: a white island with a merge glyph and a green live dot on black">
+</p>
 
-Your PRs, in one island.
+<h1 align="center">GitIsle</h1>
 
-A native macOS companion that keeps GitHub pull requests at the top of your
-screen, with Codex and Claude Code usage statistics one interaction away.
+<p align="center">
+  Your pull requests, in the notch.
+</p>
 
-Hover over the island briefly to expand it. Activity is the default view: one
-collapsible section per repository, with each PR's state shown the way GitHub
-shows it, or a board with one column per state. Filter it by repository, by
-today, 7 days, or 30 days, and by state with the filter bar: press Draft, Open,
-Merging, or Merged to show only those states, and Needs you to show only PRs
-waiting on you. Filters combine and apply to both layouts. Stats shows GitHub activity, tokens, models, and estimated
-API costs. Each chart can show bars, a line, an area, or a running total, and the
-Claude Code and Codex charts can plot tokens or cost; hover a chart to read a day.
+<p align="center">
+  <a href="https://github.com/ppazosp/gitisle/actions/workflows/check.yml"><img src="https://github.com/ppazosp/gitisle/actions/workflows/check.yml/badge.svg" alt="Check"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-black" alt="MIT license"></a>
+  <img src="https://img.shields.io/badge/macOS-14%2B-black" alt="macOS 14 or later">
+  <img src="https://img.shields.io/badge/Swift-6.2-black" alt="Swift 6.2">
+</p>
 
-At rest the island covers only the notch. It appears while one of your PRs is
-merging, with its number and how long it has been merging, or while checks run
-on one of your PRs, with their progress. When a PR merges, fails its checks,
-receives your review request, or starts merging, the island grows into a short
-banner.
+<p align="center">
+  <img src="docs/images/activity.png" width="720" alt="The expanded island listing pull requests by repository">
+</p>
 
-## What it shows
+GitIsle is a native macOS app that turns your Mac's notch into a live view of
+your GitHub pull requests. It stays invisible until something happens, then
+shows what's merging, which checks are running, and what needs you.
 
-- your open PRs, requested reviews, and any extra repositories you watch, by
-  repository and by GitHub state (draft, open, merging, merged), with PRs that
-  need you flagged, filtered by today, 7 days, or 30 days
-- passed, failed, and running checks for each PR, conflicts, review decisions,
-  auto-merge, and merge-queue position
-- PRs you opened, merged, and reviewed, and your daily GitHub contributions
-- local token history, daily usage, and model breakdowns for today, 7 days, and 30 days
+- **Invisible at rest.** With nothing going on, the island is just the notch.
+- **Live work.** While one of your PRs merges or runs checks, the island shows
+  its number and a timer or check progress. Click it to open the PR.
+- **Banners.** Merges, failed checks, review requests, and merges starting
+  slide out of the notch. Click one to open the PR.
+- **Activity.** Hover to open your PRs by repository, or as a board of GitHub
+  states: draft, open, merging, merged. Filter by state, by what needs you,
+  by repository, and by today, 7 days, or 30 days.
+- **Stats.** PRs opened, merged, and reviewed, plus local Claude Code and Codex
+  token usage and estimated cost, as bars, lines, areas, or running totals.
 
-PR rows open GitHub in your browser. GitIsle uses read-only queries and does not
-merge, review, comment, or mark GitHub notifications as read.
+GitIsle only reads from GitHub. It never merges, reviews, comments, or marks
+notifications as read.
 
-## Build and run
+<p align="center">
+  <img src="docs/images/board.png" width="720" alt="The board layout with draft, open, merging, and merged columns">
+</p>
 
-You need macOS 14 or later, Xcode 26 or later (Swift 6.2 or later), and the
-[GitHub CLI](https://cli.github.com/). Sign in using `gh auth login`.
-Codex and Claude Code keep managing their own sign-ins.
+## Install
+
+GitIsle needs macOS 14 or later and the [GitHub CLI](https://cli.github.com/),
+signed in:
+
+```sh
+brew install gh && gh auth login
+```
+
+Then pick one:
+
+**Install script**
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/ppazosp/gitisle/main/scripts/install.sh | bash
+```
+
+**Homebrew**
+
+```sh
+brew tap ppazosp/gitisle https://github.com/ppazosp/gitisle
+brew install --cask gitisle
+```
+
+**Download**
+
+Get `GitIsle.dmg` from the [latest release](https://github.com/ppazosp/gitisle/releases/latest)
+and drag GitIsle into Applications.
+
+**From source** (needs Xcode 26 or later)
 
 ```sh
 git clone https://github.com/ppazosp/gitisle.git
 cd gitisle
-bash scripts/build-app.sh
-open dist/GitIsle.app
+bash scripts/install.sh --from-source
 ```
 
-The app supports Macs with a notch and external displays. Choose the display,
-hover delay, watched repositories, and local usage directories in Settings,
-which open inside the island from the gear button or by right-clicking the
-island. GitIsle has no menu bar icon; right-click the island to quit it.
-Notifications and launch at login are optional. Enable them in Settings.
+> [!NOTE]
+> Releases are signed ad hoc and are not notarized yet. The install script and
+> the Homebrew cask clear macOS's download quarantine for you. If you install
+> from the DMG and macOS says the app can't be opened, right-click GitIsle in
+> Applications and choose **Open**, or run
+> `xattr -dr com.apple.quarantine /Applications/GitIsle.app`.
 
-For a repeatable preview using example data:
+To uninstall, quit GitIsle (right-click the island), then delete
+`/Applications/GitIsle.app` and `~/Library/Application Support/GitIsle`.
 
-```sh
-dist/GitIsle.app/Contents/MacOS/GitIsle --demo --expanded
-dist/GitIsle.app/Contents/MacOS/GitIsle --snapshot /absolute/path/activity.png
-dist/GitIsle.app/Contents/MacOS/GitIsle --snapshot /absolute/path/board.png --board
-dist/GitIsle.app/Contents/MacOS/GitIsle --snapshot /absolute/path/stats.png --stats
-dist/GitIsle.app/Contents/MacOS/GitIsle --snapshot /absolute/path/banner.png --banner
-dist/GitIsle.app/Contents/MacOS/GitIsle --showcase
-dist/GitIsle.app/Contents/MacOS/GitIsle --snapshot /absolute/path/settings.png --settings
-```
+## Use it
 
-To check your actual connections and local history:
+| To | Do |
+| --- | --- |
+| Open the island | Hover the notch for a moment, or click it |
+| Open a live or announced PR | Click the top row or the banner |
+| Switch between list and board | Use the toggle at the top right |
+| Filter | Use the state chips, the repository menu, and Today / 7 days / 30 days |
+| Change settings | Click the gear, or right-click the island |
+| Quit | Right-click the island |
 
-```sh
-dist/GitIsle.app/Contents/MacOS/GitIsle --diagnose
-```
+GitIsle works on Macs with a notch and on external displays. In Settings you
+can choose the display, the hover delay, extra repositories to watch, system
+notifications, which events to announce, launch at login, and euros or
+dollars for costs.
 
-These are development builds signed locally without a Developer ID. Public
-signed releases and notarization are not configured yet.
+<p align="center">
+  <img src="docs/images/stats.png" width="560" alt="Stats with GitHub activity and Claude Code and Codex usage charts">
+</p>
 
-## How to read the statistics
+## How the numbers work
 
-Token totals cover locally recorded history. Deleted logs, other machines, and
-unsupported records can leave gaps. Missing values stay unavailable. Incomplete
-scans or unpriced requests show a partial-history label.
+- **GitHub** refreshes every minute by default (every 2 or 5 minutes in
+  Settings) and stats every 10 minutes, using about 6% of your hourly GitHub
+  API budget. On an error, the last snapshot stays on screen marked as cached.
+- **Needs you** flags open PRs with a review request, failed checks, conflicts,
+  requested changes, or that are ready to merge, behind, or blocked.
+- **Claude Code and Codex usage** comes from the history files on your Mac,
+  read by [CodexBar](https://github.com/steipete/CodexBar)'s usage library.
+  Costs are estimates at API prices, separate from your subscription. To show
+  euros, set the rate in Settings; GitIsle doesn't fetch exchange rates.
 
-Dollar values estimate usage at API prices. To show euros, choose EUR in
-Settings and set the exchange rate; GitIsle does not fetch exchange rates. They are separate from subscription
-payments and remaining plan quota. Cache tokens use the provider's categories;
-do not add the rows together to reconstruct a bill.
+## Privacy
 
-GitHub refreshes every minute by default. GitHub statistics refresh every 10
-minutes. Reviewed counts PRs by others that you reviewed and that changed during
-the period. Errors retain the previous snapshot
-with a cached label. Each search group is limited to 400 PRs; the app reports
-when that limit is reached. GitHub.com is supported; GitHub Enterprise is not
-included in this version.
+GitIsle talks to GitHub through your existing `gh` login, and loads avatars
+from GitHub's avatar host. Usage statistics never leave your Mac. There is no
+telemetry, account, or GitIsle server. Settings and caches live in
+`~/Library/Application Support/GitIsle/`, and GitIsle never writes to agent
+configuration, transcripts, or credentials.
 
-## Development
+## Contributing
 
-```sh
-DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift test --jobs 2
-python3 scripts/monitored.py build bash scripts/build-app.sh
-```
-
-The monitored wrapper writes `.artifacts/<name>.log` and a JSON result. It stops
-its own job after 5 minutes without output or 20 minutes in total.
-
-The app uses SwiftUI and AppKit. Provider work stays outside the UI. GitHub
-queries and usage history scans run independently. See
-[the architecture](docs/architecture.md) and [source research](docs/research.md).
-
-## Privacy and compatibility
-
-GitIsle talks to GitHub through your existing `gh` login. Repository owner
-avatars load from GitHub's avatar host and are kept in memory only. Local usage scans do
-not query provider accounts; remote price refresh is disabled. There is no
-telemetry or GitIsle cloud service.
-
-Settings, GitHub snapshots, the event ledger, and usage caches stay under
-`~/Library/Application Support/GitIsle/`. GitIsle does not write to agent
-configuration, transcripts, authentication files, or credentials.
-
-Existing agent installations keep working as before. GitIsle only reads their
-usage history; the usage library is pinned to an exact upstream revision.
+Issues and pull requests are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md)
+for setup, preview flags, and checks, and [the architecture](docs/architecture.md)
+for how it fits together. To report a security issue, see
+[SECURITY.md](SECURITY.md).
 
 ## Credits and license
 
 [CodexBar](https://github.com/steipete/CodexBar) provides the usage library.
 [Agents Island](https://github.com/mustafahalabi/agents-island) provided the
-notch geometry and window pattern. Pull request icons are GitHub
+notch geometry and window pattern, and [Magpie](https://github.com/fmguerreiro/magpie)
+the idea of reusing the GitHub CLI login. Pull request icons are GitHub
 [Octicons](https://github.com/primer/octicons); provider marks come from
-[Simple Icons](https://simpleicons.org). [Magpie](https://github.com/fmguerreiro/magpie)
-informed the use of an existing GitHub CLI login.
+[Simple Icons](https://simpleicons.org).
 
-GitIsle uses the MIT license. See [third-party notices](THIRD_PARTY_NOTICES.md).
+GitIsle is released under the [MIT license](LICENSE). See
+[third-party notices](THIRD_PARTY_NOTICES.md).

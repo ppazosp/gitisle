@@ -48,6 +48,9 @@ struct IslandView: View {
     }
     .contentShape(shape)
     .contextMenu {
+      Text(
+        "GitIsle \(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "")"
+      )
       Button("Settings…") { store.openSettings() }
       Divider()
       Button("Quit GitIsle") { NSApp.terminate(nil) }

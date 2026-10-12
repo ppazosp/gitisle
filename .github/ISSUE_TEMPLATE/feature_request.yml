@@ -1,0 +1,18 @@
+name: Feature request
+description: Suggest an idea for GitIsle.
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: What are you trying to do, and what gets in the way today?
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: Your idea
+      description: How you'd like GitIsle to help. Sketches or screenshots are welcome.
+    validations:
+      required: true
