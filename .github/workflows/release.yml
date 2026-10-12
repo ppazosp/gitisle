@@ -15,25 +15,19 @@ jobs:
     timeout-minutes: 60
     env:
       DEVELOPER_DIR: /Applications/Xcode_26.2.app/Contents/Developer
+    # Plain steps with GitHub's own time limits; their output streams into the run log.
     steps:
       - uses: actions/checkout@v5
       - name: Test
-        run: python3 scripts/monitored.py tests swift test --jobs 2
+        timeout-minutes: 20
+        run: swift test --jobs 2
       - name: Package
-        # The optimized build can stay silent for many minutes while it optimizes.
-        run: >-
-          python3 scripts/monitored.py --stale-seconds 1200 --max-seconds 2700
-          package bash scripts/package-release.sh "$GITHUB_REF_NAME"
+        # The optimized build stays quiet for minutes; on the runner it takes about 10.
+        timeout-minutes: 30
+        run: bash scripts/package-release.sh "$GITHUB_REF_NAME"
       - name: Publish
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release create "$GITHUB_REF_NAME" dist/GitIsle.zip dist/GitIsle.dmg dist/checksums.txt \
             --title "GitIsle ${GITHUB_REF_NAME#v}" --generate-notes
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: release-logs
-          path: .artifacts/
-          # The logs live in a dot-folder, which upload-artifact skips unless asked.
-          include-hidden-files: true
