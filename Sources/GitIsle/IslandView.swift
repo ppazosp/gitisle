@@ -206,7 +206,7 @@ private struct EventBanner: View {
             .background(Capsule().fill(.white.opacity(0.1)))
         }
       }
-      .padding(.horizontal, 16).padding(.bottom, 12).padding(.top, 2)
+      .padding(.horizontal, 16).padding(.top, 6).padding(.bottom, 10)
       .contentShape(Rectangle())
     }
     .buttonStyle(.plain)

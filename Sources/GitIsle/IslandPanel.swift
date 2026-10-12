@@ -37,7 +37,7 @@ struct IslandMetrics: Equatable {
     presentation == .idle ? 0 : ear
   }
 
-  var bannerSize: CGSize { CGSize(width: max(closedWidth + 80, 380), height: closedHeight + 60) }
+  var bannerSize: CGSize { CGSize(width: max(closedWidth + 80, 380), height: closedHeight + 50) }
   var expandedWidth: CGFloat { 640 }
   /// The board grows with its columns and never gets narrower than the list.
   func boardWidth(columns: Int) -> CGFloat {
