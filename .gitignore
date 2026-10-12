@@ -13,3 +13,4 @@ site/.astro/
 .vercel/
 video/node_modules/
 video/renders/
+site/public/install.sh

@@ -15,18 +15,26 @@ echo "Zipping"
 ditto -c -k --keepParent dist/GitIsle.app dist/GitIsle.zip
 
 echo "Creating disk image"
-staging="$(mktemp -d)"
-trap 'rm -rf "$staging"' EXIT
-cp -R dist/GitIsle.app "$staging/"
-ln -s /Applications "$staging/Applications"
-# hdiutil sometimes fails with "Resource busy" on CI runners; a retry usually succeeds.
+# dmgbuild lays out the window (background, icon positions) without scripting Finder, so it
+# works on CI runners. It runs from a virtual environment with hash-pinned requirements.
+venv=".build/dmgbuild"
+if [ ! -x "$venv/bin/dmgbuild" ]; then
+    python3 -m venv "$venv"
+    "$venv/bin/pip" install --quiet --disable-pip-version-check --require-hashes \
+        -r scripts/dmg/requirements.txt
+fi
+tiffutil -cathidpicheck scripts/dmg/background.png scripts/dmg/background@2x.png \
+    -out dist/dmg-background.tiff
+# hdiutil, which dmgbuild uses, sometimes fails with "Resource busy" on CI runners.
 for attempt in 1 2 3; do
-    if hdiutil create -quiet -volname "GitIsle $version" -srcfolder "$staging" -ov -format UDZO \
-        dist/GitIsle.dmg; then
+    if "$venv/bin/dmgbuild" -s scripts/dmg/settings.py \
+        -D app=dist/GitIsle.app -D background=dist/dmg-background.tiff \
+        -D icon=dist/GitIsle.app/Contents/Resources/GitIsle.icns \
+        "GitIsle $version" dist/GitIsle.dmg; then
         break
     fi
     [ "$attempt" -lt 3 ] || exit 1
-    echo "hdiutil failed (attempt $attempt); retrying"
+    echo "Creating the disk image failed (attempt $attempt); retrying"
     sleep 5
 done
 

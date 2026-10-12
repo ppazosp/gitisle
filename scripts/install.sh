@@ -1,7 +1,7 @@
 #!/bin/bash
 # Installs or updates GitIsle on this Mac.
 #
-#   curl -fsSL https://raw.githubusercontent.com/ppazosp/gitisle/main/scripts/install.sh | bash
+#   curl -fsSL https://gitisle.ppazosp.dev/install.sh | bash
 #
 # Downloads the latest release into /Applications (or ~/Applications when /Applications is not
 # writable). Pass --from-source to build the current checkout instead; that needs Xcode.
