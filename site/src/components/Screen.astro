@@ -1,0 +1,223 @@
+---
+// A MacBook screen with a notch. The island inside it morphs between real captures of the
+// app (src/assets/island), driven by scripts/landing.ts. Sizes are in points of a 1200 × 740
+// screen; the whole screen is scaled to fit with --s.
+import banner from '../assets/island/banner.png';
+import board from '../assets/island/board.png';
+import list from '../assets/island/list.png';
+import live from '../assets/island/live.png';
+import sizes from '../assets/island/sizes.json';
+import stats from '../assets/island/stats.png';
+
+const states = [
+  { id: 'live', image: live, alt: 'The island showing pull request 433 merging, with a timer' },
+  { id: 'banner', image: banner, alt: 'A banner sliding out of the notch: Merged, Ship the notch island' },
+  { id: 'list', image: list, alt: 'The expanded island listing pull requests by repository' },
+  { id: 'board', image: board, alt: 'The island as a board with draft, open, merging, and merged columns' },
+  { id: 'stats', image: stats, alt: 'Stats: GitHub activity and Claude Code and Codex usage charts' },
+] as const;
+---
+
+<div class="screen-frame" data-screen-frame>
+  <div class="screen" data-screen>
+    <div class="wallpaper" aria-hidden="true"></div>
+
+    <div class="window" aria-hidden="true">
+      <div class="window-bar"><i></i><i></i><i></i></div>
+      <div class="window-code">
+        {
+          [62, 48, 74, 30, 56, 68, 40, 52, 26, 60, 44].map((w, i) => (
+            <span style={`--w: ${w}%; --x: ${(i % 4) * 4}%`} />
+          ))
+        }
+      </div>
+    </div>
+
+    <div class="menubar" aria-hidden="true">
+      <div class="menubar-left"><b>Code</b><span>File</span><span>Edit</span><span>View</span><span>Window</span></div>
+      <div class="menubar-right"><span>Mon 12 Oct</span><span>10:41</span></div>
+    </div>
+
+    <div class="island" data-island data-sizes={JSON.stringify(sizes)}>
+      <span class="ear ear--l" aria-hidden="true"></span>
+      <span class="ear ear--r" aria-hidden="true"></span>
+      <div class="island-body">
+        {
+          states.map((s) => (
+            <img
+              data-state={s.id}
+              src={s.image.src}
+              alt={s.alt}
+              width={sizes[s.id].w}
+              height={sizes[s.id].h}
+              decoding="async"
+              draggable="false"
+            />
+          ))
+        }
+      </div>
+    </div>
+  </div>
+</div>
+
+<style>
+  .screen-frame {
+    --s: 0.6;
+    position: relative;
+    width: calc(1200px * var(--s));
+    height: calc(740px * var(--s));
+    margin: 0 auto;
+  }
+
+  .screen {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 1200px;
+    height: 740px;
+    transform: scale(var(--s));
+    transform-origin: 0 0;
+    border-radius: 26px;
+    overflow: hidden;
+    background: #0b0b0d;
+    box-shadow:
+      0 0 0 10px #111,
+      0 0 0 11px rgba(255, 255, 255, 0.1),
+      0 40px 120px rgba(0, 0, 0, 0.6);
+  }
+
+  .wallpaper {
+    position: absolute;
+    inset: 0;
+    background:
+      radial-gradient(60% 70% at 18% 92%, rgba(63, 185, 80, 0.22), transparent 70%),
+      radial-gradient(55% 60% at 86% 84%, rgba(163, 113, 247, 0.26), transparent 70%),
+      radial-gradient(70% 60% at 50% 0%, rgba(255, 255, 255, 0.06), transparent 70%),
+      linear-gradient(180deg, #15151a 0%, #0c0c10 100%);
+  }
+
+  /* A faint editor window, so the screen reads as a developer's desktop. */
+  .window {
+    position: absolute;
+    left: 150px;
+    right: 150px;
+    top: 120px;
+    bottom: -40px;
+    border-radius: 16px;
+    background: rgba(22, 22, 28, 0.72);
+    border: 1px solid rgba(255, 255, 255, 0.07);
+    backdrop-filter: blur(20px);
+  }
+  .window-bar {
+    display: flex;
+    gap: 8px;
+    padding: 16px 18px;
+  }
+  .window-bar i {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.12);
+  }
+  .window-code {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    padding: 18px 40px;
+  }
+  .window-code span {
+    display: block;
+    height: 10px;
+    width: var(--w);
+    margin-left: var(--x);
+    border-radius: 5px;
+    background: rgba(255, 255, 255, 0.07);
+  }
+
+  .menubar {
+    position: absolute;
+    inset: 0 0 auto;
+    height: 32px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0 20px;
+    background: rgba(0, 0, 0, 0.28);
+    backdrop-filter: blur(30px);
+    font-size: 13px;
+    color: rgba(255, 255, 255, 0.86);
+  }
+  .menubar-left,
+  .menubar-right {
+    display: flex;
+    gap: 18px;
+  }
+  .menubar b {
+    font-weight: 600;
+  }
+
+  /* The island hangs from the top edge, centred. GSAP animates its width, height, and radius;
+     at rest it is exactly the notch. */
+  /* Narrow viewports zoom onto the island instead of shrinking the whole screen;
+     scripts/landing.ts sets --s per state and --frame-h to the room available. */
+  .screen-frame.is-zoom {
+    width: 100%;
+    /* Never taller than the scaled screen, so no empty band shows below it. */
+    height: min(var(--frame-h, 420px), calc(740px * var(--s)));
+    overflow: hidden;
+    border-radius: 18px;
+    box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.1);
+  }
+  .screen-frame.is-zoom .screen {
+    left: 50%;
+    transform: translateX(-50%) scale(var(--s));
+    transform-origin: 50% 0;
+    border-radius: 0;
+    box-shadow: none;
+  }
+
+  .island {
+    --r: 10px;
+    --ear: 0;
+    position: absolute;
+    top: 0;
+    left: 50%;
+    width: 185px;
+    height: 32px;
+    transform: translateX(-50%);
+    z-index: 2;
+  }
+  .island-body {
+    position: absolute;
+    inset: 0;
+    overflow: hidden;
+    background: #000;
+    border-radius: 0 0 var(--r) var(--r);
+  }
+  .island-body img {
+    position: absolute;
+    top: 0;
+    left: 50%;
+    max-width: none;
+    transform: translateX(-50%);
+    opacity: 0;
+    user-select: none;
+  }
+
+  /* Concave corners where the island meets the top edge, like the app's notch shape. */
+  .ear {
+    position: absolute;
+    top: 0;
+    width: 10px;
+    height: 10px;
+    opacity: var(--ear);
+  }
+  .ear--l {
+    left: -10px;
+    background: radial-gradient(circle at 0 100%, transparent 9.5px, #000 10px);
+  }
+  .ear--r {
+    right: -10px;
+    background: radial-gradient(circle at 100% 100%, transparent 9.5px, #000 10px);
+  }
+</style>
