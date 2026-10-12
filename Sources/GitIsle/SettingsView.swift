@@ -139,14 +139,29 @@ struct SettingsView: View {
           .focused($focusedField, equals: .repositories)
           .onSubmit(commitText)
       }
-      SettingsRow("Refresh") {
+      SettingsRow("Active PRs") {
         PillPicker(
-          options: [(60.0, "1 min"), (120.0, "2 min"), (300.0, "5 min")],
+          options: [(5.0, "5s"), (10.0, "10s"), (20.0, "20s"), (30.0, "30s")],
+          selection: $draft.activeRefreshSeconds, fontSize: 11)
+      }
+      SettingsRow("New PRs") {
+        PillPicker(
+          options: [(30.0, "30s"), (60.0, "1m"), (120.0, "2m"), (300.0, "5m")],
           selection: $draft.githubRefreshSeconds, fontSize: 11)
       }
-      Text("Your PRs and review requests are always included.")
-        .font(.system(size: 10.5)).foregroundStyle(.white.opacity(0.4))
+      Text(
+        "Active PRs (checks running, merging, or just updated) refresh most often. About \(budgetShare)% of your hourly GitHub API budget, which other gh tools share."
+      )
+      .font(.system(size: 10.5)).foregroundStyle(.white.opacity(0.4))
+      .fixedSize(horizontal: false, vertical: true)
     }
+  }
+
+  /// Rough share of GitHub's 5,000 points an hour: an active refresh costs about 1 point and
+  /// a full refresh about 5.
+  private var budgetShare: Int {
+    let points = 3600 / draft.activeRefreshSeconds + 3600 / draft.githubRefreshSeconds * 5
+    return max(1, Int((points / 5000 * 100).rounded()))
   }
 
   private var notifications: some View {
