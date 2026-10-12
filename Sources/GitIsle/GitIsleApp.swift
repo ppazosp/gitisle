@@ -12,28 +12,18 @@ import UserNotifications
     let demo =
       CommandLine.arguments.contains("--demo") || CommandLine.arguments.contains("--snapshot")
       || CommandLine.arguments.contains("--banner")
+      || CommandLine.arguments.contains("--showcase")
     let model = IslandStore(demo: demo)
     _store = State(initialValue: model)
     delegate.store = model
   }
 
   var body: some Scene {
-    MenuBarExtra {
-      Button("Show GitIsle") { delegate.island?.show() }
-      Button("Refresh GitHub") { Task { await store.refreshGitHub() } }.disabled(
-        store.githubRefreshing || store.isDemo)
-      Button("Settings…") {
-        NotificationCenter.default.post(name: .islandOpenSettings, object: nil)
-      }
-      .keyboardShortcut(",")
-      Divider()
-      Text("\(store.openPRs.count) open PRs · \(store.attention.count) need you")
-      Divider()
-      Button("Quit GitIsle") { NSApp.terminate(nil) }.keyboardShortcut("q")
-    } label: {
-      Image(nsImage: Glyph.pullRequest.image(size: 16)).accessibilityLabel("GitIsle")
-    }
+    // GitIsle lives in the notch only; its menu is a right-click on the island.
+    // SwiftUI needs a scene, and an empty settings scene shows nothing.
+    Settings { EmptyView() }
   }
+
 }
 
 @MainActor
@@ -83,6 +73,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
           id: "demo-banner", title: "\(pr.repository) #\(pr.number) · Merged", detail: pr.title,
           url: pr.url, occurredAt: Date(), kind: .merged), extra: 1)
     }
+    if arguments.contains("--showcase") { store.runShowcase() }
     island = IslandPanelController(store: store)
     settingsObserver = NotificationCenter.default.addObserver(
       forName: .islandSettingsChanged, object: nil, queue: .main

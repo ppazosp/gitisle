@@ -48,7 +48,8 @@ open dist/GitIsle.app
 
 The app supports Macs with a notch and external displays. Choose the display,
 hover delay, watched repositories, and local usage directories in Settings,
-which open inside the island from the gear button or the menu bar.
+which open inside the island from the gear button or by right-clicking the
+island. GitIsle has no menu bar icon; right-click the island to quit it.
 Notifications and launch at login are optional. Enable them in Settings.
 
 For a repeatable preview using example data:
@@ -59,6 +60,7 @@ dist/GitIsle.app/Contents/MacOS/GitIsle --snapshot /absolute/path/activity.png
 dist/GitIsle.app/Contents/MacOS/GitIsle --snapshot /absolute/path/board.png --board
 dist/GitIsle.app/Contents/MacOS/GitIsle --snapshot /absolute/path/stats.png --stats
 dist/GitIsle.app/Contents/MacOS/GitIsle --snapshot /absolute/path/banner.png --banner
+dist/GitIsle.app/Contents/MacOS/GitIsle --showcase
 dist/GitIsle.app/Contents/MacOS/GitIsle --snapshot /absolute/path/settings.png --settings
 ```
 

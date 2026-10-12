@@ -47,6 +47,11 @@ struct IslandView: View {
           y: 10)
     }
     .contentShape(shape)
+    .contextMenu {
+      Button("Settings…") { store.openSettings() }
+      Divider()
+      Button("Quit GitIsle") { NSApp.terminate(nil) }
+    }
     .foregroundStyle(.white)
     .environment(\.colorScheme, .dark)
     .onGeometryChange(for: CGSize.self) {

@@ -404,6 +404,33 @@ final class IslandStore {
     }
   }
 
+  /// Example data only: plays each kind of announcement in turn, to preview the banners.
+  func runShowcase() {
+    guard isDemo else { return }
+    let prs = github?.pullRequests ?? []
+    func event(_ kind: PRStatus, _ id: String) -> IslandEvent? {
+      guard let pr = prs.first(where: { $0.id == id }) else { return nil }
+      return IslandEvent(
+        id: "showcase-\(kind.rawValue)", title: "\(pr.repository) #\(pr.number) · \(kind.label)",
+        detail: pr.title, url: pr.url, occurredAt: Date(), kind: kind)
+    }
+    let sequence = [
+      event(.merged, "demo6"), event(.failed, "demo2"), event(.review, "demo1"),
+      event(.queued, "demo3"),
+    ].compactMap { $0 }
+    loops.append(
+      Task { [weak self] in
+        while !Task.isCancelled {
+          for item in sequence {
+            do { try await Task.sleep(for: .seconds(1.5)) } catch { return }
+            self?.showEvent(item)
+            // Each banner holds for 5 seconds; wait for it to collapse before the next.
+            do { try await Task.sleep(for: .seconds(6)) } catch { return }
+          }
+        }
+      })
+  }
+
   func requestNotifications() async {
     do {
       settings.notificationsEnabled = try await UNUserNotificationCenter.current()
