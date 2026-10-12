@@ -10,5 +10,6 @@ __pycache__/
 site/node_modules/
 site/dist/
 site/.astro/
+.vercel/
 video/node_modules/
 video/renders/

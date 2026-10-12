@@ -1,17 +1,21 @@
 name: Site
 
+# Runs only when the site changes; app changes never build or deploy it.
 on:
   pull_request:
     paths: ["site/**", ".github/workflows/site.yml"]
   push:
     branches: [main]
     paths: ["site/**", ".github/workflows/site.yml"]
+  workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
+  # Pull requests: make sure the site builds. Needs no secrets, so forks work too.
   build:
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     defaults:
@@ -26,3 +30,34 @@ jobs:
           cache-dependency-path: site/package-lock.json
       - run: npm ci
       - run: npm run build
+
+  # main: build with Vercel and deploy to production (gitisle.ppazosp.dev).
+  deploy:
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    concurrency:
+      group: site-production
+      cancel-in-progress: false
+    env:
+      VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+      VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+      SITE_URL: https://gitisle.ppazosp.dev
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: site/package-lock.json
+      - name: Check secrets
+        run: |
+          for name in VERCEL_TOKEN VERCEL_ORG_ID VERCEL_PROJECT_ID; do
+            if [ -z "${!name}" ]; then echo "::error::Missing repository secret $name"; exit 1; fi
+          done
+      - run: npm install --global vercel@59.11.7
+      # The Vercel project's Root Directory is `site`, so the CLI runs from the repository root.
+      - run: vercel pull --yes --environment=production --token="$VERCEL_TOKEN"
+      - run: vercel build --prod --token="$VERCEL_TOKEN"
+      - run: vercel deploy --prebuilt --prod --token="$VERCEL_TOKEN"

@@ -36,6 +36,16 @@ the bottom (the capture's margin plus the notch corners), and update
 
 ## Deploying
 
-The site is static. Build it and serve `site/dist` from any static host. Set
-`SITE_URL` (for example `https://gitisle.app`) at build time so canonical and
-Open Graph URLs are absolute.
+`.github/workflows/site.yml` deploys the site to Vercel
+(<https://gitisle.ppazosp.dev>) whenever a change under `site/` lands on `main`.
+App-only changes never trigger it. Pull requests that touch the site only check
+that it builds.
+
+The workflow needs three repository secrets: `VERCEL_TOKEN`, `VERCEL_ORG_ID`, and
+`VERCEL_PROJECT_ID` (the last two are in `.vercel/project.json` after
+`vercel link`). The Vercel project's Root Directory is `site`, and
+`site/vercel.json` turns off Vercel's own Git deployments so only this workflow
+deploys.
+
+The site is static, so any other host works too: build it and serve `site/dist`.
+Set `SITE_URL` at build time so canonical and Open Graph URLs are absolute.
