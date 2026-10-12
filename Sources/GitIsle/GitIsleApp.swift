@@ -33,6 +33,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
   private var settingsObserver: NSObjectProtocol?
   private var openSettingsObserver: NSObjectProtocol?
 
+  /// The notification delegate must exist before launch finishes, so a click that launches
+  /// GitIsle still reaches it and opens the PR.
+  func applicationWillFinishLaunching(_ notification: Notification) {
+    UNUserNotificationCenter.current().delegate = self
+  }
+
+  /// Clicking a notification brings GitIsle forward; it has no window to show.
+  func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool
+  {
+    false
+  }
+
   func applicationDidFinishLaunching(_ notification: Notification) {
     NSApp.setActivationPolicy(.accessory)
     guard let store else { return }
@@ -40,7 +52,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
       Task { await diagnose(store: store) }
       return
     }
-    UNUserNotificationCenter.current().delegate = self
     let arguments = CommandLine.arguments
     if (arguments.contains("--expanded") || arguments.contains("--snapshot"))
       && !arguments.contains("--collapsed") && !arguments.contains("--banner")
