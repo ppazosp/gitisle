@@ -2,6 +2,7 @@ import AppKit
 import Foundation
 import IslandCore
 import Observation
+import SwiftUI
 import UserNotifications
 
 @MainActor @Observable
@@ -35,6 +36,8 @@ final class IslandStore {
   /// A menu opened from the island draws outside its shape; leaving the shape for it
   /// must not collapse the island.
   @ObservationIgnored var menuOpen = false
+  /// A recorded tour drives the island itself; the pointer must not open or close it.
+  @ObservationIgnored private var touring = false
   var activityWindow: ActivityWindow = .month {
     didSet { if activityWindow != oldValue { regroup() } }
   }
@@ -371,6 +374,7 @@ final class IslandStore {
 
   func setHovered(_ inside: Bool) {
     hovered = inside
+    if touring { return }
     hoverTask?.cancel()
     // While something is live or announced, a click opens that PR, so expanding needs a
     // longer, deliberate hover; otherwise it would replace the island under the click.
@@ -434,6 +438,52 @@ final class IslandStore {
             do { try await Task.sleep(for: .seconds(6)) } catch { return }
           }
         }
+      })
+  }
+
+  /// Example data only: drives the island through every state with its real animations,
+  /// for recording a product video. Runs once, about 24 seconds.
+  func runTour() {
+    guard isDemo else { return }
+    let prs = github?.pullRequests ?? []
+    func event(_ kind: PRStatus, _ id: String) -> IslandEvent? {
+      guard let pr = prs.first(where: { $0.id == id }) else { return nil }
+      return IslandEvent(
+        id: "tour-\(kind.rawValue)", title: "\(pr.repository) #\(pr.number) · \(kind.label)",
+        detail: pr.title, url: pr.url, occurredAt: Date(), kind: kind)
+    }
+    let merged = event(.merged, "demo6")
+    let failed = event(.failed, "demo2")
+    touring = true
+    loops.append(
+      Task { [weak self] in
+        @MainActor func step(_ seconds: Double, _ change: () -> Void) async throws {
+          try await Task.sleep(for: .seconds(seconds))
+          withAnimation(Motion.morph, change)
+        }
+        do {
+          // Live pill, then a merge banner that grows out of it.
+          if let merged { try await step(3.0) { self?.showEvent(merged) } }
+          try await step(3.2) { self?.recentEvent = nil }
+          // Open the island on the PR list, filter to what needs you, then back.
+          try await step(1.4) {
+            self?.tab = .activity
+            self?.activityLayout = .list
+            self?.expanded = true
+          }
+          try await step(2.6) { self?.needsYouOnly = true }
+          try await step(1.8) { self?.needsYouOnly = false }
+          // The board, then stats.
+          try await step(1.4) { self?.activityLayout = .board }
+          try await step(2.8) {
+            self?.tab = .stats
+            self?.activityLayout = .list
+          }
+          try await step(3.0) { self?.expanded = false }
+          if let failed { try await step(1.6) { self?.showEvent(failed) } }
+          try await step(3.2) { self?.recentEvent = nil }
+        } catch {}
+        self?.touring = false
       })
   }
 

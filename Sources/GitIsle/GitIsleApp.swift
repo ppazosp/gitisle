@@ -12,7 +12,7 @@ import UserNotifications
     let demo =
       CommandLine.arguments.contains("--demo") || CommandLine.arguments.contains("--snapshot")
       || CommandLine.arguments.contains("--banner")
-      || CommandLine.arguments.contains("--showcase")
+      || CommandLine.arguments.contains("--showcase") || CommandLine.arguments.contains("--tour")
     let model = IslandStore(demo: demo)
     _store = State(initialValue: model)
     delegate.store = model
@@ -85,6 +85,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
           url: pr.url, occurredAt: Date(), kind: .merged), extra: 1)
     }
     if arguments.contains("--showcase") { store.runShowcase() }
+    if arguments.contains("--tour") { store.runTour() }
     island = IslandPanelController(store: store)
     settingsObserver = NotificationCenter.default.addObserver(
       forName: .islandSettingsChanged, object: nil, queue: .main
