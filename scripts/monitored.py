@@ -8,6 +8,9 @@ import subprocess
 import time
 
 parser = argparse.ArgumentParser()
+# Release builds optimize for minutes without printing, so they need longer limits.
+parser.add_argument("--stale-seconds", type=int, default=300, help="kill after this long without output")
+parser.add_argument("--max-seconds", type=int, default=1200, help="kill after this long in total")
 parser.add_argument("name")
 parser.add_argument("command", nargs=argparse.REMAINDER)
 arguments = parser.parse_args()
@@ -23,9 +26,9 @@ with log_path.open("w") as log:
     process = subprocess.Popen(arguments.command, stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
     print(json.dumps({"pid": process.pid, "log": str(log_path), "result": str(result_path)}), flush=True)
     while process.poll() is None:
-        if time.monotonic() - started > 1200:
+        if time.monotonic() - started > arguments.max_seconds:
             reason = "duration_limit"
-        elif time.time() - log_path.stat().st_mtime > 300:
+        elif time.time() - log_path.stat().st_mtime > arguments.stale_seconds:
             reason = "stale_output"
         if reason:
             os.killpg(process.pid, signal.SIGTERM)

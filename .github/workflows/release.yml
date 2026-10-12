@@ -12,7 +12,7 @@ permissions:
 jobs:
   release:
     runs-on: macos-15
-    timeout-minutes: 30
+    timeout-minutes: 60
     env:
       DEVELOPER_DIR: /Applications/Xcode_26.2.app/Contents/Developer
     steps:
@@ -20,7 +20,10 @@ jobs:
       - name: Test
         run: python3 scripts/monitored.py tests swift test --jobs 2
       - name: Package
-        run: python3 scripts/monitored.py package bash scripts/package-release.sh "$GITHUB_REF_NAME"
+        # The optimized build can stay silent for many minutes while it optimizes.
+        run: >-
+          python3 scripts/monitored.py --stale-seconds 1200 --max-seconds 2700
+          package bash scripts/package-release.sh "$GITHUB_REF_NAME"
       - name: Publish
         env:
           GH_TOKEN: ${{ github.token }}
@@ -32,3 +35,5 @@ jobs:
         with:
           name: release-logs
           path: .artifacts/
+          # The logs live in a dot-folder, which upload-artifact skips unless asked.
+          include-hidden-files: true
