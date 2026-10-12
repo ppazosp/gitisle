@@ -36,6 +36,9 @@ const ogImage = site ? new URL('/og.png', site).href : '/og.png';
     <meta name="twitter:image" content={ogImage} />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <!-- Before first paint: mark that scripts run, so the hero's animated pieces start hidden
+         and appear only through their intro instead of flashing in first. -->
+    <script is:inline>document.documentElement.classList.add('js');</script>
     <slot name="head" />
   </head>
   <body>

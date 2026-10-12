@@ -58,6 +58,16 @@ svg {
   outline-offset: 3px;
 }
 
+/* Hidden until the intro animation reveals them (scripts/landing.ts). Without scripts or with
+   reduced motion they show normally. */
+@media (prefers-reduced-motion: no-preference) {
+  .js:not(.intro-done) [data-intro],
+  .js:not(.intro-done) #hero-title,
+  .js:not(.intro-done) [data-screen-frame] {
+    visibility: hidden;
+  }
+}
+
 .sr-only {
   position: absolute;
   width: 1px;

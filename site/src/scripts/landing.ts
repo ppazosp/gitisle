@@ -74,17 +74,28 @@ if (hero && stage && frame && island) {
     gsap.set(stage, { y: startY });
 
     // Intro: the headline rises word by word, then the rest, then the screen lifts into view.
+    // These start hidden by CSS before first paint, so they appear only through this intro.
+    const introDone = () => document.documentElement.classList.add('intro-done');
     SplitText.create('#hero-title', {
       type: 'words,lines',
       mask: 'lines',
       autoSplit: true,
       onSplit: (self) => {
         gsap.set(self.masks, { paddingBottom: '0.12em', marginBottom: '-0.12em' });
+        gsap.set('#hero-title', { visibility: 'visible' });
         return gsap.from(self.words, { yPercent: 115, duration: 1.1, ease: 'expo.out', stagger: 0.06, delay: 0.1 });
       },
     });
-    gsap.from('[data-intro]', { y: 22, autoAlpha: 0, duration: 0.9, ease: 'power3.out', stagger: 0.08, delay: 0.4 });
-    gsap.from(frame, { y: 180, rotateX: 16, transformPerspective: 1400, duration: 1.5, ease: 'expo.out', delay: 0.5 });
+    gsap.fromTo(
+      '[data-intro]',
+      { y: 22, autoAlpha: 0 },
+      { y: 0, autoAlpha: 1, duration: 0.9, ease: 'power3.out', stagger: 0.08, delay: 0.4 },
+    );
+    gsap.fromTo(
+      frame,
+      { y: 180, rotateX: 16, autoAlpha: 0, transformPerspective: 1400 },
+      { y: 0, rotateX: 0, autoAlpha: 1, duration: 1.5, ease: 'expo.out', delay: 0.5, onComplete: introDone },
+    );
 
     const STEP = 1.2;
     const scrollLength = () => window.innerHeight * (1.2 + states.length * 0.85);

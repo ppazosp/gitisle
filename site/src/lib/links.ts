@@ -8,7 +8,7 @@ export const BREW = [
 export const RELEASES = `${REPO}/releases/latest`;
 
 export const CHANNELS = [
-  { name: 'LinkedIn', handle: 'pablo-pazos-para', href: 'https://www.linkedin.com/in/pablo-pazos-para/' },
+  { name: 'LinkedIn', handle: 'pablo-pazos-parada', href: 'https://www.linkedin.com/in/pablo-pazos-parada/' },
   { name: 'X', handle: '@ppazosp', href: 'https://x.com/ppazosp' },
   { name: 'GitHub', handle: 'ppazosp', href: 'https://github.com/ppazosp' },
 ] as const;
