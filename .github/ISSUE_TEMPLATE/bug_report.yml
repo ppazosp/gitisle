@@ -1,0 +1,40 @@
+name: Bug report
+description: Something in GitIsle doesn't work as expected.
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you saw, and what you expected instead. Screenshots of the island help.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Open the island
+        2. ...
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: GitIsle version
+      description: Right-click the island, or check GitIsle.app in Finder with Get Info.
+    validations:
+      required: true
+  - type: input
+    id: macos
+    attributes:
+      label: macOS version and Mac
+      placeholder: macOS 26.1, MacBook Pro 14-inch with a notch
+    validations:
+      required: true
+  - type: textarea
+    id: diagnose
+    attributes:
+      label: Diagnostics (optional)
+      description: Output of `/Applications/GitIsle.app/Contents/MacOS/GitIsle --diagnose`. Remove anything you don't want to share.
+      render: json

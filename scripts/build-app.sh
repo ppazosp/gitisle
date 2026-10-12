@@ -15,7 +15,12 @@ for resource in "$binary_directory"/*.bundle; do
     if [ -d "$resource" ]; then cp -R "$resource" "$bundle/Contents/Resources/"; fi
 done
 cp Resources/Info.plist "$bundle/Contents/Info.plist"
-swift scripts/make-icon.swift dist/GitIsle.iconset
+# Release builds stamp the version from the tag, for example GITISLE_VERSION=0.2.0.
+if [ -n "${GITISLE_VERSION:-}" ]; then
+    /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $GITISLE_VERSION" "$bundle/Contents/Info.plist"
+    /usr/libexec/PlistBuddy -c "Set :CFBundleVersion ${GITISLE_BUILD:-$GITISLE_VERSION}" "$bundle/Contents/Info.plist"
+fi
+swift scripts/make-icon.swift assets/icon.png dist/GitIsle.iconset
 iconutil -c icns dist/GitIsle.iconset -o "$bundle/Contents/Resources/GitIsle.icns"
 cp THIRD_PARTY_NOTICES.md "$bundle/Contents/Resources/ThirdPartyNotices.md"
 cp LICENSE "$bundle/Contents/Resources/LICENSE"
