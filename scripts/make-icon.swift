@@ -1,9 +1,11 @@
-// Builds the app iconset from the icon SVG:
-//   swift scripts/make-icon.swift assets/icon.svg dist/GitIsle.iconset
+// Builds the app iconset from the 1024 px icon (any image NSImage reads):
+//   swift scripts/make-icon.swift assets/icon.png dist/GitIsle.iconset
 import AppKit
 import Foundation
 
-guard CommandLine.arguments.count == 3 else { fatalError("Provide the icon SVG and an iconset directory") }
+guard CommandLine.arguments.count == 3 else {
+  fatalError("Provide the icon image and an iconset directory")
+}
 let source = URL(fileURLWithPath: CommandLine.arguments[1])
 let directory = URL(fileURLWithPath: CommandLine.arguments[2])
 guard let image = NSImage(contentsOf: source) else { fatalError("Missing \(source.path)") }
