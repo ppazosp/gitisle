@@ -101,7 +101,8 @@ struct OnboardingFooter: View {
       .keyboardShortcut(.defaultAction)
       .disabled(!canContinue)
     }
-    .padding(.horizontal, 30).padding(.bottom, 8)
+    // The same margin from the side and the bottom of the island.
+    .padding(.horizontal, 24).padding(.bottom, 18.5)
   }
 
   private func move(_ offset: Int) {
