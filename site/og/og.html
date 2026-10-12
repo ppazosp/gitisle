@@ -1,5 +1,6 @@
 <!doctype html>
-<!-- The social preview image (public/og.png). Render with og/render.sh. -->
+<!-- The social preview image (public/og.png). Render with og/render.sh.
+     No URL in the image: X overlays the domain on its bottom-left corner and LinkedIn prints it below. -->
 <html lang="en">
   <head>
     <meta charset="utf-8" />
@@ -62,14 +63,6 @@
         color: #a1a1a8;
         letter-spacing: -0.01em;
       }
-      .url {
-        position: absolute;
-        left: 72px;
-        bottom: 56px;
-        font-size: 24px;
-        color: #8b8b92;
-        letter-spacing: -0.01em;
-      }
       /* The real island, hanging from the top edge like the notch. */
       .island {
         position: absolute;
@@ -93,7 +86,6 @@
     <div class="brand"><img src="../public/logo.png" alt="" />GitIsle</div>
     <h1>Your pull requests,<br />in the notch.</h1>
     <p class="sub">Free and open source for macOS.</p>
-    <p class="url">gitisle.ppazosp.dev</p>
     <div class="island"><img src="../src/assets/island/list.png" alt="" /></div>
   </body>
 </html>
