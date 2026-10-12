@@ -34,3 +34,5 @@ jobs:
         with:
           name: verification
           path: .artifacts/
+          # The logs live in a dot-folder, which upload-artifact skips unless asked.
+          include-hidden-files: true
