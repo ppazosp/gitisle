@@ -8,6 +8,8 @@ struct IslandMetrics: Equatable {
   var notchHeight: CGFloat
   var hasNotch: Bool
   var screenHeight: CGFloat = 900
+  /// The notch is drawn by GitIsle (a display without one), so its resting shape is visible.
+  var drawn = false
 
   static func detect(_ screen: NSScreen) -> IslandMetrics {
     if let width = hardwareNotchWidth(screen) {
@@ -22,7 +24,7 @@ struct IslandMetrics: Equatable {
     return IslandMetrics(
       notchWidth: NSScreen.screens.lazy.compactMap(hardwareNotchWidth).first ?? 185,
       notchHeight: menuBar >= 20 ? menuBar : 32, hasNotch: true,
-      screenHeight: screen.frame.height)
+      screenHeight: screen.frame.height, drawn: true)
   }
 
   private static func hardwareNotchWidth(_ screen: NSScreen) -> CGFloat? {
@@ -39,12 +41,16 @@ struct IslandMetrics: Equatable {
   var ear: CGFloat { hasNotch ? 10 : 0 }
 
   /// At rest the island is exactly the notch: invisible on a MacBook, a drawn notch elsewhere.
+  /// A drawn notch also gets the small curves where a real notch meets the screen's edge.
   var idleSize: CGSize {
-    hasNotch ? CGSize(width: notchWidth, height: notchHeight) : CGSize(width: 130, height: 8)
+    hasNotch
+      ? CGSize(width: notchWidth + 2 * idleEar, height: notchHeight)
+      : CGSize(width: 130, height: 8)
   }
+  private var idleEar: CGFloat { drawn ? 6 : 0 }
 
   func ear(for presentation: IslandStore.Presentation) -> CGFloat {
-    presentation == .idle ? 0 : ear
+    presentation == .idle ? idleEar : ear
   }
 
   /// Padding at each end of the live pill.
@@ -83,7 +89,8 @@ struct IslandMetrics: Equatable {
 
   func cornerRadius(for presentation: IslandStore.Presentation) -> CGFloat {
     switch presentation {
-    case .idle: hasNotch ? 8 : 4
+    // A drawn notch rounds its bottom corners like a MacBook's, close to half circles.
+    case .idle: drawn ? (notchHeight * 0.4).rounded() : hasNotch ? 8 : 4
     case .live: hasNotch ? 12 : closedHeight / 2
     case .banner: hasNotch ? 24 : 26
     case .expanded: 32
