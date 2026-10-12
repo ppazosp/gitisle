@@ -1,8 +1,9 @@
 ---
 import GitHubMark from '../components/GitHubMark.astro';
+import MicroButton from '../components/MicroButton.astro';
 import Screen from '../components/Screen.astro';
 import Base from '../layouts/Base.astro';
-import { BREW, CHANNELS, INSTALL_SCRIPT, RELEASES, REPO } from '../lib/links';
+import { BREW, CHANNELS, DMG, INSTALL_SCRIPT, REPO } from '../lib/links';
 
 // One caption per island state, in the order the story plays.
 const steps = [
@@ -38,11 +39,11 @@ const promises = [
           ships, then shows what's merging, what's failing and what needs you.
         </p>
         <div class="hero-actions" data-intro>
-          <a class="cta" href={REPO}>
-            <GitHubMark />
-            Get GitIsle on GitHub
-          </a>
-          <a class="hero-link" href="#install">Install in one line →</a>
+          <MicroButton variant="copy" command={INSTALL_SCRIPT} />
+          <MicroButton variant="star" href={REPO} />
+        </div>
+        <div data-intro>
+          <a class="hero-link" href="#install">More ways to install →</a>
         </div>
       </div>
 
@@ -102,8 +103,11 @@ const promises = [
           </div>
           <div class="install-card reveal">
             <h3>Download</h3>
-            <p>Get <strong>GitIsle.dmg</strong> from the latest release and drag it into Applications.</p>
-            <a class="install-link" href={RELEASES}>Latest release →</a>
+            <p>
+              Open <strong>GitIsle.dmg</strong> and drag GitIsle into Applications. If macOS won't open it, use
+              <strong>Open Anyway</strong> in System Settings → Privacy &amp; Security.
+            </p>
+            <a class="install-link" href={DMG}>Download GitIsle.dmg →</a>
           </div>
         </div>
       </div>
@@ -155,10 +159,10 @@ const promises = [
         <img class="join-logo reveal" src="/app-icon.png" alt="GitIsle" width="120" height="120" />
         <h2 id="join-title" class="join-title reveal">Put your PRs in the notch.</h2>
         <p class="join-sub reveal">Free and open source, under the MIT license.</p>
-        <a class="cta reveal" href={REPO}>
-          <GitHubMark />
-          Get GitIsle on GitHub
-        </a>
+        <div class="join-actions reveal">
+          <MicroButton variant="download" href={DMG} />
+          <MicroButton variant="star" href={REPO} tone="light" />
+        </div>
       </div>
     </section>
   </main>
@@ -226,7 +230,9 @@ const promises = [
     gap: 14px 24px;
   }
   .hero-link {
-    font-size: 15px;
+    display: inline-block;
+    margin-top: 16px;
+    font-size: 14px;
     color: var(--muted);
     text-decoration: none;
   }
@@ -558,12 +564,10 @@ const promises = [
     font-size: 17px;
     color: rgba(0, 0, 0, 0.6);
   }
-  .join .cta {
-    background: #000;
-    color: #fff;
-    padding: 14px 22px;
-  }
-  .join .cta:hover {
-    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+  .join-actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 12px;
   }
 </style>

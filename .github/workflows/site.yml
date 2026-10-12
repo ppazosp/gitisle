@@ -8,10 +8,10 @@ name: Site
 # built here and uploaded prebuilt, so the token only needs access to this project.
 on:
   pull_request:
-    paths: ["site/**", ".github/workflows/site.yml"]
+    paths: ["site/**", "scripts/install.sh", ".github/workflows/site.yml"]
   push:
     branches: [main]
-    paths: ["site/**", ".github/workflows/site.yml"]
+    paths: ["site/**", "scripts/install.sh", ".github/workflows/site.yml"]
   workflow_dispatch:
 
 permissions:
