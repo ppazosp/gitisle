@@ -10,16 +10,26 @@ struct IslandMetrics: Equatable {
   var screenHeight: CGFloat = 900
 
   static func detect(_ screen: NSScreen) -> IslandMetrics {
-    if screen.safeAreaInsets.top > 0, let left = screen.auxiliaryTopLeftArea,
-      let right = screen.auxiliaryTopRightArea
-    {
+    if let width = hardwareNotchWidth(screen) {
       return IslandMetrics(
-        notchWidth: screen.frame.width - left.width - right.width,
-        notchHeight: screen.safeAreaInsets.top, hasNotch: true,
+        notchWidth: width, notchHeight: screen.safeAreaInsets.top, hasNotch: true,
         screenHeight: screen.frame.height)
     }
+    // A screen without a notch, such as an external display, gets one drawn: as wide as this
+    // Mac's own notch (or a MacBook's, 185 pt) and as tall as the screen's menu bar, so the
+    // island looks and behaves the same on every display.
+    let menuBar = screen.frame.maxY - screen.visibleFrame.maxY
     return IslandMetrics(
-      notchWidth: 0, notchHeight: 0, hasNotch: false, screenHeight: screen.frame.height)
+      notchWidth: NSScreen.screens.lazy.compactMap(hardwareNotchWidth).first ?? 185,
+      notchHeight: menuBar >= 20 ? menuBar : 32, hasNotch: true,
+      screenHeight: screen.frame.height)
+  }
+
+  private static func hardwareNotchWidth(_ screen: NSScreen) -> CGFloat? {
+    guard screen.safeAreaInsets.top > 0, let left = screen.auxiliaryTopLeftArea,
+      let right = screen.auxiliaryTopRightArea
+    else { return nil }
+    return screen.frame.width - left.width - right.width
   }
 
   var closedWidth: CGFloat { hasNotch ? notchWidth + 150 : 200 }
@@ -28,7 +38,7 @@ struct IslandMetrics: Equatable {
   /// Concave flare where a notch-attached island meets the top of the screen.
   var ear: CGFloat { hasNotch ? 10 : 0 }
 
-  /// At rest the island covers exactly the notch, so it is invisible; elsewhere it is a slim bar.
+  /// At rest the island is exactly the notch: invisible on a MacBook, a drawn notch elsewhere.
   var idleSize: CGSize {
     hasNotch ? CGSize(width: notchWidth, height: notchHeight) : CGSize(width: 130, height: 8)
   }

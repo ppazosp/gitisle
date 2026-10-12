@@ -101,7 +101,7 @@ struct OnboardingFooter: View {
       .keyboardShortcut(.defaultAction)
       .disabled(!canContinue)
     }
-    .padding(.horizontal, 24)
+    .padding(.horizontal, 30).padding(.bottom, 8)
   }
 
   private func move(_ offset: Int) {

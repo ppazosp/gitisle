@@ -87,8 +87,7 @@ struct IslandView: View {
       let banner = metrics.bannerSize(liveWidth: metrics.liveWidth(side: liveSide))
       return CGSize(width: banner.width + 2 * metrics.ear, height: banner.height)
     case .expanded:
-      let chrome = ExpandedIsland.chromeHeight(
-        metrics, filterBar: ExpandedIsland.showsFilterBar(store))
+      let chrome = ExpandedIsland.chromeHeight(metrics, store: store)
       let board =
         store.tab == .activity && store.activityLayout == .board && !store.showingSettings
         && !store.showingOnboarding
@@ -261,9 +260,16 @@ private struct ExpandedIsland: View {
   static let headerHeight: CGFloat = 54
   static let filterBarHeight: CGFloat = 36
   static let footerHeight: CGFloat = 38
+  /// Setup's buttons need room to clear the island's rounded bottom corners.
+  static let onboardingFooterHeight: CGFloat = 58
 
-  static func chromeHeight(_ metrics: IslandMetrics, filterBar: Bool) -> CGFloat {
-    topInset(metrics) + headerHeight + (filterBar ? filterBarHeight : 0) + footerHeight + 1
+  static func footerHeight(_ store: IslandStore) -> CGFloat {
+    store.showingOnboarding ? onboardingFooterHeight : footerHeight
+  }
+
+  static func chromeHeight(_ metrics: IslandMetrics, store: IslandStore) -> CGFloat {
+    topInset(metrics) + headerHeight + (showsFilterBar(store) ? filterBarHeight : 0)
+      + footerHeight(store) + 1
   }
 
   /// State filters belong to Activity, in both layouts.
@@ -312,7 +318,7 @@ private struct ExpandedIsland: View {
           footer
         }
       }
-      .frame(height: Self.footerHeight)
+      .frame(height: Self.footerHeight(store))
     }
   }
 
