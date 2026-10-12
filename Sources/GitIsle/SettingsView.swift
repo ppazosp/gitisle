@@ -3,21 +3,34 @@ import IslandCore
 import ServiceManagement
 import SwiftUI
 
-/// Settings shown inside the expanded island. Text and pickers apply on Save;
-/// notification and login toggles apply immediately because they ask the system.
+/// Settings shown inside the expanded island. They save as they change, like System Settings:
+/// toggles, pickers and the slider right away, text fields when you press Return or leave them.
+/// Leaving the island commits anything pending, so collapsing never loses an edit.
 struct SettingsView: View {
   @Bindable var store: IslandStore
   @Binding var contentHeight: CGFloat
   @State private var draft: AppSettings
+  /// Text fields edit these and commit to `draft` on Return or when they lose focus, so a
+  /// half-typed value (an `owner/` with no repository yet) is never applied.
+  @State private var repositoriesText: String
+  @State private var codexHomeText: String
+  @State private var claudeHomeText: String
+  @FocusState private var focusedField: TextSetting?
+  @State private var pendingApply: Task<Void, Never>?
   @State private var loginItemError: String?
   @State private var startAtLogin = SMAppService.mainApp.status == .enabled
   @State private var cardsHeight: CGFloat = 0
-  @State private var saveRowHeight: CGFloat = 0
+  @State private var footerHeight: CGFloat = 0
+
+  private enum TextSetting { case repositories, codexHome, claudeHome }
 
   init(store: IslandStore, contentHeight: Binding<CGFloat>) {
     self.store = store
     _contentHeight = contentHeight
     _draft = State(initialValue: store.settings)
+    _repositoriesText = State(initialValue: store.settings.repositories)
+    _codexHomeText = State(initialValue: store.settings.codexHome)
+    _claudeHomeText = State(initialValue: store.settings.claudeHome)
   }
 
   /// The draft with the preferences that apply outside this page (system permission and
@@ -33,8 +46,29 @@ struct SettingsView: View {
 
   private var changed: Bool { merged != store.settings }
 
+  private func commitText() {
+    draft.repositories = repositoriesText
+    draft.codexHome = codexHomeText
+    draft.claudeHome = claudeHomeText
+  }
+
+  /// Saves shortly after the last change, so dragging the slider doesn't write on every step.
+  private func scheduleApply() {
+    pendingApply?.cancel()
+    pendingApply = Task {
+      try? await Task.sleep(for: .milliseconds(250))
+      guard !Task.isCancelled else { return }
+      applyNow()
+    }
+  }
+
+  private func applyNow() {
+    pendingApply?.cancel()
+    if changed { store.applySettings(merged) }
+  }
+
   var body: some View {
-    // The cards scroll; the save row stays pinned below them so Save is always visible.
+    // The cards scroll; the status row stays pinned below them.
     VStack(spacing: 0) {
       MeasuredColumn {
         VStack(spacing: 12) {
@@ -53,33 +87,30 @@ struct SettingsView: View {
         .padding(.horizontal, 16).padding(.top, 12).padding(.bottom, 6)
       } onHeight: {
         cardsHeight = $0
-        contentHeight = $0 + saveRowHeight
+        contentHeight = $0 + footerHeight
       }
       HStack(spacing: 12) {
         if let error = store.persistenceError ?? loginItemError {
           Text(error).font(.system(size: 11)).foregroundStyle(Palette.failed).lineLimit(2)
         } else {
-          Text("GitIsle reads GitHub through your gh login and never writes to GitHub.")
+          Text("Changes save automatically. GitIsle reads GitHub through your gh login.")
             .font(.system(size: 10.5)).foregroundStyle(.white.opacity(0.35))
         }
         Spacer()
-        Button("Save") {
-          store.applySettings(merged)
-          if store.persistenceError == nil {
-            withAnimation(Motion.snappy) { store.showingSettings = false }
-          }
-        }
-        .buttonStyle(.borderedProminent).controlSize(.small)
-        .keyboardShortcut(.defaultAction)
-        .disabled(!changed)
       }
-      .padding(.horizontal, 20).padding(.vertical, 8)
+      .padding(.horizontal, 20).padding(.vertical, 10)
       .onGeometryChange(for: CGFloat.self) {
         $0.size.height
       } action: {
-        saveRowHeight = $0
+        footerHeight = $0
         contentHeight = cardsHeight + $0
       }
+    }
+    .onChange(of: draft) { scheduleApply() }
+    .onChange(of: focusedField) { commitText() }
+    .onDisappear {
+      commitText()
+      applyNow()
     }
   }
 
@@ -97,8 +128,10 @@ struct SettingsView: View {
         }
       }
       SettingsRow("Also watch") {
-        TextField("owner/repo, owner/another-repo", text: $draft.repositories)
+        TextField("owner/repo, owner/another-repo", text: $repositoriesText)
           .islandField()
+          .focused($focusedField, equals: .repositories)
+          .onSubmit(commitText)
       }
       SettingsRow("Refresh") {
         PillPicker(
@@ -208,10 +241,14 @@ struct SettingsView: View {
   private var usage: some View {
     SettingsCard(glyph: .claude, title: "Usage statistics") {
       SettingsRow("Codex home") {
-        TextField("~/.codex", text: $draft.codexHome).islandField()
+        TextField("~/.codex", text: $codexHomeText).islandField()
+          .focused($focusedField, equals: .codexHome)
+          .onSubmit(commitText)
       }
       SettingsRow("Claude Code home") {
-        TextField("~/.claude", text: $draft.claudeHome).islandField()
+        TextField("~/.claude", text: $claudeHomeText).islandField()
+          .focused($focusedField, equals: .claudeHome)
+          .onSubmit(commitText)
       }
       SettingsRow("Currency") {
         PillPicker(

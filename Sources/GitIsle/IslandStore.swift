@@ -31,7 +31,8 @@ final class IslandStore {
     }
   }
   var tab: IslandTab = .activity
-  /// Settings replace the expanded content; the island stays open while they are shown.
+  /// Settings replace the expanded content. They save as they change, so collapsing the island
+  /// never loses an edit.
   var showingSettings = false
   /// A menu opened from the island draws outside its shape; leaving the shape for it
   /// must not collapse the island.
@@ -339,14 +340,24 @@ final class IslandStore {
     }
   }
 
+  /// Applies and saves settings edited in the island. Only changes to what is fetched start a
+  /// refetch; display preferences apply as they are.
   func applySettings(_ proposed: AppSettings) {
     do {
       _ = try RepositorySelection(text: proposed.repositories)
       guard !proposed.codexHome.isEmpty, !proposed.claudeHome.isEmpty else {
         throw ProcessFailure.failed("Choose a home directory for each agent.")
       }
+      let previous = settings
       settings = proposed
       saveSettings()
+      if proposed.repositories != previous.repositories {
+        lastGitHubRefresh = .distantPast
+        lastStatsRefresh = .distantPast
+      }
+      if proposed.codexHome != previous.codexHome || proposed.claudeHome != previous.claudeHome {
+        lastUsageRefresh = .distantPast
+      }
       NotificationCenter.default.post(name: .islandSettingsChanged, object: nil)
     } catch { persistenceError = error.localizedDescription }
   }
@@ -366,9 +377,6 @@ final class IslandStore {
       _ = try RepositorySelection(text: settings.repositories)
       try settings.save(to: AppFiles.settings)
       persistenceError = nil
-      lastGitHubRefresh = .distantPast
-      lastUsageRefresh = .distantPast
-      lastStatsRefresh = .distantPast
     } catch { persistenceError = error.localizedDescription }
   }
 
@@ -384,8 +392,8 @@ final class IslandStore {
     hoverTask = Task { [weak self] in
       guard let self else { return }
       do { try await Task.sleep(for: .seconds(delay)) } catch { return }
-      // Leaving the island must not throw away settings that are being edited.
-      if !Task.isCancelled, inside || (!showingSettings && !menuOpen) { expanded = inside }
+      // A menu opened from the island draws outside it, so leaving for the menu keeps it open.
+      if !Task.isCancelled, inside || !menuOpen { expanded = inside }
     }
   }
 
