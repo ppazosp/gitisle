@@ -37,10 +37,21 @@ struct IslandMetrics: Equatable {
     presentation == .idle ? 0 : ear
   }
 
+  /// Padding at each end of the live pill.
+  var livePadding: CGFloat { hasNotch ? 12 : 16 }
+  /// The middle of the live pill, where content never goes: the camera housing plus a margin
+  /// either side, or a small gap without a notch.
+  var liveGap: CGFloat { hasNotch ? notchWidth + 12 : 10 }
+  /// The live pill fits its widest side. Both sides grow together so the pill stays centred on
+  /// the notch, and it is never narrower than `closedWidth`.
+  func liveWidth(side: CGFloat) -> CGFloat {
+    max(closedWidth, 2 * (livePadding + side.rounded(.up)) + liveGap)
+  }
+
   /// Banners grow downward only: as wide as the live pill under a notch. Without a notch the
   /// pill is too narrow for a title, so the banner keeps a readable minimum.
-  var bannerSize: CGSize {
-    CGSize(width: hasNotch ? closedWidth : max(closedWidth, 340), height: closedHeight + 50)
+  func bannerSize(liveWidth: CGFloat) -> CGSize {
+    CGSize(width: hasNotch ? liveWidth : max(liveWidth, 340), height: closedHeight + 50)
   }
   var expandedWidth: CGFloat { 640 }
   /// The board grows with its columns and never gets narrower than the list.
