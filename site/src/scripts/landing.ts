@@ -169,18 +169,58 @@ if (hero && stage && frame && island) {
 
 /* ---------- Copy buttons ---------- */
 
+/** Copies text, falling back to the older copy command where the clipboard API is blocked. */
+async function copyText(text: string): Promise<boolean> {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    const field = document.createElement('textarea');
+    field.value = text;
+    field.setAttribute('readonly', '');
+    field.style.position = 'fixed';
+    field.style.opacity = '0';
+    document.body.append(field);
+    field.select();
+    const copied = document.execCommand('copy');
+    field.remove();
+    return copied;
+  }
+}
+
+// The install command button: copy, then show the check for a moment. If copying isn't
+// allowed at all, select the command so Cmd-C works.
+document.querySelectorAll<HTMLButtonElement>('[data-micro-copy]').forEach((button) => {
+  const status = button.querySelector('[role="status"]');
+  let timer = 0;
+  button.addEventListener('click', async () => {
+    if (await copyText(button.dataset.microCopy ?? '')) {
+      button.classList.add('is-copied');
+      if (status) status.textContent = 'Copied';
+      window.clearTimeout(timer);
+      timer = window.setTimeout(() => {
+        button.classList.remove('is-copied');
+        if (status) status.textContent = '';
+      }, 1600);
+    } else {
+      const command = button.querySelector('.micro-command');
+      if (command) window.getSelection()?.selectAllChildren(command);
+      if (status) status.textContent = 'Command selected; press Command-C to copy';
+    }
+  });
+});
+
 document.querySelectorAll<HTMLElement>('[data-copy]').forEach((block) => {
   const button = block.querySelector('button');
   button?.addEventListener('click', async () => {
-    try {
-      await navigator.clipboard.writeText(block.dataset.copy ?? '');
+    if (await copyText(block.dataset.copy ?? '')) {
       block.classList.add('is-copied');
       button.textContent = 'Copied';
       window.setTimeout(() => {
         block.classList.remove('is-copied');
         button.textContent = 'Copy';
       }, 1600);
-    } catch {
+    } else {
       button.textContent = 'Select and copy';
     }
   });

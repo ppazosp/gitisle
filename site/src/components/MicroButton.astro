@@ -1,0 +1,301 @@
+---
+// Buttons with small motion, recreated in CSS from Amicro's "Download for Mac", "Star on
+// GitHub" and "Copy Hash" buttons (https://amicro.dev, MIT). Icons are Lucide's (ISC), and
+// GitHub's mark is from Octicons (MIT).
+//   download: the Apple mark slides out and an arrow slides in on hover.
+//   star:     GitHub's mark rises away and a star pops in with two sparkles.
+//   copy:     copies `command`; the copy icon turns into a check.
+import GitHubMark from './GitHubMark.astro';
+
+interface Props {
+  variant: 'download' | 'star' | 'copy';
+  href?: string;
+  label?: string;
+  command?: string;
+  tone?: 'dark' | 'light';
+  class?: string;
+}
+
+const { variant, href, label, command, tone = 'dark', class: className } = Astro.props;
+const Tag = variant === 'copy' ? 'button' : 'a';
+---
+
+<Tag
+  class:list={['micro', `micro--${variant}`, `micro--${tone}`, className]}
+  href={Tag === 'a' ? href : undefined}
+  type={Tag === 'button' ? 'button' : undefined}
+  data-micro-copy={variant === 'copy' ? command : undefined}
+  aria-label={variant === 'copy' ? `Copy the install command: ${command}` : undefined}
+>
+  {
+    variant === 'download' && (
+      <>
+        <span class="micro-slot micro-slot--lead" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="currentColor">
+            <path d="M16.37 12.73c-.02-2.33 1.9-3.45 1.99-3.5-1.08-1.59-2.77-1.8-3.37-1.83-1.43-.15-2.8.84-3.52.84-.73 0-1.85-.82-3.04-.8-1.56.02-3.01.91-3.81 2.31-1.63 2.83-.42 7.01 1.17 9.3.78 1.12 1.7 2.38 2.91 2.33 1.17-.05 1.61-.75 3.02-.75 1.41 0 1.81.75 3.04.73 1.26-.02 2.05-1.14 2.82-2.27.89-1.3 1.25-2.56 1.27-2.62-.03-.01-2.44-.94-2.48-3.71ZM14.06 5.88c.64-.78 1.08-1.86.96-2.94-.93.04-2.05.62-2.71 1.39-.6.69-1.12 1.79-.98 2.85 1.04.08 2.09-.53 2.73-1.3Z" />
+          </svg>
+        </span>
+        <span class="micro-label">{label ?? 'Download for Mac'}</span>
+        <span class="micro-slot micro-slot--trail" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M5 12h14" /><path d="m12 5 7 7-7 7" />
+          </svg>
+        </span>
+      </>
+    )
+  }
+  {
+    variant === 'star' && (
+      <>
+        <span class="micro-icon" aria-hidden="true">
+          <span class="micro-face micro-face--one"><GitHubMark /></span>
+          <span class="micro-face micro-face--two">
+            <svg viewBox="0 0 24 24" fill="currentColor">
+              <path d="M12 2l2.9 6.26 6.85.69-5.12 4.6 1.47 6.73L12 16.77l-6.1 3.51 1.47-6.73L2.25 8.95l6.85-.69z" />
+            </svg>
+            <svg class="micro-spark micro-spark--a" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M12 2l2.4 7.6H22l-6.2 4.5 2.4 7.6-6.2-4.5-6.2 4.5 2.4-7.6L2 9.6h7.6z" />
+            </svg>
+            <svg class="micro-spark micro-spark--b" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M12 2l2.4 7.6H22l-6.2 4.5 2.4 7.6-6.2-4.5-6.2 4.5 2.4-7.6L2 9.6h7.6z" />
+            </svg>
+          </span>
+        </span>
+        <span class="micro-label">{label ?? 'Star on GitHub'}</span>
+      </>
+    )
+  }
+  {
+    variant === 'copy' && (
+      <>
+        <code class="micro-command">{command}</code>
+        <span class="micro-icon" aria-hidden="true">
+          <span class="micro-face micro-face--one">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect width="14" height="14" x="8" y="8" rx="2" ry="2" /><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" />
+            </svg>
+          </span>
+          <span class="micro-face micro-face--two">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M20 6 9 17l-5-5" />
+            </svg>
+          </span>
+        </span>
+        <span class="micro-status" role="status" aria-live="polite"></span>
+      </>
+    )
+  }
+</Tag>
+
+<style>
+  /* Amicro's button: a soft dark (or white) pill whose padding opens up on hover. */
+  .micro {
+    --spring: cubic-bezier(0.3, 1.5, 0.55, 1);
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    height: 46px;
+    padding: 0 18px;
+    border-radius: 16px;
+    font: inherit;
+    font-size: 15px;
+    font-weight: 550;
+    letter-spacing: -0.01em;
+    white-space: nowrap;
+    text-decoration: none;
+    cursor: pointer;
+    overflow: hidden;
+    transition:
+      padding 0.32s var(--spring),
+      transform 0.32s var(--spring),
+      background-color 0.2s;
+  }
+  .micro--dark {
+    color: #f4f4f5;
+    background: #18181b;
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    box-shadow:
+      inset 0 0.5px 0 1px rgba(101, 101, 101, 0.13),
+      0 4px 14px rgba(0, 0, 0, 0.35);
+  }
+  .micro--light {
+    color: #18181b;
+    background: #fff;
+    border: 1px solid rgba(0, 0, 0, 0.08);
+    box-shadow:
+      inset 0 0.5px 0 1px rgba(0, 0, 0, 0.06),
+      0 2px 8px rgba(0, 0, 0, 0.08);
+  }
+  .micro:hover,
+  .micro:focus-visible {
+    padding: 0 22px;
+    transform: scale(1.02);
+  }
+  .micro--dark:hover,
+  .micro--dark:focus-visible {
+    background: #27272a;
+  }
+  .micro--light:hover,
+  .micro--light:focus-visible {
+    background: #f4f4f5;
+  }
+  .micro:active {
+    transform: scale(0.97);
+  }
+  .micro svg {
+    width: 16px;
+    height: 16px;
+    display: block;
+  }
+
+  /* download: icons in slots that open and close beside the label. */
+  .micro-slot {
+    display: inline-flex;
+    overflow: hidden;
+    transition:
+      max-width 0.32s var(--spring),
+      margin 0.32s var(--spring),
+      opacity 0.2s,
+      transform 0.32s var(--spring);
+  }
+  .micro-slot--lead {
+    max-width: 16px;
+    margin-right: 10px;
+  }
+  .micro-slot--trail {
+    max-width: 0;
+    margin-left: 0;
+    opacity: 0;
+    transform: translateX(10px);
+  }
+  .micro--download:hover .micro-slot--lead,
+  .micro--download:focus-visible .micro-slot--lead {
+    max-width: 0;
+    margin-right: 0;
+    opacity: 0;
+    transform: translateX(-10px);
+  }
+  .micro--download:hover .micro-slot--trail,
+  .micro--download:focus-visible .micro-slot--trail {
+    max-width: 16px;
+    margin-left: 10px;
+    opacity: 1;
+    transform: none;
+  }
+
+  /* star and copy: two faces in one 16px icon; the second takes over. */
+  .micro-icon {
+    position: relative;
+    width: 16px;
+    height: 16px;
+    flex: none;
+  }
+  .micro--star .micro-label {
+    margin-left: 10px;
+  }
+  .micro-face {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    transition:
+      transform 0.32s var(--spring),
+      opacity 0.2s;
+  }
+  .micro--star .micro-face--two {
+    color: #facc15;
+    opacity: 0;
+    transform: translateY(15px) scale(0.8);
+  }
+  .micro--star:hover .micro-face--one,
+  .micro--star:focus-visible .micro-face--one {
+    opacity: 0;
+    transform: translateY(-15px) scale(0.8);
+  }
+  .micro--star:hover .micro-face--two,
+  .micro--star:focus-visible .micro-face--two {
+    opacity: 1;
+    transform: none;
+  }
+  .micro-spark {
+    position: absolute;
+    opacity: 0;
+    transition:
+      transform 0.32s var(--spring) 0.05s,
+      opacity 0.2s 0.05s;
+  }
+  .micro .micro-spark--a {
+    width: 10px;
+    height: 10px;
+    top: -12px;
+    right: -8px;
+    color: #fef08a;
+    transform: translateY(10px) rotate(-45deg) scale(0);
+  }
+  .micro .micro-spark--b {
+    width: 6px;
+    height: 6px;
+    top: -4px;
+    left: -12px;
+    color: #facc15;
+    transform: translateX(10px) rotate(45deg) scale(0);
+    transition-delay: 0.1s;
+  }
+  .micro--star:hover .micro-spark,
+  .micro--star:focus-visible .micro-spark {
+    opacity: 1;
+    transform: none;
+  }
+
+  .micro--copy {
+    gap: 12px;
+  }
+  .micro-command {
+    font-family: 'Geist Mono Variable', ui-monospace, monospace;
+    font-size: 13.5px;
+    font-weight: 450;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .micro--dark .micro-command {
+    color: #d4d4d8;
+  }
+  .micro--copy .micro-face--two {
+    color: #34d399;
+    opacity: 0;
+    transform: scale(0.5);
+  }
+  .micro--copy.is-copied .micro-face--one {
+    opacity: 0;
+    transform: scale(0.5);
+  }
+  .micro--copy.is-copied .micro-face--two {
+    opacity: 1;
+    transform: none;
+  }
+  .micro-status {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+  }
+
+  @media (max-width: 520px) {
+    .micro--copy {
+      max-width: calc(100vw - 2 * var(--pad, 20px));
+    }
+    .micro-command {
+      font-size: 12px;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .micro,
+    .micro * {
+      transition-duration: 0.01ms !important;
+      transition-delay: 0s !important;
+    }
+  }
+</style>

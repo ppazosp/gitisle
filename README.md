@@ -55,8 +55,12 @@ Then pick one:
 **Install script**
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/ppazosp/gitisle/main/scripts/install.sh | bash
+curl -fsSL https://gitisle.ppazosp.dev/install.sh | bash
 ```
+
+It downloads the latest release into Applications. The site serves
+[`scripts/install.sh`](scripts/install.sh) from this repository, so you can read
+exactly what runs.
 
 **Homebrew**
 
@@ -67,8 +71,8 @@ brew install --cask gitisle
 
 **Download**
 
-Get `GitIsle.dmg` from the [latest release](https://github.com/ppazosp/gitisle/releases/latest)
-and drag GitIsle into Applications.
+Get `GitIsle.dmg` from the [latest release](https://github.com/ppazosp/gitisle/releases/latest),
+open it, and drag GitIsle into Applications.
 
 **From source** (needs Xcode 26 or later)
 
@@ -79,10 +83,12 @@ bash scripts/install.sh --from-source
 ```
 
 > [!NOTE]
-> Releases are signed ad hoc and are not notarized yet. The install script and
-> the Homebrew cask clear macOS's download quarantine for you. If you install
-> from the DMG and macOS says the app can't be opened, right-click GitIsle in
-> Applications and choose **Open**, or run
+> GitIsle is free and isn't notarized by Apple, which needs a paid developer
+> account. The install script and the Homebrew cask clear macOS's download
+> quarantine for you, so the app just opens. If you install from the DMG and
+> macOS says it can't be opened, open **System Settings → Privacy & Security**,
+> scroll to the message about GitIsle, and click **Open Anyway** (on macOS 14,
+> you can also right-click GitIsle in Applications and choose **Open**). Or run
 > `xattr -dr com.apple.quarantine /Applications/GitIsle.app`.
 
 To uninstall, quit GitIsle (right-click the island), then delete
