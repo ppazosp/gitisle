@@ -97,6 +97,12 @@ struct SettingsView: View {
             .font(.system(size: 10.5)).foregroundStyle(.white.opacity(0.35))
         }
         Spacer()
+        Button("Run setup again") {
+          commitText()
+          applyNow()
+          withAnimation(Motion.snappy) { store.startOnboarding() }
+        }
+        .buttonStyle(.plain).font(.system(size: 11)).foregroundStyle(.white.opacity(0.55))
       }
       .padding(.horizontal, 20).padding(.vertical, 10)
       .onGeometryChange(for: CGFloat.self) {
@@ -275,7 +281,7 @@ struct SettingsView: View {
 }
 
 /// The signed-in GitHub account: avatar, handle, and a connected check. Opens the profile.
-private struct AccountChip: View {
+struct AccountChip: View {
   let login: String
   @State private var hovered = false
 
@@ -338,7 +344,7 @@ private struct AnnouncementChip: View {
   }
 }
 
-private struct SettingsCard<Content: View>: View {
+struct SettingsCard<Content: View>: View {
   let glyph: Glyph
   let title: String
   @ViewBuilder let content: Content
@@ -357,7 +363,7 @@ private struct SettingsCard<Content: View>: View {
   }
 }
 
-private struct SettingsRow<Control: View>: View {
+struct SettingsRow<Control: View>: View {
   let label: String
   @ViewBuilder let control: Control
 
@@ -378,7 +384,7 @@ private struct SettingsRow<Control: View>: View {
 }
 
 extension View {
-  fileprivate func islandField() -> some View {
+  func islandField() -> some View {
     textFieldStyle(.plain)
       .font(.system(size: 12))
       .padding(.horizontal, 9).padding(.vertical, 6)
@@ -386,7 +392,7 @@ extension View {
       .frame(minWidth: 80, maxWidth: 240)
   }
 
-  fileprivate func islandToggle() -> some View {
+  func islandToggle() -> some View {
     toggleStyle(.switch).controlSize(.mini).labelsHidden()
   }
 }

@@ -91,11 +91,12 @@ struct IslandView: View {
         metrics, filterBar: ExpandedIsland.showsFilterBar(store))
       let board =
         store.tab == .activity && store.activityLayout == .board && !store.showingSettings
+        && !store.showingOnboarding
       let width = board ? metrics.boardWidth(columns: store.sections.count) : metrics.expandedWidth
       return CGSize(
         width: width + 2 * metrics.ear,
         height: min(
-          store.tab == .stats && !store.showingSettings
+          store.tab == .stats && !store.showingSettings && !store.showingOnboarding
             ? metrics.maxStatsHeight : metrics.maxExpandedHeight,
           chrome + contentHeight))
     }
@@ -267,7 +268,7 @@ private struct ExpandedIsland: View {
 
   /// State filters belong to Activity, in both layouts.
   static func showsFilterBar(_ store: IslandStore) -> Bool {
-    store.tab == .activity && !store.showingSettings
+    store.tab == .activity && !store.showingSettings && !store.showingOnboarding
   }
 
   static func topInset(_ metrics: IslandMetrics) -> CGFloat {
@@ -287,7 +288,9 @@ private struct ExpandedIsland: View {
       }
       Rectangle().fill(Palette.hairline).frame(height: 1).padding(.horizontal, 28)
       Group {
-        if store.showingSettings {
+        if store.showingOnboarding {
+          OnboardingView(store: store, contentHeight: $contentHeight)
+        } else if store.showingSettings {
           SettingsView(store: store, contentHeight: $contentHeight)
         } else {
           switch store.tab {
@@ -296,15 +299,33 @@ private struct ExpandedIsland: View {
           }
         }
       }
-      .id(store.showingSettings ? "settings" : store.tab.rawValue)
+      .id(
+        store.showingOnboarding
+          ? "onboarding" : store.showingSettings ? "settings" : store.tab.rawValue
+      )
       .transition(.opacity.animation(.easeOut(duration: 0.12)))
       .frame(maxHeight: .infinity, alignment: .top)
-      footer.frame(height: Self.footerHeight)
+      Group {
+        if store.showingOnboarding {
+          OnboardingFooter(store: store)
+        } else {
+          footer
+        }
+      }
+      .frame(height: Self.footerHeight)
     }
   }
 
   @ViewBuilder private var header: some View {
-    if store.showingSettings {
+    if store.showingOnboarding {
+      HStack(spacing: 10) {
+        Text("Set up GitIsle").font(.system(size: 14, weight: .semibold))
+        Spacer()
+        OnboardingProgress(step: store.onboardingStep)
+      }
+      .padding(.horizontal, 28)
+      .frame(height: Self.headerHeight)
+    } else if store.showingSettings {
       HStack(spacing: 10) {
         FooterButton(glyph: nil, systemImage: "chevron.left", label: "Back") {
           withAnimation(Motion.snappy) { store.showingSettings = false }
