@@ -3,10 +3,11 @@ import SwiftUI
 
 // Notch detection and the non-activating panel pattern are adapted from Agents Island (MIT).
 // The original license is reproduced in THIRD_PARTY_NOTICES.md.
-struct IslandMetrics {
+struct IslandMetrics: Equatable {
   var notchWidth: CGFloat
   var notchHeight: CGFloat
   var hasNotch: Bool
+  var screenHeight: CGFloat = 900
 
   static func detect(_ screen: NSScreen) -> IslandMetrics {
     if screen.safeAreaInsets.top > 0, let left = screen.auxiliaryTopLeftArea,
@@ -14,26 +15,54 @@ struct IslandMetrics {
     {
       return IslandMetrics(
         notchWidth: screen.frame.width - left.width - right.width,
-        notchHeight: screen.safeAreaInsets.top, hasNotch: true)
+        notchHeight: screen.safeAreaInsets.top, hasNotch: true,
+        screenHeight: screen.frame.height)
     }
-    return IslandMetrics(notchWidth: 0, notchHeight: 0, hasNotch: false)
+    return IslandMetrics(
+      notchWidth: 0, notchHeight: 0, hasNotch: false, screenHeight: screen.frame.height)
   }
 
-  var closedWidth: CGFloat { hasNotch ? notchWidth + 196 : 280 }
-  var closedHeight: CGFloat { hasNotch ? max(36, notchHeight) : 42 }
+  var closedWidth: CGFloat { hasNotch ? notchWidth + 150 : 200 }
+  var closedHeight: CGFloat { hasNotch ? max(32, notchHeight) : 38 }
   var topGap: CGFloat { hasNotch ? 0 : 8 }
+  /// Concave flare where a notch-attached island meets the top of the screen.
+  var ear: CGFloat { hasNotch ? 10 : 0 }
 
-  @MainActor func expandedHeight(for store: IslandStore) -> CGFloat {
-    if store.tab == .agents { return 540 }
-    let merged = min(5, (store.github?.pullRequests ?? []).filter { $0.state == "MERGED" }.count)
-    let eventCount = min(5, store.events.count)
-    let progressing = store.openPRs.count - store.attention.count
-    let sections = [store.attention.count, progressing, merged, eventCount].filter { $0 > 0 }.count
-    let rows = store.openPRs.count + merged
-    let desired =
-      notchHeight + 135 + CGFloat(rows * 66 + eventCount * 46 + sections * 24)
-      + (store.githubError == nil ? 0 : 70)
-    return min(540, max(260, desired))
+  /// At rest the island covers exactly the notch, so it is invisible; elsewhere it is a slim bar.
+  var idleSize: CGSize {
+    hasNotch ? CGSize(width: notchWidth, height: notchHeight) : CGSize(width: 130, height: 8)
+  }
+
+  func ear(for presentation: IslandStore.Presentation) -> CGFloat {
+    presentation == .idle ? 0 : ear
+  }
+
+  var bannerSize: CGSize { CGSize(width: max(closedWidth + 80, 380), height: closedHeight + 60) }
+  var expandedWidth: CGFloat { 640 }
+  /// The board grows with its columns and never gets narrower than the list.
+  func boardWidth(columns: Int) -> CGFloat {
+    let column: CGFloat = 230
+    let spacing: CGFloat = 10
+    let content = CGFloat(columns) * column + CGFloat(max(0, columns - 1)) * spacing + 32
+    return max(expandedWidth, content)
+  }
+  /// The usual limit before expanded content scrolls.
+  var maxExpandedHeight: CGFloat { 560 }
+  /// Stats may grow with the screen so its cards fit before it needs to scroll.
+  var maxStatsHeight: CGFloat { min(860, max(maxExpandedHeight, screenHeight - 140)) }
+
+  /// The transparent window holds the widest board and the tallest island, plus shadow.
+  var panelSize: CGSize {
+    CGSize(width: boardWidth(columns: 4) + 2 * ear + 80, height: maxStatsHeight + topGap + 60)
+  }
+
+  func cornerRadius(for presentation: IslandStore.Presentation) -> CGFloat {
+    switch presentation {
+    case .idle: hasNotch ? 8 : 4
+    case .live: hasNotch ? 12 : closedHeight / 2
+    case .banner: hasNotch ? 24 : 26
+    case .expanded: 32
+    }
   }
 }
 
@@ -51,11 +80,12 @@ final class IslandPanel: NSPanel {
   private var timer: Timer?
   private var observers: [NSObjectProtocol] = []
   private var mouseWasInside = false
+  private var lastPointer: NSPoint?
 
   init(store: IslandStore) {
     self.store = store
     panel = IslandPanel(
-      contentRect: NSRect(x: 0, y: 0, width: 520, height: 600),
+      contentRect: NSRect(x: 0, y: 0, width: 1040, height: 660),
       styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
     panel.isFloatingPanel = true
     panel.becomesKeyOnlyIfNeeded = true
@@ -85,6 +115,15 @@ final class IslandPanel: NSPanel {
       self?.trackPointer()
       return event
     }
+    // Menus (repository filter, chart style, display picker) open outside the island.
+    observers.append(
+      NotificationCenter.default.addObserver(
+        forName: NSMenu.didBeginTrackingNotification, object: nil, queue: .main
+      ) { [weak self] _ in Task { @MainActor in self?.store.menuOpen = true } })
+    observers.append(
+      NotificationCenter.default.addObserver(
+        forName: NSMenu.didEndTrackingNotification, object: nil, queue: .main
+      ) { [weak self] _ in Task { @MainActor in self?.menuClosed() } })
     observers.append(
       NotificationCenter.default.addObserver(
         forName: NSApplication.didChangeScreenParametersNotification,
@@ -127,11 +166,27 @@ final class IslandPanel: NSPanel {
 
   func reposition() {
     guard let screen else { return }
-    metrics = IslandMetrics.detect(screen)
-    panel.contentView = NSHostingView(rootView: IslandView(store: store, metrics: metrics))
-    panel.setFrameOrigin(
-      NSPoint(
-        x: screen.frame.midX - panel.frame.width / 2, y: screen.frame.maxY - panel.frame.height))
+    let detected = IslandMetrics.detect(screen)
+    // Rebuilding the view resets its state, so keep it unless the geometry changed.
+    if detected == metrics, panel.contentView is NSHostingView<IslandView> {
+      placePanel(on: screen)
+      return
+    }
+    metrics = detected
+    let host = NSHostingView(rootView: IslandView(store: store, metrics: metrics))
+    // The window keeps a fixed size; the island animates inside it without window resizes.
+    host.sizingOptions = []
+    panel.contentView = host
+    placePanel(on: screen)
+  }
+
+  private func placePanel(on screen: NSScreen) {
+    let size = metrics.panelSize
+    panel.setFrame(
+      NSRect(
+        x: screen.frame.midX - size.width / 2, y: screen.frame.maxY - size.height,
+        width: size.width, height: size.height),
+      display: false)
     updateVisibility()
   }
 
@@ -146,24 +201,39 @@ final class IslandPanel: NSPanel {
     }
   }
 
+  /// Once a menu closes, collapse only if the pointer really is outside the island.
+  private func menuClosed() {
+    store.menuOpen = false
+    trackPointer()
+    if !mouseWasInside { store.setHovered(false) }
+  }
+
   private func trackPointer() {
     guard !CommandLine.arguments.contains("--snapshot") else { return }
     guard panel.isVisible else { return }
     let point = NSEvent.mouseLocation
-    let width = store.expanded ? 460.0 : metrics.closedWidth
-    let height = store.expanded ? metrics.expandedHeight(for: store) : metrics.closedHeight
+    let size = islandSize
     let rect = NSRect(
-      x: panel.frame.midX - width / 2, y: panel.frame.maxY - metrics.topGap - height,
-      width: width, height: height)
-    let inside = NSBezierPath(
-      roundedRect: rect, xRadius: store.expanded ? 26 : 20,
-      yRadius: store.expanded ? 26 : 20
-    ).contains(point)
+      x: panel.frame.midX - size.width / 2, y: panel.frame.maxY - metrics.topGap - size.height,
+      width: size.width, height: size.height)
+    let radius = metrics.cornerRadius(for: store.presentation)
+    let inside = NSBezierPath(roundedRect: rect, xRadius: radius, yRadius: radius).contains(point)
+    let moved = point != lastPointer
+    lastPointer = point
     panel.ignoresMouseEvents = !inside
-    if inside != mouseWasInside {
-      mouseWasInside = inside
-      store.setHovered(inside)
-    }
+    guard inside != mouseWasInside else { return }
+    // When the island narrows under a still pointer (for example switching from the board
+    // to the list), the island left the pointer, not the other way round. Stay open until
+    // the pointer itself moves outside.
+    if !inside && !moved && store.expanded { return }
+    mouseWasInside = inside
+    store.setHovered(inside)
+  }
+
+  private var islandSize: CGSize {
+    let measured = store.islandSize
+    if measured.width > 0, measured.height > 0 { return measured }
+    return metrics.idleSize
   }
 
   func show() {
@@ -174,8 +244,8 @@ final class IslandPanel: NSPanel {
   func capture(to url: URL) throws {
     guard let view = panel.contentView else { return }
     view.layoutSubtreeIfNeeded()
-    let width = store.expanded ? 460.0 : metrics.closedWidth
-    let height = store.expanded ? metrics.expandedHeight(for: store) : metrics.closedHeight
+    let width = islandSize.width
+    let height = islandSize.height
     let y = view.isFlipped ? metrics.topGap - 16 : view.bounds.maxY - metrics.topGap - height - 16
     let rect = NSRect(
       x: (view.bounds.width - width) / 2 - 16, y: y,

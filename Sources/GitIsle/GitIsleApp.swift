@@ -11,23 +11,28 @@ import UserNotifications
   init() {
     let demo =
       CommandLine.arguments.contains("--demo") || CommandLine.arguments.contains("--snapshot")
+      || CommandLine.arguments.contains("--banner")
     let model = IslandStore(demo: demo)
     _store = State(initialValue: model)
     delegate.store = model
   }
 
   var body: some Scene {
-    MenuBarExtra("GitIsle", systemImage: "arrow.triangle.pull") {
+    MenuBarExtra {
       Button("Show GitIsle") { delegate.island?.show() }
       Button("Refresh GitHub") { Task { await store.refreshGitHub() } }.disabled(
         store.githubRefreshing || store.isDemo)
-      SettingsLink { Text("Settings…") }
+      Button("Settings…") {
+        NotificationCenter.default.post(name: .islandOpenSettings, object: nil)
+      }
+      .keyboardShortcut(",")
       Divider()
-      Text("\(store.openPRs.count) open PRs · \(store.workingCount) active agents")
+      Text("\(store.openPRs.count) open PRs · \(store.attention.count) need you")
       Divider()
       Button("Quit GitIsle") { NSApp.terminate(nil) }.keyboardShortcut("q")
+    } label: {
+      Image(nsImage: Glyph.pullRequest.image(size: 16)).accessibilityLabel("GitIsle")
     }
-    Settings { SettingsView(store: store) }
   }
 }
 
@@ -36,6 +41,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
   var store: IslandStore?
   var island: IslandPanelController?
   private var settingsObserver: NSObjectProtocol?
+  private var openSettingsObserver: NSObjectProtocol?
 
   func applicationDidFinishLaunching(_ notification: Notification) {
     NSApp.setActivationPolicy(.accessory)
@@ -45,19 +51,50 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
       return
     }
     UNUserNotificationCenter.current().delegate = self
-    if (CommandLine.arguments.contains("--expanded")
-      || CommandLine.arguments.contains("--snapshot"))
-      && !CommandLine.arguments.contains("--collapsed")
+    let arguments = CommandLine.arguments
+    if (arguments.contains("--expanded") || arguments.contains("--snapshot"))
+      && !arguments.contains("--collapsed") && !arguments.contains("--banner")
     {
       store.expanded = true
     }
-    if CommandLine.arguments.contains("--agents") { store.tab = .agents }
+    // `--agents` is the earlier name for the statistics preview.
+    if arguments.contains("--stats") || arguments.contains("--agents") { store.tab = .stats }
+    if arguments.contains("--board") { store.activityLayout = .board }
+    if let index = arguments.firstIndex(of: "--chart"), arguments.count > index + 1,
+      let style = ChartStyle(rawValue: arguments[index + 1])
+    {
+      store.update {
+        $0.githubChart = style
+        $0.usageChart = style
+        $0.usageMetric = style == .cumulative ? .cost : .tokens
+      }
+    }
+    if let index = arguments.firstIndex(of: "--states"), arguments.count > index + 1 {
+      store.stateFilter = Set(
+        arguments[index + 1].split(separator: ",").compactMap { PRGroup(rawValue: String($0)) })
+    }
+    if arguments.contains("--banner"),
+      let pr = store.github?.pullRequests.first(where: {
+        $0.state == "MERGED"
+      })
+    {
+      store.showEvent(
+        IslandEvent(
+          id: "demo-banner", title: "\(pr.repository) #\(pr.number) · Merged", detail: pr.title,
+          url: pr.url, occurredAt: Date(), kind: .merged), extra: 1)
+    }
     island = IslandPanelController(store: store)
     settingsObserver = NotificationCenter.default.addObserver(
       forName: .islandSettingsChanged, object: nil, queue: .main
     ) { [weak self] _ in
       Task { @MainActor in self?.island?.reposition() }
     }
+    openSettingsObserver = NotificationCenter.default.addObserver(
+      forName: .islandOpenSettings, object: nil, queue: .main
+    ) { [weak self] _ in
+      Task { @MainActor in self?.store?.openSettings() }
+    }
+    if arguments.contains("--settings") { store.openSettings() }
     store.start()
     if let position = CommandLine.arguments.firstIndex(of: "--snapshot"),
       CommandLine.arguments.count > position + 1
@@ -94,12 +131,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
   private func diagnose(store: IslandStore) async {
     await store.refreshGitHub()
-    await store.refreshAgents()
     await store.refreshUsage()
+    await store.refreshStats()
     let report: [String: Any] = [
       "githubConnected": store.githubError == nil && store.github != nil,
       "pullRequests": store.openPRs.count,
-      "agentSources": Array(Set(store.agents.map(\.source))).sorted(),
+      "githubStatsDays": store.githubStats?.windows.map(\.days) ?? [],
+      "pullRequestsWithCheckCounts": store.openPRs.count { $0.checkSummary != nil },
       "usageProviders": store.usage.keys.map(\.rawValue).sorted(),
       "usageMetrics": store.usage.map { provider, summaries -> [String: Any] in
         let today = summaries.first { $0.days == 1 }
@@ -108,13 +146,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
           "modelCount": today?.models.count ?? 0, "partialHistory": today?.partial ?? true,
         ]
       },
-      "errors": ([store.githubError].compactMap { $0 } + Array(store.usageErrors.values)),
+      "errors": [store.githubError, store.githubStatsError].compactMap { $0 }
+        + Array(store.usageErrors.values),
     ]
     if let data = try? JSONSerialization.data(
       withJSONObject: report, options: [.prettyPrinted, .sortedKeys])
     {
       print(String(decoding: data, as: UTF8.self))
     }
-    exit(store.githubError == nil && store.usageErrors.isEmpty ? 0 : 1)
+    exit(
+      store.githubError == nil && store.githubStatsError == nil && store.usageErrors.isEmpty
+        ? 0 : 1)
   }
 }
