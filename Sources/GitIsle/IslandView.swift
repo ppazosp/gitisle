@@ -101,8 +101,6 @@ private struct CompactBar: View {
   let store: IslandStore
   let metrics: IslandMetrics
 
-  @State private var hovered = false
-
   var body: some View {
     Button {
       // The top row is about one PR; clicking opens it. A long hover opens the island.
@@ -126,16 +124,9 @@ private struct CompactBar: View {
       .lineLimit(1)
       .padding(.horizontal, metrics.hasNotch ? 12 : 16)
       .frame(maxWidth: .infinity, minHeight: metrics.closedHeight, maxHeight: metrics.closedHeight)
-      // When the row links to a PR, hovering highlights it like the banner below.
-      .background(
-        RoundedRectangle(cornerRadius: 10, style: .continuous)
-          .fill(.white.opacity(hovered && store.livePullRequest != nil ? 0.08 : 0))
-          .padding(.horizontal, 4).padding(.vertical, 3)
-      )
       .contentShape(Rectangle())
     }
     .buttonStyle(.plain)
-    .onHover { inside in withAnimation(.easeOut(duration: 0.14)) { hovered = inside } }
     .accessibilityLabel(accessibilityText)
     .accessibilityHint(
       store.livePullRequest == nil ? "Expands the island" : "Opens the pull request on GitHub")
@@ -196,7 +187,6 @@ private struct CompactBar: View {
 private struct EventBanner: View {
   let event: IslandEvent
   let extra: Int
-  @State private var hovered = false
 
   var body: some View {
     Button {
@@ -221,23 +211,11 @@ private struct EventBanner: View {
             .padding(.horizontal, 7).padding(.vertical, 3)
             .background(Capsule().fill(.white.opacity(0.1)))
         }
-        // Appears on hover so the banner reads as a link to the PR.
-        Image(systemName: "arrow.up.right")
-          .font(.system(size: 10, weight: .bold))
-          .foregroundStyle(.white.opacity(0.7))
-          .opacity(hovered ? 1 : 0)
-          .offset(x: hovered ? 0 : -3)
       }
-      .padding(.horizontal, 8).padding(.vertical, 5)
-      .background(
-        RoundedRectangle(cornerRadius: 14, style: .continuous)
-          .fill(.white.opacity(hovered ? 0.08 : 0))
-      )
-      .padding(.horizontal, 8).padding(.top, 1).padding(.bottom, 5)
+      .padding(.horizontal, 16).padding(.top, 6).padding(.bottom, 10)
       .contentShape(Rectangle())
     }
-    .buttonStyle(PressableStyle())
-    .onHover { inside in withAnimation(.easeOut(duration: 0.14)) { hovered = inside } }
+    .buttonStyle(.plain)
     .accessibilityLabel("\(event.kind.eventTitle): \(event.detail)")
     .accessibilityHint("Opens the pull request on GitHub")
   }
