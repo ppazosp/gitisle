@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/images/logo.png" width="112" alt="GitIsle logo: a white island with a merge glyph and a green live dot on black">
+  <img src="docs/images/logo.png" width="112" alt="GitIsle logo: a palm island whose second palm branches off the trunk like a git branch">
 </p>
 
 <h1 align="center">GitIsle</h1>
