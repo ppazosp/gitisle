@@ -70,6 +70,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         $0.usageMetric = style == .cumulative ? .cost : .tokens
       }
     }
+    // `--display <id>` previews the island on another screen.
+    if let index = arguments.firstIndex(of: "--display"), arguments.count > index + 1,
+      let display = UInt32(arguments[index + 1])
+    {
+      store.update { $0.displayID = display }
+    }
     if let index = arguments.firstIndex(of: "--states"), arguments.count > index + 1 {
       store.stateFilter = Set(
         arguments[index + 1].split(separator: ",").compactMap { PRGroup(rawValue: String($0)) })
