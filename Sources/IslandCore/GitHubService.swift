@@ -17,6 +17,8 @@ public actor GitHubService {
     """
 
   private let transport: (@Sendable (Data) async throws -> Data)?
+  /// The GraphQL budget GitHub reported with the last response, for pacing refreshes.
+  public private(set) var budget: RateBudget?
 
   public init(transport: (@Sendable (Data) async throws -> Data)? = nil) {
     self.transport = transport
@@ -28,6 +30,7 @@ public actor GitHubService {
     let query = """
       query($search: String!, $after: String) {
         viewer { login }
+        rateLimit { remaining resetAt }
         search(query: $search, type: ISSUE, first: 100, after: $after) {
           nodes { ...PRFields }
           pageInfo { hasNextPage endCursor }
@@ -35,9 +38,17 @@ public actor GitHubService {
       }
       \(Self.fields)
       """
-    // Merged history covers the longest activity window, 30 days.
-    let since = Date().addingTimeInterval(-30 * 86_400).formatted(
-      .iso8601.year().month().day().dateSeparator(.dash))
+    // Merged history covers the longest activity window, 30 days. It rarely changes, so between
+    // daily full sweeps only merges since the day before the last refresh are read.
+    let now = Date()
+    let sameAccount = previous.map { $0.selection == selection.fingerprint } ?? false
+    let sweptAt = sameAccount ? previous?.mergedSweptAt : nil
+    let incremental = sweptAt.map { now.timeIntervalSince($0) < 86_400 } ?? false
+    let mergedFrom =
+      incremental
+      ? (previous?.fetchedAt ?? now).addingTimeInterval(-86_400)
+      : now.addingTimeInterval(-30 * 86_400)
+    let since = mergedFrom.formatted(.iso8601.year().month().day().dateSeparator(.dash))
     var groups = [
       ("mine", "is:pr is:open author:@me"),
       ("reviews", "is:pr is:open review-requested:@me"),
@@ -110,18 +121,49 @@ public actor GitHubService {
           prs[pr.id] = pr
         }
       }
+      // Keep history from the same day the full sweep starts at, so a PR merged just over
+      // 30 days ago doesn't drop out between sweeps and come back.
+      let format = Date.ISO8601FormatStyle().year().month().day().dateSeparator(.dash)
+      let monthAgo = now.addingTimeInterval(-30 * 86_400)
+      let monthStart = (try? Date(monthAgo.formatted(format), strategy: format)) ?? monthAgo
       for pr in previous.pullRequests where pr.state != "OPEN" && prs[pr.id] == nil {
-        if Date().timeIntervalSince(pr.updatedAt) < 30 * 86_400 { prs[pr.id] = pr }
+        if (pr.mergedAt ?? pr.updatedAt) >= monthStart { prs[pr.id] = pr }
       }
     }
     return GitHubSnapshot(
       login: login, pullRequests: prs.values.sorted { $0.updatedAt > $1.updatedAt },
-      selection: selection.fingerprint, isLimited: limited, mergedLimited: mergedLimited)
+      selection: selection.fingerprint, isLimited: limited,
+      mergedLimited: incremental
+        ? (previous?.mergedLimited ?? false) || mergedLimited : mergedLimited,
+      // A different account behind gh needs its own full sweep next time.
+      mergedSweptAt: incremental ? (previous?.login == login ? sweptAt : nil) : now)
   }
 
-  private func request(query: String, variables: [String: Any]) async throws -> [String:
-    Any]
-  {
+  /// Re-reads known PRs by ID: one cheap request per 100 PRs, and no search index delay.
+  /// PRs GitHub can no longer resolve (deleted, or access lost) are left out.
+  public func pullRequests(ids: [String], login: String) async throws -> [PullRequest] {
+    var result: [PullRequest] = []
+    for chunk in stride(from: 0, to: ids.count, by: 100) {
+      let batch = Array(ids[chunk..<min(chunk + 100, ids.count)])
+      let response = try await request(
+        query: """
+          query($ids: [ID!]!) { viewer { login } rateLimit { remaining resetAt }
+            nodes(ids: $ids) { ...PRFields } }
+          \(Self.fields)
+          """,
+        variables: ["ids": batch], allowMissingNodes: true)
+      guard let data = response["data"] as? [String: Any],
+        (data["viewer"] as? [String: Any])?["login"] as? String == login,
+        let nodes = data["nodes"] as? [Any]
+      else { throw ProcessFailure.failed("GitHub could not refresh the active PRs.") }
+      for case let node as [String: Any] in nodes { result.append(try Self.decode(node)) }
+    }
+    return result
+  }
+
+  private func request(
+    query: String, variables: [String: Any], allowMissingNodes: Bool = false
+  ) async throws -> [String: Any] {
     let body = try JSONSerialization.data(withJSONObject: ["query": query, "variables": variables])
     let output: Data
     if let transport {
@@ -136,7 +178,16 @@ public actor GitHubService {
     guard let json = try JSONSerialization.jsonObject(with: output) as? [String: Any] else {
       throw ProcessFailure.failed("GitHub returned an unreadable response.")
     }
-    if let errors = json["errors"] as? [[String: Any]], !errors.isEmpty {
+    if let limit = (json["data"] as? [String: Any])?["rateLimit"] as? [String: Any],
+      let remaining = limit["remaining"] as? Int,
+      let reset = (limit["resetAt"] as? String).flatMap(Dates.parse)
+    {
+      budget = RateBudget(remaining: remaining, resetAt: reset)
+    }
+    var errors = json["errors"] as? [[String: Any]] ?? []
+    // A deleted PR or lost access shows up as a missing node; the rest of the batch is fine.
+    if allowMissingNodes { errors.removeAll { $0["type"] as? String == "NOT_FOUND" } }
+    if !errors.isEmpty {
       throw ProcessFailure.failed(
         errors.compactMap { $0["message"] as? String }.joined(separator: "\n"))
     }

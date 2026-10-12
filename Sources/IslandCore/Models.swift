@@ -122,6 +122,16 @@ public struct PullRequest: Codable, Hashable, Identifiable, Sendable {
     self.ownerAvatar = ownerAvatar
   }
 
+  /// An open PR that is moving: checks running, set to merge, in the merge queue, or updated
+  /// in the last 15 minutes (a push, review, or comment). Active PRs are refreshed often.
+  public func isActive(at now: Date = Date()) -> Bool {
+    guard state == "OPEN" else { return false }
+    let checksRunning =
+      checks == "PENDING" || checks == "EXPECTED" || (checkSummary?.pending ?? 0) > 0
+    return checksRunning || autoMerge || queuePosition != nil
+      || now.timeIntervalSince(updatedAt) < 15 * 60
+  }
+
   /// In the merge queue, or set to merge automatically without a blocking problem.
   public var isMerging: Bool {
     guard state == "OPEN", !isDraft else { return false }
@@ -345,17 +355,32 @@ public struct GitHubSnapshot: Codable, Sendable {
   public var isLimited: Bool
   /// More merged PRs exist in the last 30 days than were fetched; only the newest are kept.
   public var mergedLimited: Bool?
+  /// When the full 30 days of merged PRs were last read. In between, refreshes read only
+  /// recent merges and keep the rest.
+  public var mergedSweptAt: Date?
 
   public init(
     login: String, pullRequests: [PullRequest], fetchedAt: Date = Date(), selection: String = "",
-    isLimited: Bool = false, mergedLimited: Bool = false
+    isLimited: Bool = false, mergedLimited: Bool = false, mergedSweptAt: Date? = nil
   ) {
     self.mergedLimited = mergedLimited
+    self.mergedSweptAt = mergedSweptAt
     self.login = login
     self.pullRequests = pullRequests
     self.fetchedAt = fetchedAt
     self.selection = selection
     self.isLimited = isLimited
+  }
+}
+
+/// What GitHub reports is left of the hourly GraphQL budget.
+public struct RateBudget: Equatable, Sendable {
+  public var remaining: Int
+  public var resetAt: Date
+
+  public init(remaining: Int, resetAt: Date) {
+    self.remaining = remaining
+    self.resetAt = resetAt
   }
 }
 

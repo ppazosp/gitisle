@@ -102,6 +102,14 @@ final class IslandStore {
   @ObservationIgnored private var hoverTask: Task<Void, Never>?
   @ObservationIgnored private var notificationTask: Task<Void, Never>?
   @ObservationIgnored private var lastGitHubRefresh = Date.distantPast
+  @ObservationIgnored private var lastActiveRefresh = Date.distantPast
+  /// GitHub asked us to wait (rate limit); no GitHub refresh until then.
+  @ObservationIgnored private var githubPausedUntil: Date?
+  /// Little of the hourly budget is left, so refresh slowly until it resets.
+  @ObservationIgnored private var githubBudgetLow = false
+  /// The Mac is asleep, its screens are off, or the session is locked: nobody is looking.
+  @ObservationIgnored private var away = false
+  @ObservationIgnored private var systemObservers: [NSObjectProtocol] = []
   @ObservationIgnored private var lastUsageRefresh = Date.distantPast
   @ObservationIgnored private var lastStatsRefresh = Date.distantPast
   @ObservationIgnored private var statsRefreshing = false
@@ -233,14 +241,26 @@ final class IslandStore {
 
   func start() {
     guard !isDemo, loops.isEmpty else { return }
+    observeSystem()
+    // One loop for GitHub, so a full refresh and an active one never overlap. Discovery finds
+    // new PRs and refreshes quiet ones; in between, active PRs refresh on their own schedule.
     loops.append(
       Task { [weak self] in
         while !Task.isCancelled {
           guard let self else { return }
-          if Date().timeIntervalSince(lastGitHubRefresh) >= settings.githubRefreshSeconds {
-            await refreshGitHub()
+          if canRefreshGitHub {
+            let discovery =
+              githubBudgetLow
+              ? max(settings.githubRefreshSeconds, 300) : settings.githubRefreshSeconds
+            if Date().timeIntervalSince(lastGitHubRefresh) >= discovery {
+              await refreshGitHub()
+            } else if !githubBudgetLow,
+              Date().timeIntervalSince(lastActiveRefresh) >= settings.activeRefreshSeconds
+            {
+              await refreshActive()
+            }
           }
-          do { try await Task.sleep(for: .seconds(2)) } catch { return }
+          do { try await Task.sleep(for: .seconds(1)) } catch { return }
         }
       })
     loops.append(
@@ -270,9 +290,59 @@ final class IslandStore {
       })
   }
 
+  private var canRefreshGitHub: Bool {
+    !away && (githubPausedUntil.map { Date() >= $0 } ?? true)
+  }
+
+  /// Pauses GitHub refreshes while nobody is looking, and catches up right after.
+  private func observeSystem() {
+    let center = NSWorkspace.shared.notificationCenter
+    let pause: [Notification.Name] = [
+      NSWorkspace.willSleepNotification, NSWorkspace.screensDidSleepNotification,
+      NSWorkspace.sessionDidResignActiveNotification,
+    ]
+    let resume: [Notification.Name] = [
+      NSWorkspace.didWakeNotification, NSWorkspace.screensDidWakeNotification,
+      NSWorkspace.sessionDidBecomeActiveNotification,
+    ]
+    for name in pause {
+      systemObservers.append(
+        center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+          Task { @MainActor in self?.away = true }
+        })
+    }
+    for name in resume {
+      systemObservers.append(
+        center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+          Task { @MainActor in
+            guard let self, self.away else { return }
+            self.away = false
+            self.lastGitHubRefresh = .distantPast
+          }
+        })
+    }
+  }
+
+  /// Slows down when GitHub's budget runs low, and waits when GitHub says to.
+  private func pace(after error: Error? = nil) async {
+    if let budget = await githubService.budget {
+      githubBudgetLow = budget.remaining < 300
+      if budget.remaining == 0 { githubPausedUntil = budget.resetAt }
+    }
+    guard let error, error.localizedDescription.localizedCaseInsensitiveContains("rate limit")
+    else { return }
+    // A secondary limit asks for a short wait; the hourly one lasts until its reset.
+    let reset = await githubService.budget?.resetAt
+    githubPausedUntil = max(Date().addingTimeInterval(120), reset ?? .distantPast)
+  }
+
   func stop() {
     for loop in loops { loop.cancel() }
     loops = []
+    for observer in systemObservers {
+      NSWorkspace.shared.notificationCenter.removeObserver(observer)
+    }
+    systemObservers = []
     hoverTask?.cancel()
     notificationTask?.cancel()
   }
@@ -300,28 +370,67 @@ final class IslandStore {
     do {
       let selection = try RepositorySelection(text: settings.repositories)
       let fresh = try await githubService.fetch(selection: selection, previous: github)
+      await pace()
       guard
         (try? RepositorySelection(text: settings.repositories).fingerprint) == selection.fingerprint
       else { return }
-      let known = Set(events.map(\.id))
-      let changes = GitHubChanges.events(previous: github, current: fresh).filter {
-        !known.contains($0.id)
-      }
-      let newEvents = Array((changes + events).prefix(200))
-      // Persist the notification ledger before emitting side effects; a restart never replays it.
-      try JSONEncoder().encode(newEvents).write(to: AppFiles.events, options: .atomic)
-      try JSONEncoder().encode(fresh).write(to: AppFiles.snapshot, options: .atomic)
-      events = newEvents
-      setGitHub(fresh)
+      try apply(fresh)
       githubError = nil
-      let announced = changes.filter { settings.announcedKinds.contains($0.kind.rawValue) }
-      if settings.bannersEnabled,
-        let latest = announced.min(by: { $0.kind.bannerPriority < $1.kind.bannerPriority })
-      {
-        showEvent(latest, extra: announced.count - 1)
+    } catch {
+      githubError = error.localizedDescription
+      await pace(after: error)
+    }
+  }
+
+  /// Refreshes the active PRs by ID, between full refreshes. Quiet when nothing changed.
+  func refreshActive() async {
+    guard !githubRefreshing, !isDemo, githubError == nil, let current = github else { return }
+    let ids = current.pullRequests.filter { $0.isActive() }.map(\.id)
+    lastActiveRefresh = Date()
+    guard !ids.isEmpty else { return }
+    do {
+      let updated = try await githubService.pullRequests(ids: ids, login: current.login)
+      await pace()
+      // A full refresh may have landed meanwhile; merge into the latest snapshot.
+      guard let latest = github, latest.login == current.login,
+        latest.selection == current.selection
+      else { return }
+      var byID = Dictionary(latest.pullRequests.map { ($0.id, $0) }) { first, _ in first }
+      var changed = false
+      for var pr in updated {
+        // Review requests come from search; keep what the last full refresh found.
+        pr.reviewRequested = byID[pr.id]?.reviewRequested ?? false
+        if byID[pr.id] != pr {
+          byID[pr.id] = pr
+          changed = true
+        }
       }
-      for event in announced { notify(event) }
-    } catch { githubError = error.localizedDescription }
+      guard changed else { return }
+      var next = latest
+      next.pullRequests = byID.values.sorted { $0.updatedAt > $1.updatedAt }
+      try apply(next)
+    } catch { await pace(after: error) }
+  }
+
+  /// Records a new snapshot: finds what changed, saves, and announces it.
+  private func apply(_ fresh: GitHubSnapshot) throws {
+    let known = Set(events.map(\.id))
+    let changes = GitHubChanges.events(previous: github, current: fresh).filter {
+      !known.contains($0.id)
+    }
+    let newEvents = Array((changes + events).prefix(200))
+    // Persist the notification ledger before emitting side effects; a restart never replays it.
+    try JSONEncoder().encode(newEvents).write(to: AppFiles.events, options: .atomic)
+    try JSONEncoder().encode(fresh).write(to: AppFiles.snapshot, options: .atomic)
+    events = newEvents
+    setGitHub(fresh)
+    let announced = changes.filter { settings.announcedKinds.contains($0.kind.rawValue) }
+    if settings.bannersEnabled,
+      let latest = announced.min(by: { $0.kind.bannerPriority < $1.kind.bannerPriority })
+    {
+      showEvent(latest, extra: announced.count - 1)
+    }
+    for event in announced { notify(event) }
   }
 
   func refreshUsage() async {
