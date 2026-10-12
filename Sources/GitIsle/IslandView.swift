@@ -47,6 +47,11 @@ struct IslandView: View {
           y: 10)
     }
     .contentShape(shape)
+    .contextMenu {
+      Button("Settings…") { store.openSettings() }
+      Divider()
+      Button("Quit GitIsle") { NSApp.terminate(nil) }
+    }
     .foregroundStyle(.white)
     .environment(\.colorScheme, .dark)
     .onGeometryChange(for: CGSize.self) {
@@ -98,7 +103,12 @@ private struct CompactBar: View {
 
   var body: some View {
     Button {
-      store.expanded = true
+      // The top row is about one PR; clicking opens it. A long hover opens the island.
+      if let pr = store.livePullRequest {
+        NSWorkspace.shared.open(pr.url)
+      } else {
+        store.expanded = true
+      }
     } label: {
       HStack(spacing: 6) {
         leading
@@ -118,7 +128,8 @@ private struct CompactBar: View {
     }
     .buttonStyle(.plain)
     .accessibilityLabel(accessibilityText)
-    .accessibilityHint("Expands the island")
+    .accessibilityHint(
+      store.livePullRequest == nil ? "Expands the island" : "Opens the pull request on GitHub")
   }
 
   // Icons and numbers only: the closed island is too small for sentences.
@@ -201,7 +212,7 @@ private struct EventBanner: View {
             .background(Capsule().fill(.white.opacity(0.1)))
         }
       }
-      .padding(.horizontal, 16).padding(.bottom, 12).padding(.top, 2)
+      .padding(.horizontal, 16).padding(.top, 6).padding(.bottom, 10)
       .contentShape(Rectangle())
     }
     .buttonStyle(.plain)

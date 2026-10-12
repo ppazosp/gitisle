@@ -113,6 +113,9 @@ final class IslandStore {
 
   var isLive: Bool { !merging.isEmpty || !checking.isEmpty }
 
+  /// The PR the live state is about: the first one merging, else the first running checks.
+  var livePullRequest: PullRequest? { merging.first ?? checking.first }
+
   var presentation: Presentation {
     if expanded { return .expanded }
     if recentEvent != nil { return .banner }
@@ -369,11 +372,14 @@ final class IslandStore {
   func setHovered(_ inside: Bool) {
     hovered = inside
     hoverTask?.cancel()
+    // While something is live or announced, a click opens that PR, so expanding needs a
+    // longer, deliberate hover; otherwise it would replace the island under the click.
+    let busy = presentation == .live || presentation == .banner
+    let delay =
+      inside ? (busy ? max(settings.hoverDelay + 0.6, 0.8) : settings.hoverDelay) : 0.15
     hoverTask = Task { [weak self] in
       guard let self else { return }
-      do { try await Task.sleep(for: .seconds(inside ? settings.hoverDelay : 0.15)) } catch {
-        return
-      }
+      do { try await Task.sleep(for: .seconds(delay)) } catch { return }
       // Leaving the island must not throw away settings that are being edited.
       if !Task.isCancelled, inside || (!showingSettings && !menuOpen) { expanded = inside }
     }
@@ -402,6 +408,33 @@ final class IslandStore {
       } catch { return }
       self?.recentEvent = nil
     }
+  }
+
+  /// Example data only: plays each kind of announcement in turn, to preview the banners.
+  func runShowcase() {
+    guard isDemo else { return }
+    let prs = github?.pullRequests ?? []
+    func event(_ kind: PRStatus, _ id: String) -> IslandEvent? {
+      guard let pr = prs.first(where: { $0.id == id }) else { return nil }
+      return IslandEvent(
+        id: "showcase-\(kind.rawValue)", title: "\(pr.repository) #\(pr.number) · \(kind.label)",
+        detail: pr.title, url: pr.url, occurredAt: Date(), kind: kind)
+    }
+    let sequence = [
+      event(.merged, "demo6"), event(.failed, "demo2"), event(.review, "demo1"),
+      event(.queued, "demo3"),
+    ].compactMap { $0 }
+    loops.append(
+      Task { [weak self] in
+        while !Task.isCancelled {
+          for item in sequence {
+            do { try await Task.sleep(for: .seconds(1.5)) } catch { return }
+            self?.showEvent(item)
+            // Each banner holds for 5 seconds; wait for it to collapse before the next.
+            do { try await Task.sleep(for: .seconds(6)) } catch { return }
+          }
+        }
+      })
   }
 
   func requestNotifications() async {

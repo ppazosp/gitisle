@@ -12,28 +12,18 @@ import UserNotifications
     let demo =
       CommandLine.arguments.contains("--demo") || CommandLine.arguments.contains("--snapshot")
       || CommandLine.arguments.contains("--banner")
+      || CommandLine.arguments.contains("--showcase")
     let model = IslandStore(demo: demo)
     _store = State(initialValue: model)
     delegate.store = model
   }
 
   var body: some Scene {
-    MenuBarExtra {
-      Button("Show GitIsle") { delegate.island?.show() }
-      Button("Refresh GitHub") { Task { await store.refreshGitHub() } }.disabled(
-        store.githubRefreshing || store.isDemo)
-      Button("Settings…") {
-        NotificationCenter.default.post(name: .islandOpenSettings, object: nil)
-      }
-      .keyboardShortcut(",")
-      Divider()
-      Text("\(store.openPRs.count) open PRs · \(store.attention.count) need you")
-      Divider()
-      Button("Quit GitIsle") { NSApp.terminate(nil) }.keyboardShortcut("q")
-    } label: {
-      Image(nsImage: Glyph.pullRequest.image(size: 16)).accessibilityLabel("GitIsle")
-    }
+    // GitIsle lives in the notch only; its menu is a right-click on the island.
+    // SwiftUI needs a scene, and an empty settings scene shows nothing.
+    Settings { EmptyView() }
   }
+
 }
 
 @MainActor
@@ -43,6 +33,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
   private var settingsObserver: NSObjectProtocol?
   private var openSettingsObserver: NSObjectProtocol?
 
+  /// The notification delegate must exist before launch finishes, so a click that launches
+  /// GitIsle still reaches it and opens the PR.
+  func applicationWillFinishLaunching(_ notification: Notification) {
+    UNUserNotificationCenter.current().delegate = self
+  }
+
+  /// Clicking a notification brings GitIsle forward; it has no window to show.
+  func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool
+  {
+    false
+  }
+
   func applicationDidFinishLaunching(_ notification: Notification) {
     NSApp.setActivationPolicy(.accessory)
     guard let store else { return }
@@ -50,7 +52,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
       Task { await diagnose(store: store) }
       return
     }
-    UNUserNotificationCenter.current().delegate = self
     let arguments = CommandLine.arguments
     if (arguments.contains("--expanded") || arguments.contains("--snapshot"))
       && !arguments.contains("--collapsed") && !arguments.contains("--banner")
@@ -83,6 +84,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
           id: "demo-banner", title: "\(pr.repository) #\(pr.number) · Merged", detail: pr.title,
           url: pr.url, occurredAt: Date(), kind: .merged), extra: 1)
     }
+    if arguments.contains("--showcase") { store.runShowcase() }
     island = IslandPanelController(store: store)
     settingsObserver = NotificationCenter.default.addObserver(
       forName: .islandSettingsChanged, object: nil, queue: .main
