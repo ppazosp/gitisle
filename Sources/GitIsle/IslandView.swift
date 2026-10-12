@@ -6,6 +6,8 @@ struct IslandView: View {
   @Bindable var store: IslandStore
   let metrics: IslandMetrics
   @State private var contentHeight: CGFloat = 220
+  /// The widest side of the live pill's content, measured by `CompactBar`.
+  @State private var liveSide: CGFloat = 0
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
   var body: some View {
@@ -27,7 +29,7 @@ struct IslandView: View {
           .accessibilityAddTraits(.isButton)
       } else {
         VStack(spacing: 0) {
-          CompactBar(store: store, metrics: metrics)
+          CompactBar(store: store, metrics: metrics, side: $liveSide)
           if presentation == .banner, let event = store.recentEvent {
             EventBanner(event: event, extra: store.recentEventExtra)
               .transition(.islandContent)
@@ -69,6 +71,7 @@ struct IslandView: View {
       value: presentation
     )
     .animation(reduceMotion ? nil : Motion.morph, value: contentHeight)
+    .animation(reduceMotion ? nil : Motion.morph, value: liveSide)
     .padding(.top, metrics.topGap)
     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
   }
@@ -78,9 +81,10 @@ struct IslandView: View {
     case .idle:
       return metrics.idleSize
     case .live:
-      return CGSize(width: metrics.closedWidth + 2 * metrics.ear, height: metrics.closedHeight)
+      return CGSize(
+        width: metrics.liveWidth(side: liveSide) + 2 * metrics.ear, height: metrics.closedHeight)
     case .banner:
-      let banner = metrics.bannerSize
+      let banner = metrics.bannerSize(liveWidth: metrics.liveWidth(side: liveSide))
       return CGSize(width: banner.width + 2 * metrics.ear, height: banner.height)
     case .expanded:
       let chrome = ExpandedIsland.chromeHeight(
@@ -103,6 +107,10 @@ struct IslandView: View {
 private struct CompactBar: View {
   let store: IslandStore
   let metrics: IslandMetrics
+  /// Reports the wider side's natural width, so the island can grow to fit it.
+  @Binding var side: CGFloat
+  @State private var leadingWidth: CGFloat = 0
+  @State private var trailingWidth: CGFloat = 0
 
   var body: some View {
     Button {
@@ -113,19 +121,32 @@ private struct CompactBar: View {
         store.expanded = true
       }
     } label: {
-      HStack(spacing: 6) {
-        leading
-        if metrics.hasNotch {
-          Spacer(minLength: metrics.notchWidth)
-        } else {
-          Spacer(minLength: 10)
-        }
+      HStack(spacing: 0) {
+        HStack(spacing: 6) { leading }
+          .fixedSize()
+          .onGeometryChange(for: CGFloat.self) {
+            $0.size.width
+          } action: { width in
+            leadingWidth = width
+            side = max(leadingWidth, trailingWidth)
+          }
+          .frame(maxWidth: .infinity, alignment: .leading)
+        // Reserved for the camera housing: content is never laid out under the notch.
+        Color.clear.frame(width: metrics.liveGap)
         trailing
+          .fixedSize()
+          .onGeometryChange(for: CGFloat.self) {
+            $0.size.width
+          } action: { width in
+            trailingWidth = width
+            side = max(leadingWidth, trailingWidth)
+          }
+          .frame(maxWidth: .infinity, alignment: .trailing)
       }
       .font(.system(size: 13, weight: .semibold))
       .monospacedDigit()
       .lineLimit(1)
-      .padding(.horizontal, metrics.hasNotch ? 12 : 16)
+      .padding(.horizontal, metrics.livePadding)
       .frame(maxWidth: .infinity, minHeight: metrics.closedHeight, maxHeight: metrics.closedHeight)
       .contentShape(Rectangle())
     }
