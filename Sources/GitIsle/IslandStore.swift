@@ -113,6 +113,9 @@ final class IslandStore {
 
   var isLive: Bool { !merging.isEmpty || !checking.isEmpty }
 
+  /// The PR the live state is about: the first one merging, else the first running checks.
+  var livePullRequest: PullRequest? { merging.first ?? checking.first }
+
   var presentation: Presentation {
     if expanded { return .expanded }
     if recentEvent != nil { return .banner }
@@ -369,14 +372,14 @@ final class IslandStore {
   func setHovered(_ inside: Bool) {
     hovered = inside
     hoverTask?.cancel()
-    // Hovering a banner holds it so it can be clicked to open the PR; expanding would
-    // replace it under the pointer. A click on the island's top row still expands it.
-    if inside, recentEvent != nil, !expanded { return }
+    // While something is live or announced, a click opens that PR, so expanding needs a
+    // longer, deliberate hover; otherwise it would replace the island under the click.
+    let busy = presentation == .live || presentation == .banner
+    let delay =
+      inside ? (busy ? max(settings.hoverDelay + 0.6, 0.8) : settings.hoverDelay) : 0.15
     hoverTask = Task { [weak self] in
       guard let self else { return }
-      do { try await Task.sleep(for: .seconds(inside ? settings.hoverDelay : 0.15)) } catch {
-        return
-      }
+      do { try await Task.sleep(for: .seconds(delay)) } catch { return }
       // Leaving the island must not throw away settings that are being edited.
       if !Task.isCancelled, inside || (!showingSettings && !menuOpen) { expanded = inside }
     }
