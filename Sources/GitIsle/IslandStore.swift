@@ -369,6 +369,9 @@ final class IslandStore {
   func setHovered(_ inside: Bool) {
     hovered = inside
     hoverTask?.cancel()
+    // Hovering a banner holds it so it can be clicked to open the PR; expanding would
+    // replace it under the pointer. A click on the island's top row still expands it.
+    if inside, recentEvent != nil, !expanded { return }
     hoverTask = Task { [weak self] in
       guard let self else { return }
       do { try await Task.sleep(for: .seconds(inside ? settings.hoverDelay : 0.15)) } catch {
