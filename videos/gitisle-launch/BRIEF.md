@@ -28,7 +28,7 @@ autonomously.
 ## Assets
 
 - assets/island-tour.webm — the real app driven by `--tour`, recorded with transparency so the island sits on the composition's own wallpaper.
-- ../../assets/logo.svg — the GitIsle mark, for the close.
+- assets/logo.png — the GitIsle mark (a palm island that branches like git), for the close.
 - audio/ — a downloaded, licensed launch-style music track (see Notes).
 
 ## Customizations

@@ -143,11 +143,19 @@
         inset: -700px -900px;
         background: rgba(0, 0, 0, 0.62);
       }
+      .cta-logo {
+        position: absolute;
+        left: 50%;
+        top: 168px;
+        width: 168px;
+        height: 168px;
+        margin-left: -84px;
+      }
       .cta-title {
         position: absolute;
         left: 0;
         right: 0;
-        top: 330px;
+        top: 356px;
         text-align: center;
         font-size: 168px;
         font-weight: 600;
@@ -158,7 +166,7 @@
         position: absolute;
         left: 0;
         right: 0;
-        top: 530px;
+        top: 552px;
         text-align: center;
         font-size: 34px;
         color: #a1a1a8;
@@ -167,7 +175,7 @@
       .cta-button {
         position: absolute;
         left: 50%;
-        top: 640px;
+        top: 652px;
         margin-left: -270px;
         width: 540px;
         height: 84px;
@@ -190,7 +198,7 @@
         position: absolute;
         left: 0;
         right: 0;
-        top: 768px;
+        top: 778px;
         text-align: center;
         font-size: 26px;
         color: #8b8b92;
@@ -287,6 +295,7 @@
           <div class="dim" id="dim" data-layout-allow-overflow></div>
           <img class="island-still" src="assets/island-idle.png" alt="" />
         </div>
+        <img class="cta-logo" id="cta-logo" src="assets/logo.png" alt="" />
         <div class="cta-title" id="cta-title">GitIsle</div>
         <div class="cta-sub" id="cta-sub">Free and open source for macOS.</div>
         <div class="cta-button" id="cta-button">
@@ -388,6 +397,12 @@
       const C0 = 29.6;
       tl.set('#world-cta', { transformOrigin: '960px 0px', scale: 1.5 }, 0);
       tl.fromTo('#dim', { autoAlpha: 0 }, { autoAlpha: 1, duration: 0.8, ease: 'power2.out' }, C0);
+      tl.fromTo(
+        '#cta-logo',
+        { autoAlpha: 0, y: 36, scale: 0.82 },
+        { autoAlpha: 1, y: 0, scale: 1, duration: 0.9, ease: 'back.out(1.6)' },
+        bar(15) - 0.2,
+      );
       tl.fromTo(
         '#cta-title',
         { autoAlpha: 0, y: 40, scale: 0.94, filter: 'blur(16px)' },
