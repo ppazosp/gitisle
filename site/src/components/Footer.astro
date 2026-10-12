@@ -1,0 +1,56 @@
+---
+import { REPO } from '../lib/links';
+---
+
+<footer class="footer">
+  <div class="container footer-inner">
+    <a href="#top" class="footer-brand" aria-label="GitIsle home">
+      <img src="/logo.svg" alt="" width="22" height="22" />
+      <span>GitIsle</span>
+    </a>
+    <nav class="footer-links" aria-label="Footer">
+      <a href={REPO}>GitHub</a>
+      <a href={`${REPO}/blob/main/LICENSE`}>MIT license</a>
+      <span>© 2026 Pablo Pazos</span>
+    </nav>
+  </div>
+</footer>
+
+<style>
+  .footer {
+    padding: 28px var(--pad) max(28px, env(safe-area-inset-bottom));
+    border-top: 1px solid var(--line);
+    font-size: 14px;
+    color: var(--muted);
+  }
+  .footer-inner {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    align-items: center;
+    gap: 16px;
+  }
+  .footer a {
+    text-decoration: none;
+  }
+  .footer a:hover {
+    color: #fff;
+  }
+  .footer-brand {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    color: #fff;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+  }
+  .footer-brand img {
+    border-radius: 6px;
+  }
+  .footer-links {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 22px;
+  }
+</style>

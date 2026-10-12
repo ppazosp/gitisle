@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="100 100 824 824">
+  <!-- The mark, cropped to the icon body. -->
+  <rect x="100" y="100" width="824" height="824" rx="186" fill="#000"/>
+  <!-- The island. -->
+  <rect x="212" y="396" width="600" height="232" rx="116" fill="#fff"/>
+  <!-- A merge, in the style of GitHub's glyphs: rings joined by a trunk and a curve. -->
+  <g fill="none" stroke="#000" stroke-width="20" stroke-linecap="round">
+    <circle cx="330" cy="456" r="22"/>
+    <circle cx="330" cy="568" r="22"/>
+    <circle cx="464" cy="530" r="22"/>
+    <path d="M330 478V546"/>
+    <path d="M330 478C330 516 362 530 442 530"/>
+  </g>
+  <!-- Live. -->
+  <circle cx="694" cy="512" r="52" fill="#3fb950" fill-opacity="0.22"/>
+  <circle cx="694" cy="512" r="30" fill="#3fb950"/>
+</svg>

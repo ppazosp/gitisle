@@ -465,38 +465,38 @@ final class IslandStore {
     let hour = 3600.0
     let prs = [
       PullRequest(
-        id: "demo1", number: 428, repository: "example/app", title: "Improve sandbox startup",
+        id: "demo1", number: 428, repository: "orbit/web", title: "Speed up cold start",
         url: link, reviewRequested: true, checks: "SUCCESS",
         checkSummary: CheckSummary(passed: 6, failed: 0, pending: 0),
         updatedAt: now.addingTimeInterval(-0.4 * hour), author: "teammate"),
       PullRequest(
-        id: "demo2", number: 431, repository: "example/app", title: "Add project shortcuts",
+        id: "demo2", number: 431, repository: "orbit/web", title: "Add keyboard shortcuts",
         url: link, checks: "FAILURE", checkSummary: CheckSummary(passed: 4, failed: 1, pending: 0),
-        updatedAt: now.addingTimeInterval(-1.2 * hour), author: "example"),
+        updatedAt: now.addingTimeInterval(-1.2 * hour), author: "maya"),
       PullRequest(
-        id: "demo3", number: 433, repository: "example/tools", title: "Cache workspace metadata",
+        id: "demo3", number: 433, repository: "orbit/api", title: "Cache workspace metadata",
         url: link, checks: "PENDING", checkSummary: CheckSummary(passed: 3, failed: 0, pending: 2),
         autoMerge: true, queuePosition: 2, mergingSince: now.addingTimeInterval(-95),
         updatedAt: now.addingTimeInterval(-0.1 * hour),
-        author: "example"),
+        author: "maya"),
       PullRequest(
-        id: "demo4", number: 436, repository: "example/app", title: "Polish the island animations",
+        id: "demo4", number: 436, repository: "orbit/web", title: "Polish onboarding animations",
         url: link, reviewDecision: "REVIEW_REQUIRED", mergeStateStatus: "BLOCKED",
         checks: "PENDING", checkSummary: CheckSummary(passed: 2, failed: 0, pending: 3),
-        updatedAt: now.addingTimeInterval(-2 * hour), author: "example"),
+        updatedAt: now.addingTimeInterval(-2 * hour), author: "maya"),
       PullRequest(
-        id: "demo5", number: 437, repository: "example/tools", title: "Sketch the stats view",
+        id: "demo5", number: 437, repository: "orbit/api", title: "Sketch the usage dashboard",
         url: link, isDraft: true, checks: "SUCCESS",
         checkSummary: CheckSummary(passed: 5, failed: 0, pending: 0),
-        updatedAt: now.addingTimeInterval(-26 * hour), author: "example"),
+        updatedAt: now.addingTimeInterval(-26 * hour), author: "maya"),
       PullRequest(
-        id: "demo6", number: 425, repository: "example/app", title: "Native GitHub island",
+        id: "demo6", number: 425, repository: "orbit/web", title: "Ship the notch island",
         url: link, state: "MERGED", checks: "SUCCESS",
         checkSummary: CheckSummary(passed: 6, failed: 0, pending: 0),
         updatedAt: now.addingTimeInterval(-3 * hour), mergedAt: now.addingTimeInterval(-3 * hour),
-        author: "example"),
+        author: "maya"),
     ]
-    setGitHub(GitHubSnapshot(login: "example", pullRequests: prs))
+    setGitHub(GitHubSnapshot(login: "maya", pullRequests: prs))
     let calendar = Calendar.current
     let formatter = DateFormatter()
     formatter.dateFormat = "yyyy-MM-dd"
@@ -536,7 +536,7 @@ final class IslandStore {
       }
     }
     githubStats = GitHubStats(
-      login: "example",
+      login: "maya",
       windows: [
         .init(days: 1, opened: 3, merged: 2, reviewed: 1),
         .init(days: 7, opened: 14, merged: 11, reviewed: 6),

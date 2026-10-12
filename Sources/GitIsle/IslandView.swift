@@ -345,7 +345,8 @@ private struct ExpandedIsland: View {
 
   @ViewBuilder private var status: some View {
     if store.isDemo {
-      Text("Example data")
+      // Marketing captures can relabel the example data, for example "Updated just now".
+      Text(ProcessInfo.processInfo.environment["GITISLE_PREVIEW_LABEL"] ?? "Example data")
     } else if let github = store.github {
       let age = github.fetchedAt.formatted(.relative(presentation: .named))
       Text(store.cached ? "Cached · \(age)" : "Updated \(age)")

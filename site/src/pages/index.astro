@@ -1,0 +1,569 @@
+---
+import GitHubMark from '../components/GitHubMark.astro';
+import Screen from '../components/Screen.astro';
+import Base from '../layouts/Base.astro';
+import { BREW, CHANNELS, INSTALL_SCRIPT, RELEASES, REPO } from '../lib/links';
+
+// One caption per island state, in the order the story plays.
+const steps = [
+  { state: 'idle', title: 'Invisible at rest.', body: "Nothing happening? It's just your notch." },
+  { state: 'live', title: 'Live while you ship.', body: 'A PR merging or running checks shows its number and progress. Click it to open the PR.' },
+  { state: 'banner', title: 'Only what matters.', body: 'Merges, failed checks and review requests slide out of the notch, then get out of the way.' },
+  { state: 'list', title: 'Every PR, one hover away.', body: 'Grouped by repository, with checks, merge queue and what needs you.' },
+  { state: 'board', title: 'Or as a board.', body: 'Draft, open, merging, merged. Filter by state, repository or time.' },
+  { state: 'stats', title: 'Your shipping, in numbers.', body: 'GitHub activity, plus local Claude Code and Codex usage.' },
+];
+
+const promises = [
+  { title: 'Read-only', body: 'GitIsle never merges, reviews, comments or marks anything as read.' },
+  { title: 'Private', body: 'No account, no telemetry, no server. It uses your existing gh login.' },
+  { title: 'Native', body: 'SwiftUI and AppKit. Light on battery, at home in the notch.' },
+  { title: 'Open source', body: 'MIT licensed. Read it, fork it, send a pull request.' },
+];
+---
+
+<Base
+  title="GitIsle · Your pull requests, in the notch"
+  description="GitIsle is a free, open-source macOS app that turns your MacBook's notch into a live view of your GitHub pull requests: merges, checks, reviews and what needs you."
+>
+  <main id="top">
+    <section class="hero" aria-labelledby="hero-title" id="features">
+      <div class="hero-glow" aria-hidden="true"></div>
+
+      <div class="hero-copy">
+        <p class="eyebrow" data-intro>Open source · macOS 14+</p>
+        <h1 id="hero-title">Your pull requests,<br />in the notch.</h1>
+        <p class="hero-sub" data-intro>
+          GitIsle turns your MacBook's notch into a live view of GitHub. It stays invisible until something
+          ships, then shows what's merging, what's failing and what needs you.
+        </p>
+        <div class="hero-actions" data-intro>
+          <a class="cta" href={REPO}>
+            <img src="/logo.svg" alt="" width="28" height="28" />
+            Get GitIsle on GitHub
+          </a>
+          <a class="hero-link" href="#install">Install in one line →</a>
+        </div>
+      </div>
+
+      <div class="stage" data-stage>
+        <Screen />
+        <div class="captions" data-captions>
+          {
+            steps.map((s, i) => (
+              <div class="caption" data-step={s.state}>
+                <span class="caption-index">
+                  {String(i + 1).padStart(2, '0')} / {String(steps.length).padStart(2, '0')}
+                </span>
+                <h2>{s.title}</h2>
+                <p>{s.body}</p>
+              </div>
+            ))
+          }
+        </div>
+      </div>
+    </section>
+
+    <section class="section promises" aria-label="Principles">
+      <div class="container promise-grid">
+        {
+          promises.map((p) => (
+            <div class="promise reveal">
+              <h3>{p.title}</h3>
+              <p>{p.body}</p>
+            </div>
+          ))
+        }
+      </div>
+    </section>
+
+    <section id="install" class="section install" aria-labelledby="install-title">
+      <div class="container">
+        <p class="eyebrow reveal">Install</p>
+        <h2 id="install-title" class="section-title reveal">One line.<br />Then hover the notch.</h2>
+        <p class="section-lead reveal">
+          GitIsle needs macOS 14 or later and the GitHub CLI, signed in with <code>gh auth login</code>.
+        </p>
+
+        <div class="install-grid">
+          <div class="install-card reveal">
+            <h3>Install script</h3>
+            <div class="command" data-copy={INSTALL_SCRIPT}>
+              <code>{INSTALL_SCRIPT}</code>
+              <button type="button" aria-label="Copy the install command">Copy</button>
+            </div>
+          </div>
+          <div class="install-card reveal">
+            <h3>Homebrew</h3>
+            <div class="command" data-copy={BREW.join(' && ')}>
+              <code>{BREW.map((line) => <span>{line}</span>)}</code>
+              <button type="button" aria-label="Copy the Homebrew commands">Copy</button>
+            </div>
+          </div>
+          <div class="install-card reveal">
+            <h3>Download</h3>
+            <p>Get <strong>GitIsle.dmg</strong> from the latest release and drag it into Applications.</p>
+            <a class="install-link" href={RELEASES}>Latest release →</a>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="maker" class="section maker" aria-labelledby="maker-title">
+      <div class="container maker-inner">
+        <img class="maker-photo reveal" src="/media/pablo.png" alt="Pablo Pazos" width="160" height="160" loading="lazy" />
+        <div class="maker-copy">
+          <p class="eyebrow reveal">Made by</p>
+          <h2 id="maker-title" class="maker-name reveal">Pablo Pazos</h2>
+          <p class="maker-bio reveal">
+            I ship a lot of pull requests with a lot of agents, and I got tired of tabbing to GitHub to see what
+            merged. So I put it in the notch. Say hi, or tell me what to build next.
+          </p>
+          <ul class="channels reveal">
+            {
+              CHANNELS.map((c) => (
+                <li>
+                  <a href={c.href} rel="me">
+                    <span class="channel-icon" aria-hidden="true">
+                      {c.name === 'LinkedIn' && (
+                        <svg viewBox="0 0 24 24" fill="currentColor">
+                          <path d="M20.45 20.45h-3.56v-5.57c0-1.33-.03-3.04-1.85-3.04-1.86 0-2.14 1.45-2.14 2.95v5.66H9.35V9h3.41v1.56h.05c.48-.9 1.64-1.85 3.37-1.85 3.6 0 4.27 2.37 4.27 5.46v6.28ZM5.34 7.43a2.06 2.06 0 1 1 0-4.13 2.06 2.06 0 0 1 0 4.13ZM7.12 20.45H3.56V9h3.56v11.45ZM22.22 0H1.77C.79 0 0 .77 0 1.73v20.54C0 23.23.79 24 1.77 24h20.45c.98 0 1.78-.77 1.78-1.73V1.73C24 .77 23.2 0 22.22 0Z" />
+                        </svg>
+                      )}
+                      {c.name === 'X' && (
+                        <svg viewBox="0 0 24 24" fill="currentColor">
+                          <path d="M18.9 1.15h3.68l-8.04 9.19L24 22.85h-7.4l-5.8-7.58-6.63 7.58H.48l8.6-9.83L0 1.15h7.59l5.24 6.93 6.07-6.93Zm-1.29 19.5h2.04L6.48 3.24H4.3l13.31 17.41Z" />
+                        </svg>
+                      )}
+                      {c.name === 'GitHub' && <GitHubMark />}
+                    </span>
+                    <span class="channel-text">
+                      <span class="channel-name">{c.name}</span>
+                      <span class="channel-handle">{c.handle}</span>
+                    </span>
+                  </a>
+                </li>
+              ))
+            }
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <section class="section join" aria-labelledby="join-title">
+      <div class="container join-inner">
+        <img class="join-logo reveal" src="/logo.svg" alt="GitIsle" width="120" height="120" />
+        <h2 id="join-title" class="join-title reveal">Put your PRs in the notch.</h2>
+        <p class="join-sub reveal">Free and open source, under the MIT license.</p>
+        <a class="cta reveal" href={REPO}>
+          <GitHubMark />
+          Get GitIsle on GitHub
+        </a>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    import '../scripts/landing';
+  </script>
+</Base>
+
+<style>
+  /* ---------- Hero and the island story ---------- */
+  .hero {
+    --peek: 150px;
+    position: relative;
+    height: 100svh;
+    min-height: 640px;
+    overflow: hidden;
+    background: #000;
+  }
+  .hero-glow {
+    position: absolute;
+    inset: auto -20% -40% -20%;
+    height: 80%;
+    background: radial-gradient(50% 50% at 50% 50%, rgba(255, 255, 255, 0.09), transparent 70%);
+    pointer-events: none;
+  }
+
+  .hero-copy {
+    position: relative;
+    z-index: 1;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 22px;
+    padding: 84px var(--pad) calc(var(--peek) + 40px);
+    text-align: center;
+  }
+  h1 {
+    margin: 0;
+    font-size: clamp(48px, 10vw, 120px);
+    font-weight: 600;
+    line-height: 0.92;
+    letter-spacing: -0.055em;
+    text-wrap: balance;
+  }
+  .hero-sub {
+    margin: 0;
+    max-width: 600px;
+    font-size: 17px;
+    line-height: 1.5;
+    color: var(--muted);
+  }
+  @media (min-width: 640px) {
+    .hero-sub {
+      font-size: 19px;
+    }
+  }
+  .hero-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: center;
+    gap: 14px 24px;
+  }
+  .hero-link {
+    font-size: 15px;
+    color: var(--muted);
+    text-decoration: none;
+  }
+  .hero-link:hover {
+    color: #fff;
+  }
+
+  .stage {
+    position: absolute;
+    z-index: 2;
+    left: 0;
+    right: 0;
+    top: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 28px;
+    pointer-events: none;
+    transform: translateY(calc(100svh - var(--peek)));
+  }
+
+  .captions {
+    position: relative;
+    width: min(620px, calc(100vw - 2 * var(--pad)));
+    height: 120px;
+    text-align: center;
+  }
+  .caption {
+    position: absolute;
+    inset: 0;
+    opacity: 0;
+    visibility: hidden;
+  }
+  .caption-index {
+    font-family: var(--mono);
+    font-size: 12px;
+    letter-spacing: 0.14em;
+    color: var(--muted);
+  }
+  .caption h2 {
+    margin: 10px 0 8px;
+    font-size: clamp(24px, 3.4vw, 36px);
+    font-weight: 600;
+    letter-spacing: -0.04em;
+  }
+  .caption p {
+    margin: 0 auto;
+    max-width: 460px;
+    font-size: 16px;
+    line-height: 1.5;
+    color: var(--muted);
+  }
+
+  /* Without motion the story is laid out statically: the expanded island, then every caption. */
+  .hero.is-static {
+    height: auto;
+    overflow: visible;
+  }
+  .hero.is-static .stage {
+    position: relative;
+    padding: 0 var(--pad) 96px;
+  }
+  .hero.is-static .captions {
+    height: auto;
+    display: grid;
+    gap: 28px;
+  }
+  .hero.is-static .caption {
+    position: static;
+  }
+
+  /* ---------- Shared sections ---------- */
+  .section {
+    padding: 110px var(--pad);
+  }
+  @media (min-width: 900px) {
+    .section {
+      padding: 150px var(--pad);
+    }
+  }
+  .section-title {
+    margin: 16px 0 0;
+    font-size: clamp(40px, 7vw, 88px);
+    font-weight: 600;
+    line-height: 0.95;
+    letter-spacing: -0.055em;
+  }
+  .section-lead {
+    margin: 24px 0 0;
+    max-width: 560px;
+    font-size: 18px;
+    line-height: 1.55;
+    color: var(--muted);
+  }
+  code {
+    font-family: var(--mono);
+    font-size: 0.9em;
+  }
+
+  /* ---------- Principles ---------- */
+  .promises {
+    padding-top: 90px;
+    padding-bottom: 90px;
+    border-top: 1px solid var(--line);
+    border-bottom: 1px solid var(--line);
+  }
+  .promise-grid {
+    display: grid;
+    gap: 36px;
+  }
+  @media (min-width: 720px) {
+    .promise-grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+  }
+  @media (min-width: 1040px) {
+    .promise-grid {
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+    }
+  }
+  .promise h3 {
+    margin: 0 0 8px;
+    font-size: 20px;
+    font-weight: 600;
+    letter-spacing: -0.03em;
+  }
+  .promise p {
+    margin: 0;
+    font-size: 15px;
+    line-height: 1.55;
+    color: var(--muted);
+  }
+
+  /* ---------- Install ---------- */
+  .install-grid {
+    display: grid;
+    gap: 16px;
+    margin-top: 56px;
+  }
+  @media (min-width: 1000px) {
+    .install-grid {
+      grid-template-columns: 1.3fr 1.1fr 0.8fr;
+    }
+  }
+  .install-card {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    padding: 24px;
+    border: 1px solid var(--line);
+    border-radius: 20px;
+    background: rgba(255, 255, 255, 0.03);
+  }
+  .install-card h3 {
+    margin: 0;
+    font-size: 18px;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+  }
+  .install-card p {
+    margin: 0;
+    font-size: 15px;
+    line-height: 1.55;
+    color: var(--muted);
+  }
+  .install-card strong {
+    color: #fff;
+    font-weight: 500;
+  }
+  .command {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 14px 14px 14px 16px;
+    border-radius: 12px;
+    background: #0c0c0e;
+    border: 1px solid var(--line);
+  }
+  .command code {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    font-size: 13px;
+    line-height: 1.5;
+    word-break: break-all;
+    color: #e6e6e6;
+  }
+  .command button {
+    flex: none;
+    padding: 6px 10px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: transparent;
+    color: var(--muted);
+    font: 500 12px var(--sans);
+    cursor: pointer;
+    transition:
+      color 0.2s,
+      background-color 0.2s;
+  }
+  .command button:hover {
+    color: #fff;
+    background: rgba(255, 255, 255, 0.06);
+  }
+  .command.is-copied button {
+    color: var(--open);
+  }
+  .install-link {
+    margin-top: auto;
+    font-size: 15px;
+    font-weight: 500;
+    text-decoration: none;
+  }
+
+  /* ---------- Maker ---------- */
+  .maker {
+    border-top: 1px solid var(--line);
+  }
+  .maker-inner {
+    display: grid;
+    gap: 40px;
+    align-items: center;
+  }
+  @media (min-width: 900px) {
+    .maker-inner {
+      grid-template-columns: auto 1fr;
+      gap: 72px;
+    }
+  }
+  .maker-photo {
+    width: 160px;
+    height: 160px;
+    border-radius: 50%;
+    border: 1px solid var(--line);
+    filter: grayscale(1);
+  }
+  .maker-name {
+    margin: 12px 0 0;
+    font-size: clamp(40px, 6vw, 72px);
+    font-weight: 600;
+    letter-spacing: -0.05em;
+    line-height: 1;
+  }
+  .maker-bio {
+    margin: 20px 0 0;
+    max-width: 560px;
+    font-size: 18px;
+    line-height: 1.55;
+    color: var(--muted);
+  }
+  .channels {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin: 32px 0 0;
+    padding: 0;
+    list-style: none;
+  }
+  .channels a {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 18px 12px 12px;
+    border: 1px solid var(--line);
+    border-radius: 16px;
+    text-decoration: none;
+    transition:
+      background-color 0.2s,
+      border-color 0.2s;
+  }
+  .channels a:hover {
+    background: rgba(255, 255, 255, 0.05);
+    border-color: rgba(255, 255, 255, 0.24);
+  }
+  .channel-icon {
+    display: grid;
+    place-items: center;
+    width: 40px;
+    height: 40px;
+    border-radius: 10px;
+    background: #fff;
+    color: #000;
+  }
+  .channel-icon :global(svg) {
+    width: 20px;
+    height: 20px;
+  }
+  .channel-text {
+    display: flex;
+    flex-direction: column;
+  }
+  .channel-name {
+    font-size: 15px;
+    font-weight: 600;
+  }
+  .channel-handle {
+    font-size: 13px;
+    color: var(--muted);
+  }
+
+  /* ---------- Final call to action ---------- */
+  .join {
+    background: #fff;
+    color: #000;
+  }
+  .join-inner {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 22px;
+    text-align: center;
+  }
+  .join-logo {
+    width: clamp(96px, 14vw, 150px);
+    height: auto;
+    border-radius: 24%;
+    box-shadow: 0 30px 80px rgba(0, 0, 0, 0.25);
+  }
+  .join-title {
+    margin: 18px 0 0;
+    font-size: clamp(36px, 6vw, 72px);
+    font-weight: 600;
+    letter-spacing: -0.05em;
+    line-height: 1;
+  }
+  .join-sub {
+    margin: 0;
+    font-size: 17px;
+    color: rgba(0, 0, 0, 0.6);
+  }
+  .join .cta {
+    background: #000;
+    color: #fff;
+    padding: 14px 22px;
+  }
+  .join .cta:hover {
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+  }
+</style>

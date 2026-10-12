@@ -1,0 +1,87 @@
+---
+import { REPO } from '../lib/links';
+import GitHubMark from './GitHubMark.astro';
+---
+
+<header class="nav">
+  <div class="nav-bar">
+    <a href="#top" class="nav-brand" aria-label="GitIsle home">
+      <img src="/logo.svg" alt="" width="28" height="28" />
+      <span>GitIsle</span>
+    </a>
+    <nav aria-label="Main">
+      <a href="#features" class="nav-link">Features</a>
+      <a href="#install" class="nav-link">Install</a>
+      <a href="#maker" class="nav-link">Maker</a>
+      <a href={REPO} class="nav-cta"><GitHubMark /> GitHub</a>
+    </nav>
+  </div>
+</header>
+
+<style>
+  .nav {
+    position: fixed;
+    z-index: 50;
+    inset: 0 0 auto;
+    padding-top: env(safe-area-inset-top);
+  }
+  .nav-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 16px var(--pad);
+    background: linear-gradient(#000 0%, rgba(0, 0, 0, 0.7) 60%, transparent);
+  }
+  .nav-brand {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 18px;
+    font-weight: 600;
+    letter-spacing: -0.03em;
+    text-decoration: none;
+  }
+  .nav-brand img {
+    border-radius: 7px;
+  }
+  nav {
+    display: flex;
+    align-items: center;
+    gap: 22px;
+  }
+  .nav-link {
+    display: none;
+    font-size: 14px;
+    color: var(--muted);
+    text-decoration: none;
+    transition: color 0.2s;
+  }
+  .nav-link:hover {
+    color: #fff;
+  }
+  @media (min-width: 720px) {
+    .nav-link {
+      display: inline;
+    }
+  }
+  .nav-cta {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 14px;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    font-size: 14px;
+    font-weight: 500;
+    text-decoration: none;
+    transition: background-color 0.2s;
+  }
+  .nav-cta:hover {
+    background: rgba(255, 255, 255, 0.08);
+  }
+  .nav-cta :global(svg) {
+    width: 16px;
+    height: 16px;
+  }
+</style>
