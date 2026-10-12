@@ -37,7 +37,11 @@ struct IslandMetrics: Equatable {
     presentation == .idle ? 0 : ear
   }
 
-  var bannerSize: CGSize { CGSize(width: max(closedWidth + 80, 380), height: closedHeight + 50) }
+  /// Banners grow downward only: as wide as the live pill under a notch. Without a notch the
+  /// pill is too narrow for a title, so the banner keeps a readable minimum.
+  var bannerSize: CGSize {
+    CGSize(width: hasNotch ? closedWidth : max(closedWidth, 340), height: closedHeight + 50)
+  }
   var expandedWidth: CGFloat { 640 }
   /// The board grows with its columns and never gets narrower than the list.
   func boardWidth(columns: Int) -> CGFloat {
