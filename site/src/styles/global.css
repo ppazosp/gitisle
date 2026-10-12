@@ -95,12 +95,12 @@ svg {
   color: var(--muted);
 }
 
-/* Primary call to action: the GitHub button with the logo. */
+/* Primary call to action: the GitHub button with the GitHub mark. */
 .cta {
   display: inline-flex;
   align-items: center;
   gap: 10px;
-  padding: 12px 20px 12px 12px;
+  padding: 13px 22px 13px 18px;
   border-radius: 999px;
   background: #fff;
   color: #000;
@@ -115,10 +115,6 @@ svg {
 .cta:hover {
   transform: translateY(-1px);
   box-shadow: 0 10px 30px rgba(255, 255, 255, 0.12);
-}
-.cta img {
-  width: 28px;
-  height: 28px;
 }
 .cta svg {
   width: 18px;
