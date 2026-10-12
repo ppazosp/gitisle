@@ -48,6 +48,13 @@ manifest's `icon-192.png` and `icon-512.png` are made from `../assets/logo.png`.
 
 ## Deploying
 
-The site is static and lives at <https://gitisle.ppazosp.dev>. Build it and
-serve `site/dist` from any static host. Canonical and Open Graph URLs point at
-that domain; set `SITE_URL` at build time to use another.
+The site lives at <https://gitisle.ppazosp.dev>. `.github/workflows/site.yml`
+deploys it to Vercel whenever a change under `site/` lands on `main`; app-only
+changes never trigger it, and pull requests only check that it builds. It needs
+the repository secrets `VERCEL_TOKEN`, `VERCEL_ORG_ID` and `VERCEL_PROJECT_ID`.
+The Vercel project's Root Directory is `site`, and `vercel.json` turns off
+Vercel's own Git deployments, so the workflow is the only deployer.
+
+The site is static, so any host works: build it and serve `site/dist`.
+Canonical and Open Graph URLs point at the production domain; set `SITE_URL` at
+build time to use another.
