@@ -34,6 +34,11 @@ final class IslandStore {
   /// Settings replace the expanded content. They save as they change, so collapsing the island
   /// never loses an edit.
   var showingSettings = false
+  /// First-run setup, shown in the expanded island until it is finished or skipped.
+  var showingOnboarding = false
+  var onboardingStep: OnboardingStep = .welcome
+  /// The GitHub CLI's state, checked during setup.
+  var githubConnection: GitHubConnection?
   /// A menu opened from the island draws outside its shape; leaving the shape for it
   /// must not collapse the island.
   @ObservationIgnored var menuOpen = false
@@ -393,8 +398,32 @@ final class IslandStore {
       guard let self else { return }
       do { try await Task.sleep(for: .seconds(delay)) } catch { return }
       // A menu opened from the island draws outside it, so leaving for the menu keeps it open.
-      if !Task.isCancelled, inside || !menuOpen { expanded = inside }
+      // Setup opens the island by itself, so it stays until finished or skipped.
+      if !Task.isCancelled, inside || (!menuOpen && !showingOnboarding) { expanded = inside }
     }
+  }
+
+  func startOnboarding() {
+    hoverTask?.cancel()
+    showingSettings = false
+    onboardingStep = .welcome
+    showingOnboarding = true
+    expanded = true
+  }
+
+  /// Finishing and skipping both end setup for good; Settings can run it again.
+  func finishOnboarding() {
+    update { $0.onboardingCompleted = true }
+    showingOnboarding = false
+    githubConnection = nil
+  }
+
+  func checkGitHubConnection() async {
+    let connection = await GitHubConnection.check()
+    let wasConnected = githubConnection.map { if case .connected = $0 { true } else { false } }
+    githubConnection = connection
+    // The first time setup sees an account, load its pull requests behind it.
+    if case .connected = connection, wasConnected != true { await refreshGitHub() }
   }
 
   func openSettings() {

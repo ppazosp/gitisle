@@ -45,6 +45,8 @@ struct AppSettings: Codable, Equatable {
   var githubChart: ChartStyle = .bars
   var usageChart: ChartStyle = .bars
   var usageMetric: UsageMetric = .tokens
+  /// First-run setup has been finished or skipped.
+  var onboardingCompleted = false
 
   init() {}
 
@@ -71,6 +73,8 @@ struct AppSettings: Codable, Equatable {
     githubChart = value(.githubChart, defaults.githubChart)
     usageChart = value(.usageChart, defaults.usageChart)
     usageMetric = value(.usageMetric, defaults.usageMetric)
+    // Settings saved before onboarding existed belong to someone already set up.
+    onboardingCompleted = value(.onboardingCompleted, true)
   }
 
   static func load(from url: URL) -> AppSettings {

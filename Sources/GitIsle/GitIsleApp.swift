@@ -98,6 +98,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
       Task { @MainActor in self?.store?.openSettings() }
     }
     if arguments.contains("--settings") { store.openSettings() }
+    // New installs start with setup; `--onboarding [step]` previews it.
+    if !store.isDemo && !store.settings.onboardingCompleted {
+      store.startOnboarding()
+    } else if let index = arguments.firstIndex(of: "--onboarding") {
+      store.startOnboarding()
+      if arguments.count > index + 1, let step = OnboardingStep(name: arguments[index + 1]) {
+        store.onboardingStep = step
+      }
+    }
     store.start()
     if let position = CommandLine.arguments.firstIndex(of: "--snapshot"),
       CommandLine.arguments.count > position + 1
