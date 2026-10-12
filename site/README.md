@@ -34,8 +34,20 @@ then crop each capture to the island body: 52 px from each side and 32 px from
 the bottom (the capture's margin plus the notch corners), and update
 `src/assets/island/sizes.json` with the cropped size in points.
 
+## Social image and icons
+
+`public/og.png`, the link preview for X, LinkedIn and the rest, is rendered
+from `og/og.html` with headless Chrome at 2x:
+
+```bash
+./og/render.sh
+```
+
+`public/favicon.ico` (16, 32 and 48 px), `apple-touch-icon.png`, and the web
+manifest's `icon-192.png` and `icon-512.png` are made from `../assets/logo.png`.
+
 ## Deploying
 
-The site is static. Build it and serve `site/dist` from any static host. Set
-`SITE_URL` (for example `https://gitisle.app`) at build time so canonical and
-Open Graph URLs are absolute.
+The site is static and lives at <https://gitisle.ppazosp.dev>. Build it and
+serve `site/dist` from any static host. Canonical and Open Graph URLs point at
+that domain; set `SITE_URL` at build time to use another.
