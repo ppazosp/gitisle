@@ -104,6 +104,8 @@ final class IslandStore {
   @ObservationIgnored private var notificationTask: Task<Void, Never>?
   @ObservationIgnored private var lastGitHubRefresh = Date.distantPast
   @ObservationIgnored private var lastActiveRefresh = Date.distantPast
+  /// When every search last ran in full; between those, a one-point check finds what changed.
+  @ObservationIgnored private var lastFullRefresh = Date.distantPast
   /// GitHub asked us to wait (rate limit); no GitHub refresh until then.
   @ObservationIgnored private var githubPausedUntil: Date?
   /// Little of the hourly budget is left, so refresh slowly until it resets.
@@ -254,11 +256,14 @@ final class IslandStore {
             let discovery =
               githubBudgetLow
               ? max(settings.githubRefreshSeconds, 300) : settings.githubRefreshSeconds
+            // With nobody at the Mac, active PRs refresh once a minute; banners still land
+            // within a minute, and the next keypress or mouse move brings the pace back.
+            let active =
+              Self.idleSeconds >= 300
+              ? max(settings.activeRefreshSeconds, 60) : settings.activeRefreshSeconds
             if Date().timeIntervalSince(lastGitHubRefresh) >= discovery {
-              await refreshGitHub()
-            } else if !githubBudgetLow,
-              Date().timeIntervalSince(lastActiveRefresh) >= settings.activeRefreshSeconds
-            {
+              await discover()
+            } else if !githubBudgetLow, Date().timeIntervalSince(lastActiveRefresh) >= active {
               await refreshActive()
             }
           }
@@ -290,6 +295,13 @@ final class IslandStore {
           do { try await Task.sleep(for: .seconds(30)) } catch { return }
         }
       })
+  }
+
+  /// Seconds since the last keyboard, mouse, or trackpad input.
+  private static var idleSeconds: TimeInterval {
+    // ~0 is kCGAnyInputEventType: any kind of input.
+    guard let anyInput = CGEventType(rawValue: ~0) else { return 0 }
+    return CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: anyInput)
   }
 
   private var canRefreshGitHub: Bool {
@@ -363,6 +375,17 @@ final class IslandStore {
     } catch { githubStatsError = error.localizedDescription }
   }
 
+  /// Every 10 minutes, and whenever there's nothing to compare against, every search runs in
+  /// full. In between, a one-point check of the searches names the PRs that changed, and only
+  /// those are read: most minutes cost one point instead of six to eight.
+  private func discover() async {
+    guard let current = github, current.searchFingerprint != nil,
+      Date().timeIntervalSince(lastFullRefresh) < 600,
+      (try? RepositorySelection(text: settings.repositories).fingerprint) == current.selection,
+      await refreshChanged(current)
+    else { return await refreshGitHub() }
+  }
+
   func refreshGitHub() async {
     guard !githubRefreshing, !isDemo else { return }
     githubRefreshing = true
@@ -378,11 +401,53 @@ final class IslandStore {
         (try? RepositorySelection(text: settings.repositories).fingerprint) == selection.fingerprint
       else { return }
       try apply(fresh)
+      lastFullRefresh = Date()
       githubError = nil
     } catch {
       githubError = error.localizedDescription
       await pace(after: error)
     }
+  }
+
+  /// Reads only the PRs the one-point check says changed. False when the check can't stand in
+  /// for a full refresh: a search found too many PRs, or the account changed.
+  private func refreshChanged(_ current: GitHubSnapshot) async -> Bool {
+    guard !githubRefreshing, !isDemo, let baseline = current.searchFingerprint else {
+      return true
+    }
+    githubRefreshing = true
+    defer { githubRefreshing = false }
+    do {
+      let selection = try RepositorySelection(text: settings.repositories)
+      guard
+        let (login, fingerprint) = try await githubService.searchFingerprint(selection: selection),
+        login == current.login
+      else { return false }
+      let changed = fingerprint.changedIDs(since: baseline)
+      let updated =
+        changed.isEmpty ? [] : try await githubService.pullRequests(ids: changed, login: login)
+      await pace()
+      lastGitHubRefresh = Date()
+      // A full refresh may have landed meanwhile; merge into the latest snapshot.
+      guard let latest = github, latest.login == login, latest.selection == selection.fingerprint
+      else { return true }
+      var byID = Dictionary(latest.pullRequests.map { ($0.id, $0) }) { first, _ in first }
+      for var pr in updated {
+        pr.reviewRequested = fingerprint.found(pr.id, by: "reviews")
+        byID[pr.id] = pr
+      }
+      var next = latest
+      next.pullRequests = byID.values.sorted { $0.updatedAt > $1.updatedAt }
+      next.fetchedAt = Date()
+      next.searchFingerprint = fingerprint
+      try apply(next)
+      githubError = nil
+    } catch {
+      lastGitHubRefresh = Date()
+      githubError = error.localizedDescription
+      await pace(after: error)
+    }
+    return true
   }
 
   /// Refreshes the active PRs by ID, between full refreshes. Quiet when nothing changed.

@@ -25,6 +25,19 @@ an output limit. A failed query leaves the previous snapshot available. The
 collector checks missing open PR identities before treating them as merged or
 closed. Unknown mergeability and successful checks alone never imply readiness.
 
+The PR collector reads GitHub three ways, to keep within the hourly GraphQL
+budget that other `gh` tools share:
+
+- **A check every minute.** One query lists the ID and last update of every
+  PR the open-PR searches find, for one point in total. Only PRs that appeared,
+  disappeared, changed, or moved between searches are read again, by ID.
+- **A full search every 10 minutes**, and whenever there's nothing to compare
+  against. It catches what doesn't touch a PR's update time, such as a base
+  branch moving on, and covers searches too big for one check.
+- **Active PRs by ID**, every 10 seconds: checks running, merging, or updated
+  in the last 15 minutes. After 5 minutes without keyboard or mouse input this
+  slows to once a minute.
+
 The event ledger suppresses repeated notifications across launches. Initial
 connection and account or repository changes establish a new baseline. A new
 requested review can notify after that baseline. Failed-check notifications are
