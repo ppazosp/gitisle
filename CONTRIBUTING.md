@@ -90,7 +90,7 @@ Release Please keeps a release pull request open. Every `fix:` and `feat:`
 merged to `main` lands in it with its changelog entry, and both bump the patch
 version (0.1.3 to 0.1.4). Merging the release pull request tags the release;
 the release workflow then tests, builds, and attaches `GitIsle.zip`,
-`GitIsle.dmg`, and checksums. Installed copies offer the update within 6 hours.
+`GitIsle.dmg`, and checksums. Installed copies offer the update within an hour.
 
 Minor versions mark milestones. To make the next release one, give the
 milestone's squash commit a `Release-As` footer when you merge it:
