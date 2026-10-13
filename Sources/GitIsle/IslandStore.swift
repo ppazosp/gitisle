@@ -574,8 +574,8 @@ final class IslandStore {
         detail: pr.title, url: pr.url, occurredAt: Date(), kind: kind)
     }
     let sequence = [
-      event(.merged, "demo6"), event(.failed, "demo2"), event(.review, "demo1"),
-      event(.queued, "demo3"),
+      event(.ready, "demo4"), event(.queued, "demo3"), event(.merged, "demo6"),
+      event(.failed, "demo2"), event(.review, "demo1"),
     ].compactMap { $0 }
     loops.append(
       Task { [weak self] in

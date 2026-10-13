@@ -154,6 +154,7 @@ extension PRStatus {
     case .merged: .merge
     case .failed: .failFill
     case .review: .eye
+    case .ready: .checkFill
     case .queued: .mergeQueue
     default: .pullRequest
     }
@@ -164,6 +165,7 @@ extension PRStatus {
     case .merged: "Merged"
     case .failed: "Checks failed"
     case .review: "Review requested"
+    case .ready: "Ready to merge"
     case .queued: "Merging"
     default: label
     }
@@ -175,8 +177,9 @@ extension PRStatus {
     case .merged: 0
     case .failed: 1
     case .review: 2
-    case .queued: 3
-    default: 4
+    case .ready: 3
+    case .queued: 4
+    default: 5
     }
   }
 }
