@@ -2,6 +2,14 @@
 
 Notable changes to GitIsle. Releases follow [semantic versioning](https://semver.org).
 
+## [0.1.5](https://github.com/ppazosp/gitisle/compare/v0.1.4...v0.1.5) (2026-10-13)
+
+
+### Bug Fixes
+
+* GitIsle looks for updates every hour and when the Mac wakes ([#27](https://github.com/ppazosp/gitisle/issues/27)) ([f196982](https://github.com/ppazosp/gitisle/commit/f19698229c0ea80e7f1c940d9eafc443cdef828e))
+* setup's buttons sit as close to the bottom as the app's footer ([#26](https://github.com/ppazosp/gitisle/issues/26)) ([b7f6d6f](https://github.com/ppazosp/gitisle/commit/b7f6d6f8be7422830221dcba8ef2e58098345af1))
+
 ## [0.1.4](https://github.com/ppazosp/gitisle/compare/v0.1.3...v0.1.4) (2026-10-13)
 
 ### Features
