@@ -196,13 +196,16 @@ struct SettingsView: View {
           columns: [GridItem(.flexible(), spacing: 6), GridItem(.flexible(), spacing: 6)],
           spacing: 6
         ) {
-          ForEach(Self.announcements, id: \.kind) { item in
+          ForEach(Self.announcements, id: \.label) { item in
+            let kinds = Set(item.kinds.map(\.rawValue))
             AnnouncementChip(
-              glyph: item.glyph, label: item.label, color: item.kind.color,
-              selected: draft.announcedKinds.contains(item.kind.rawValue)
+              glyph: item.glyph, label: item.label, color: item.kinds[0].color,
+              selected: kinds.isSubset(of: draft.announcedKinds)
             ) {
-              if draft.announcedKinds.remove(item.kind.rawValue) == nil {
-                draft.announcedKinds.insert(item.kind.rawValue)
+              if kinds.isSubset(of: draft.announcedKinds) {
+                draft.announcedKinds.subtract(kinds)
+              } else {
+                draft.announcedKinds.formUnion(kinds)
               }
             }
           }
@@ -212,9 +215,12 @@ struct SettingsView: View {
   }
 
   /// Your own PRs as they head to merge, then what can go wrong or wait on you.
-  private static let announcements: [(kind: PRStatus, glyph: Glyph, label: String)] = [
-    (.ready, .checkFill, "Ready"), (.queued, .mergeQueue, "Merging"), (.merged, .merge, "Merged"),
-    (.failed, .failFill, "Failed"), (.review, .eye, "Review"),
+  /// One chip can cover several kinds: "New PR" is opening a PR, ready or draft, and marking a
+  /// draft ready for review.
+  private static let announcements: [(kinds: [PRStatus], glyph: Glyph, label: String)] = [
+    ([.opened, .draft, .readyForReview], .pullRequest, "New PR"),
+    ([.ready], .checkFill, "Ready"), ([.queued], .mergeQueue, "Merging"),
+    ([.merged], .merge, "Merged"), ([.failed], .failFill, "Failed"), ([.review], .eye, "Review"),
   ]
 
   private var island: some View {

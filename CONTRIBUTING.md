@@ -42,7 +42,8 @@ dist/GitIsle.app/Contents/MacOS/GitIsle --snapshot "$PWD/.artifacts/activity.png
 
 Add `--stats`, `--board`, `--settings`, `--banner`, `--collapsed`,
 `--states draft,merged`, `--repos orbit/web,orbit/api`, `--repo-picker`,
-`--update`, or `--chart area` to a snapshot to render another view. Quit any running GitIsle first, since only one island fits the notch.
+`--update`, `--event draft` (any announcement), or `--chart area` to a snapshot
+to render another view. Quit any running GitIsle first, since only one island fits the notch.
 
 ## Check your change
 

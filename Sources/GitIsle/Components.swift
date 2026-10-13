@@ -141,7 +141,8 @@ extension PRStatus {
     switch self {
     case .failed, .conflicts, .changesRequested, .closed: Palette.failed
     case .review, .waiting, .behind, .blocked: Palette.attention
-    case .ready: Palette.open
+    case .ready, .opened, .readyForReview: Palette.open
+    case .draft: Palette.draft
     case .merged: Palette.merged
     case .queued: Palette.merging
     default: .secondary
@@ -156,6 +157,7 @@ extension PRStatus {
     case .review: .eye
     case .ready: .checkFill
     case .queued: .mergeQueue
+    case .draft: .draft
     default: .pullRequest
     }
   }
@@ -167,6 +169,7 @@ extension PRStatus {
     case .review: "Review requested"
     case .ready: "Ready to merge"
     case .queued: "Merging"
+    case .draft: "New draft PR"
     default: label
     }
   }
@@ -179,7 +182,9 @@ extension PRStatus {
     case .review: 2
     case .ready: 3
     case .queued: 4
-    default: 5
+    case .readyForReview: 5
+    case .opened, .draft: 6
+    default: 7
     }
   }
 }
