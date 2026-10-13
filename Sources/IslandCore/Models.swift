@@ -304,7 +304,9 @@ public enum PRGrouping {
     guard !states.isEmpty || needsYouOnly else { return ordered }
     return ordered.compactMap { section in
       let shown = section.pullRequests.filter { pr in
-        (states.isEmpty || (pr.group.map(states.contains) ?? false))
+        // A closure, not `map(states.contains)`: release builds miscompile that method
+        // reference and crash when a state filter is pressed.
+        (states.isEmpty || (pr.group.map { states.contains($0) } ?? false))
           && (!needsYouOnly || pr.needsYou)
       }
       guard !shown.isEmpty else { return nil }
