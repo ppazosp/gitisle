@@ -80,6 +80,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
       store.stateFilter = Set(
         arguments[index + 1].split(separator: ",").compactMap { PRGroup(rawValue: String($0)) })
     }
+    if let index = arguments.firstIndex(of: "--repos"), arguments.count > index + 1, store.isDemo {
+      store.repositoryFilter = Set(arguments[index + 1].split(separator: ",").map(String.init))
+    }
+    if arguments.contains("--repo-picker"), store.isDemo { store.repositoryPickerOpen = true }
     if arguments.contains("--banner"),
       let pr = store.github?.pullRequests.first(where: {
         $0.state == "MERGED"
@@ -88,7 +92,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
       store.showEvent(
         IslandEvent(
           id: "demo-banner", title: "\(pr.repository) #\(pr.number) · Merged", detail: pr.title,
-          url: pr.url, occurredAt: Date(), kind: .merged), extra: 1)
+          url: pr.url, occurredAt: Date(), kind: .merged, repository: pr.repository), extra: 1)
     }
     if arguments.contains("--update"), store.isDemo { store.updater.preview() }
     if arguments.contains("--showcase") { store.runShowcase() }

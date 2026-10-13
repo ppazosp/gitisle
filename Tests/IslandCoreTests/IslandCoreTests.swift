@@ -60,6 +60,23 @@ struct IslandCoreTests {
     #expect(GitHubChanges.events(previous: current, current: current).isEmpty)
   }
 
+  @Test func eventsNameTheirRepositoryAndOlderLedgersStillLoad() throws {
+    var merged = pr()
+    merged.state = "MERGED"
+    let event = try #require(
+      GitHubChanges.events(
+        previous: GitHubSnapshot(login: "person", pullRequests: [pr()]),
+        current: GitHubSnapshot(login: "person", pullRequests: [merged])
+      ).first)
+    #expect(event.repository == "example/app")
+    let legacy = Data(
+      """
+      [{"id":"e","title":"t","detail":"d","url":"https://github.com/example/app/pull/12",
+        "occurredAt":0,"kind":"merged"}]
+      """.utf8)
+    #expect(try JSONDecoder().decode([IslandEvent].self, from: legacy).first?.repository == nil)
+  }
+
   @Test func newCommitCanNotifyEvenWhenPreviousCommitFailed() {
     var prior = pr()
     prior.checks = "FAILURE"

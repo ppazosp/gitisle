@@ -22,7 +22,10 @@ final class IslandStore {
   var recentEventExtra = 0
   var expanded = false {
     didSet {
-      if !expanded { showingSettings = false }
+      if !expanded {
+        showingSettings = false
+        repositoryPickerOpen = false
+      }
       // Expanding shows the full context, so a pending banner has done its job.
       if expanded, recentEvent != nil {
         notificationTask?.cancel()
@@ -63,12 +66,48 @@ final class IslandStore {
   private(set) var sections: [PRSection] = []
   /// Every repository with PRs in the snapshot, for the filter menu.
   private(set) var repositoryChoices: [(name: String, avatar: URL?)] = []
-  var repositoryFilter: String? = UserDefaults.standard.string(forKey: "repositoryFilter") {
+  /// The repositories the island is about: Activity, the live bar, banners, and notifications
+  /// follow it. Empty means every repository.
+  var repositoryFilter: Set<String> = IslandStore.savedRepositoryFilter() {
     didSet {
       guard repositoryFilter != oldValue else { return }
-      if !isDemo { UserDefaults.standard.set(repositoryFilter, forKey: "repositoryFilter") }
+      if !isDemo {
+        UserDefaults.standard.set(repositoryFilter.sorted(), forKey: "repositoryFilters")
+      }
       regroup()
+      repositoryFilterChanged()
     }
+  }
+  /// The repository picker is open over Activity.
+  var repositoryPickerOpen = false
+
+  private static func savedRepositoryFilter() -> Set<String> {
+    let defaults = UserDefaults.standard
+    if let saved = defaults.stringArray(forKey: "repositoryFilters") { return Set(saved) }
+    // Earlier versions kept one repository.
+    return defaults.string(forKey: "repositoryFilter").map { [$0] } ?? []
+  }
+
+  /// Whether the repository filter lets this repository through. Events saved before they
+  /// named their repository always pass.
+  func shows(_ repository: String?) -> Bool {
+    guard let repository else { return true }
+    return repositoryFilter.isEmpty || repositoryFilter.contains(repository)
+  }
+
+  /// Takes back what the filter now hides, and refreshes active PRs right away so the live bar
+  /// is current. Every repository is already loaded, so nothing else needs reading.
+  private func repositoryFilterChanged() {
+    if let event = recentEvent, !shows(event.repository) {
+      notificationTask?.cancel()
+      recentEvent = nil
+    }
+    guard !isDemo else { return }
+    let hidden = events.filter { !shows($0.repository) }.map(\.id)
+    if !hidden.isEmpty {
+      UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: hidden)
+    }
+    lastActiveRefresh = .distantPast
   }
   /// PR counts per state after the repository and time filters, for the state filter bar.
   private(set) var stateCounts: [StateCount] = []
@@ -146,7 +185,7 @@ final class IslandStore {
     usageService = UsageService(cacheRoot: AppFiles.directory.appendingPathComponent("usage-cache"))
     if demo {
       // Previews must not depend on this Mac's remembered choices.
-      repositoryFilter = nil
+      repositoryFilter = []
       activityLayout = .list
       loadDemo()
       return
@@ -173,7 +212,10 @@ final class IslandStore {
     let open = all.filter { $0.state == "OPEN" }
     openPRs = open
     attention = open.filter(\.needsYou)
-    let mine = open.filter { $0.author != nil && $0.author == github?.login }
+    // The live bar follows the repository filter.
+    let mine = open.filter {
+      $0.author != nil && $0.author == github?.login && shows($0.repository)
+    }
     merging = mine.filter(\.isMerging).sorted {
       ($0.queuePosition ?? .max, $1.updatedAt) < ($1.queuePosition ?? .max, $0.updatedAt)
     }
@@ -188,16 +230,16 @@ final class IslandStore {
         avatars[pr.repository] = pr.ownerAvatar
       }
     }
-    let names = Set(all.filter { $0.group != nil }.map(\.repository)).sorted {
-      $0.localizedCaseInsensitiveCompare($1) == .orderedAscending
-    }
+    // Chosen repositories stay listed even with no PRs right now, so they can be unchosen.
+    let names = Set(all.filter { $0.group != nil }.map(\.repository)).union(repositoryFilter)
+      .sorted { $0.localizedStandardCompare($1) == .orderedAscending }
     let choices = names.map { (name: $0, avatar: avatars[$0]) }
     if choices.map(\.name) != repositoryChoices.map(\.name)
       || choices.map(\.avatar) != repositoryChoices.map(\.avatar)
     {
       repositoryChoices = choices
     }
-    let scoped = repositoryFilter.map { name in all.filter { $0.repository == name } } ?? all
+    let scoped = repositoryFilter.isEmpty ? all : all.filter { shows($0.repository) }
     let fresh = PRGrouping.repositories(
       scoped, window: activityWindow, states: stateFilter, needsYouOnly: needsYouOnly)
     if fresh != repositories { repositories = fresh }
@@ -427,7 +469,9 @@ final class IslandStore {
     try JSONEncoder().encode(fresh).write(to: AppFiles.snapshot, options: .atomic)
     events = newEvents
     setGitHub(fresh)
-    let announced = changes.filter { settings.announcedKinds.contains($0.kind.rawValue) }
+    let announced = changes.filter {
+      settings.announcedKinds.contains($0.kind.rawValue) && shows($0.repository)
+    }
     if settings.bannersEnabled,
       let latest = announced.min(by: { $0.kind.bannerPriority < $1.kind.bannerPriority })
     {
@@ -550,6 +594,7 @@ final class IslandStore {
   }
 
   func showEvent(_ event: IslandEvent, extra: Int = 0) {
+    guard shows(event.repository) else { return }
     recentEvent = event
     recentEventExtra = extra
     notificationTask?.cancel()
@@ -571,7 +616,7 @@ final class IslandStore {
       guard let pr = prs.first(where: { $0.id == id }) else { return nil }
       return IslandEvent(
         id: "showcase-\(kind.rawValue)", title: "\(pr.repository) #\(pr.number) · \(kind.label)",
-        detail: pr.title, url: pr.url, occurredAt: Date(), kind: kind)
+        detail: pr.title, url: pr.url, occurredAt: Date(), kind: kind, repository: pr.repository)
     }
     let sequence = [
       event(.ready, "demo4"), event(.queued, "demo3"), event(.merged, "demo6"),
@@ -599,7 +644,7 @@ final class IslandStore {
       guard let pr = prs.first(where: { $0.id == id }) else { return nil }
       return IslandEvent(
         id: "tour-\(kind.rawValue)", title: "\(pr.repository) #\(pr.number) · \(kind.label)",
-        detail: pr.title, url: pr.url, occurredAt: Date(), kind: kind)
+        detail: pr.title, url: pr.url, occurredAt: Date(), kind: kind, repository: pr.repository)
     }
     let merged = event(.merged, "demo6")
     let failed = event(.failed, "demo2")
@@ -648,7 +693,7 @@ final class IslandStore {
   }
 
   private func notify(_ event: IslandEvent) {
-    guard settings.notificationsEnabled else { return }
+    guard settings.notificationsEnabled, shows(event.repository) else { return }
     let content = UNMutableNotificationContent()
     content.title = event.title
     content.body = event.detail

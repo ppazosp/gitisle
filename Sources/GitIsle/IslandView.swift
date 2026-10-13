@@ -97,7 +97,7 @@ struct IslandView: View {
         height: min(
           store.tab == .stats && !store.showingSettings && !store.showingOnboarding
             ? metrics.maxStatsHeight : metrics.maxExpandedHeight,
-          chrome + contentHeight))
+          chrome + max(contentHeight, ExpandedIsland.repositoryPickerHeight(store))))
     }
   }
 }
@@ -321,6 +321,34 @@ private struct ExpandedIsland: View {
       }
       .frame(height: Self.footerHeight(store))
     }
+    .overlayPreferenceValue(RepositoryButtonBounds.self) { anchor in
+      GeometryReader { proxy in
+        if Self.showsRepositoryPicker(store), let anchor {
+          let button = proxy[anchor]
+          ZStack(alignment: .topLeading) {
+            // A click anywhere else closes the picker without acting on what's under it.
+            Color.black.opacity(0.001).contentShape(Rectangle())
+              .onTapGesture { withAnimation(Motion.snappy) { store.repositoryPickerOpen = false } }
+            RepositoryPicker(store: store)
+              .offset(
+                x: min(max(button.minX, 12), proxy.size.width - RepositoryPicker.width - 12),
+                y: button.maxY + 6)
+          }
+          .transition(.opacity)
+        }
+      }
+    }
+  }
+
+  /// The picker belongs to Activity; leaving it hides the picker.
+  static func showsRepositoryPicker(_ store: IslandStore) -> Bool {
+    store.repositoryPickerOpen && showsFilterBar(store)
+  }
+
+  /// Content height the island needs so the open picker isn't cut off by its bottom edge.
+  static func repositoryPickerHeight(_ store: IslandStore) -> CGFloat {
+    guard showsRepositoryPicker(store) else { return 0 }
+    return RepositoryPicker.height(repositories: store.repositoryChoices.count) - 60
   }
 
   @ViewBuilder private var header: some View {
@@ -355,7 +383,7 @@ private struct ExpandedIsland: View {
       Spacer(minLength: 8)
       switch store.tab {
       case .activity:
-        RepositoryMenu(store: store)
+        RepositoryButton(store: store)
         PillPicker(
           options: ActivityWindow.allCases.map { ($0, $0.label) },
           selection: $store.activityWindow, fontSize: 11)
@@ -420,38 +448,148 @@ private struct ExpandedIsland: View {
   }
 }
 
-/// Limits Activity to one repository.
-private struct RepositoryMenu: View {
-  let store: IslandStore
+/// Opens the repository picker, and says which repositories the island is limited to.
+private struct RepositoryButton: View {
+  @Bindable var store: IslandStore
+  @State private var hovered = false
 
   var body: some View {
-    Menu {
-      Button("All repositories") { store.repositoryFilter = nil }
-      Divider()
-      ForEach(store.repositoryChoices, id: \.name) { choice in
-        Button(choice.name) { store.repositoryFilter = choice.name }
-      }
+    let filter = store.repositoryFilter
+    Button {
+      withAnimation(Motion.snappy) { store.repositoryPickerOpen.toggle() }
     } label: {
       HStack(spacing: 6) {
-        if let selected = store.repositoryFilter {
+        if filter.count == 1, let selected = filter.first {
           RepoAvatar(
             url: store.repositoryChoices.first { $0.name == selected }?.avatar, size: 14)
           Text(verbatim: selected.split(separator: "/").last.map(String.init) ?? selected)
             .lineLimit(1).frame(maxWidth: 110, alignment: .leading)
         } else {
           GlyphView(glyph: .repo, size: 12)
-          Text("All repos")
+          Text(filter.isEmpty ? "All repos" : "\(filter.count) repos")
         }
         GlyphView(glyph: .chevronDown, size: 10).foregroundStyle(.white.opacity(0.5))
+          .rotationEffect(.degrees(store.repositoryPickerOpen ? 180 : 0))
       }
       .font(.system(size: 11, weight: .medium))
-      .foregroundStyle(.white.opacity(store.repositoryFilter == nil ? 0.6 : 0.95))
+      .foregroundStyle(.white.opacity(filter.isEmpty ? 0.6 : 0.95))
       .padding(.horizontal, 10).padding(.vertical, 5)
-      .background(Capsule().fill(.white.opacity(store.repositoryFilter == nil ? 0.06 : 0.14)))
+      .background(
+        Capsule().fill(
+          .white.opacity(
+            filter.isEmpty && !store.repositoryPickerOpen ? (hovered ? 0.1 : 0.06) : 0.14))
+      )
       .contentShape(Capsule())
     }
-    .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden).fixedSize()
+    .buttonStyle(.plain).fixedSize()
+    .onHover { hovered = $0 }
+    .anchorPreference(key: RepositoryButtonBounds.self, value: .bounds) { $0 }
     .accessibilityLabel("Repository filter")
+    .accessibilityValue(
+      filter.isEmpty ? "All repositories" : filter.sorted().joined(separator: ", "))
+  }
+}
+
+/// Where the repository button sits, so the picker opens right under it.
+struct RepositoryButtonBounds: PreferenceKey {
+  static let defaultValue: Anchor<CGRect>? = nil
+  static func reduce(value: inout Anchor<CGRect>?, nextValue: () -> Anchor<CGRect>?) {
+    value = value ?? nextValue()
+  }
+}
+
+/// Limits the island to some repositories. Each row toggles one, so several can be chosen;
+/// the list scrolls past `maxRows`.
+struct RepositoryPicker: View {
+  let store: IslandStore
+
+  static let rowHeight: CGFloat = 30
+  static let maxRows = 7
+  static let width: CGFloat = 270
+  static let padding: CGFloat = 6
+
+  /// The picker's height for this many repositories.
+  static func height(repositories: Int) -> CGFloat {
+    padding * 2 + rowHeight + 9 + CGFloat(min(max(repositories, 1), maxRows)) * rowHeight
+  }
+
+  var body: some View {
+    VStack(spacing: 0) {
+      PickerRow(selected: store.repositoryFilter.isEmpty) {
+        GlyphView(glyph: .repo, size: 14).frame(width: 16)
+        Text("All repositories")
+      } action: {
+        store.repositoryFilter = []
+      }
+      Rectangle().fill(Palette.hairline).frame(height: 1).padding(.vertical, 4)
+      ScrollView {
+        VStack(spacing: 0) {
+          ForEach(store.repositoryChoices, id: \.name) { choice in
+            PickerRow(selected: store.repositoryFilter.contains(choice.name)) {
+              RepoAvatar(url: choice.avatar, size: 16)
+              (Text(verbatim: owner(choice.name)).foregroundStyle(.white.opacity(0.45))
+                + Text(verbatim: name(choice.name)))
+                .lineLimit(1).truncationMode(.middle)
+            } action: {
+              if store.repositoryFilter.remove(choice.name) == nil {
+                store.repositoryFilter.insert(choice.name)
+              }
+            }
+          }
+        }
+      }
+      .scrollIndicators(.automatic)
+      .frame(
+        height: CGFloat(min(max(store.repositoryChoices.count, 1), Self.maxRows)) * Self.rowHeight
+      )
+    }
+    .padding(Self.padding)
+    .frame(width: Self.width)
+    .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color(white: 0.1)))
+    .overlay(
+      RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Palette.hairline)
+    )
+    .shadow(color: .black.opacity(0.5), radius: 16, y: 8)
+    .accessibilityElement(children: .contain)
+    .accessibilityLabel("Repositories")
+  }
+
+  private func owner(_ repository: String) -> String {
+    repository.split(separator: "/").first.map { "\($0)/" } ?? ""
+  }
+
+  private func name(_ repository: String) -> String {
+    repository.split(separator: "/").last.map(String.init) ?? repository
+  }
+}
+
+private struct PickerRow<Label: View>: View {
+  let selected: Bool
+  @ViewBuilder let label: Label
+  let action: () -> Void
+  @State private var hovered = false
+
+  var body: some View {
+    Button(action: action) {
+      HStack(spacing: 9) {
+        label
+        Spacer(minLength: 8)
+        Image(systemName: "checkmark").font(.system(size: 10, weight: .bold))
+          .opacity(selected ? 1 : 0)
+      }
+      .font(.system(size: 12, weight: .medium))
+      .foregroundStyle(.white.opacity(selected ? 1 : 0.8))
+      .padding(.horizontal, 8)
+      .frame(height: RepositoryPicker.rowHeight)
+      .background(
+        RoundedRectangle(cornerRadius: 7, style: .continuous).fill(
+          .white.opacity(hovered ? 0.08 : 0))
+      )
+      .contentShape(Rectangle())
+    }
+    .buttonStyle(.plain)
+    .onHover { hovered = $0 }
+    .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
   }
 }
 

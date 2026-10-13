@@ -491,10 +491,14 @@ public struct IslandEvent: Codable, Identifiable, Sendable {
   public var url: URL
   public var occurredAt: Date
   public var kind: PRStatus
+  /// The PR's repository, as `owner/name`; nil in ledgers saved before it was recorded.
+  public var repository: String?
 
   public init(
-    id: String, title: String, detail: String, url: URL, occurredAt: Date, kind: PRStatus
+    id: String, title: String, detail: String, url: URL, occurredAt: Date, kind: PRStatus,
+    repository: String? = nil
   ) {
+    self.repository = repository
     self.id = id
     self.title = title
     self.detail = detail
@@ -517,7 +521,8 @@ public enum GitHubChanges {
         return IslandEvent(
           id: "\(pr.id):review:\(pr.headOID)",
           title: "\(pr.repository) #\(pr.number) · Review requested",
-          detail: pr.title, url: pr.url, occurredAt: current.fetchedAt, kind: .review)
+          detail: pr.title, url: pr.url, occurredAt: current.fetchedAt, kind: .review,
+          repository: pr.repository)
       }
       let merged = prior.state == "OPEN" && pr.state == "MERGED"
       let failed = pr.status == .failed && (prior.status != .failed || prior.headOID != pr.headOID)
@@ -538,7 +543,7 @@ public enum GitHubChanges {
         id: "\(pr.id):\(kind.rawValue):\(occurrence)",
         title: "\(pr.repository) #\(pr.number) · \(kind == .queued ? "Merging" : kind.label)",
         detail: pr.title,
-        url: pr.url, occurredAt: current.fetchedAt, kind: kind)
+        url: pr.url, occurredAt: current.fetchedAt, kind: kind, repository: pr.repository)
     }
   }
 }
