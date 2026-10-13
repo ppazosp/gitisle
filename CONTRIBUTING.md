@@ -60,6 +60,9 @@ bash scripts/build-app.sh
 
 - Keep each pull request to one change, and explain the problem and why the
   fix is right, not only what changed.
+- Title it as a conventional commit, such as `fix: …` or `feat: …`. Pull
+  requests are squash-merged, so the title becomes the commit on `main` and the
+  line in the changelog.
 - Add or update tests in `Tests/IslandCoreTests` for behavior in `IslandCore`,
   such as grouping, filtering, decoding, or change detection.
 - Include a before and after screenshot for visual changes.
@@ -89,13 +92,11 @@ version (0.1.3 to 0.1.4). Merging the release pull request tags the release;
 the release workflow then tests, builds, and attaches `GitIsle.zip`,
 `GitIsle.dmg`, and checksums. Installed copies offer the update within 6 hours.
 
-Minor versions mark milestones. To make the next release one, add a footer to
-a commit on `main`, for example:
+Minor versions mark milestones. To make the next release one, give the
+milestone's squash commit a `Release-As` footer when you merge it:
 
-```text
-feat: show PR details
-
-Release-As: 0.2.0
+```sh
+gh pr merge 42 --squash --body "Release-As: 0.2.0"
 ```
 
 Releases are signed: the release workflow signs `GitIsle.zip` with the
