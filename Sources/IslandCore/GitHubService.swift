@@ -31,7 +31,7 @@ public actor GitHubService {
       query($search: String!, $after: String) {
         viewer { login }
         rateLimit { remaining resetAt }
-        search(query: $search, type: ISSUE, first: 100, after: $after) {
+        search(query: $search, type: ISSUE, first: \(Self.searchPage), after: $after) {
           nodes { ...PRFields }
           pageInfo { hasNextPage endCursor }
         }
@@ -49,22 +49,19 @@ public actor GitHubService {
       ? (previous?.fetchedAt ?? now).addingTimeInterval(-86_400)
       : now.addingTimeInterval(-30 * 86_400)
     let since = mergedFrom.formatted(.iso8601.year().month().day().dateSeparator(.dash))
-    var groups = [
-      ("mine", "is:pr is:open author:@me"),
-      ("reviews", "is:pr is:open review-requested:@me"),
-      ("merged", "is:pr is:merged author:@me merged:>=\(since) sort:updated-desc"),
-    ]
-    if !selection.repositories.isEmpty {
-      groups.append(("repos", "is:pr is:open \(selection.searchQuery)"))
-    }
+    let groups =
+      Self.openSearches(selection)
+      + [("merged", "is:pr is:merged author:@me merged:>=\(since) sort:updated-desc")]
     var login = ""
     var prs: [String: PullRequest] = [:]
     var limited = false
     var mergedLimited = false
+    var fingerprint: SearchFingerprint? = SearchFingerprint()
     for (name, search) in groups {
       var cursor: String?
       var seenCursors = Set<String>()
-      for page in 0..<4 {
+      var found = 0
+      for page in 0..<Self.searchPages {
         var variables: [String: Any] = ["search": search]
         if let cursor { variables["after"] = cursor }
         let response = try await request(query: query, variables: variables)
@@ -85,9 +82,15 @@ public actor GitHubService {
           var pr = try Self.decode(node)
           pr.reviewRequested = name == "reviews" || prs[pr.id]?.reviewRequested == true
           prs[pr.id] = pr
+          if name != "merged", let updatedAt = node["updatedAt"] as? String {
+            fingerprint?.add(id: pr.id, updatedAt: updatedAt, search: name)
+          }
         }
+        found += nodes.count
+        // The one-point check sees one page per search; past that it can't stand in for this.
+        if name != "merged", found > SearchFingerprint.pageSize { fingerprint = nil }
         guard more else { break }
-        if page == 3 {
+        if page == Self.searchPages - 1 {
           // Merged PRs are sorted newest first, so a cap keeps the most recent ones;
           // that is history, not missing open work.
           if name == "merged" { mergedLimited = true } else { limited = true }
@@ -136,7 +139,67 @@ public actor GitHubService {
       mergedLimited: incremental
         ? (previous?.mergedLimited ?? false) || mergedLimited : mergedLimited,
       // A different account behind gh needs its own full sweep next time.
-      mergedSweptAt: incremental ? (previous?.login == login ? sweptAt : nil) : now)
+      mergedSweptAt: incremental ? (previous?.login == login ? sweptAt : nil) : now,
+      searchFingerprint: fingerprint)
+  }
+
+  /// Search pages of 50 cost one point each where 100 cost two, and most searches fit in one.
+  /// Eight pages keep the cap at 400 PRs a search.
+  static let searchPage = 50
+  static let searchPages = 8
+
+  /// The searches for open PRs: yours, those waiting on your review, and watched repositories.
+  static func openSearches(_ selection: RepositorySelection) -> [(String, String)] {
+    var searches = [
+      ("mine", "is:pr is:open author:@me"),
+      ("reviews", "is:pr is:open review-requested:@me"),
+    ]
+    if !selection.repositories.isEmpty {
+      searches.append(("repos", "is:pr is:open \(selection.searchQuery)"))
+    }
+    return searches
+  }
+
+  /// What the open-PR searches find now, for one point: each PR's ID and last update. Nil
+  /// when a search finds more PRs than one check can see, so only a full refresh will do.
+  public func searchFingerprint(selection: RepositorySelection) async throws
+    -> (login: String, fingerprint: SearchFingerprint)?
+  {
+    let searches = Self.openSearches(selection)
+    let declarations = searches.indices.map { "$q\($0): String!" }.joined(separator: ", ")
+    let fields = searches.indices.map {
+      """
+      s\($0): search(query: $q\($0), type: ISSUE, first: \(SearchFingerprint.pageSize)) {
+        issueCount nodes { ... on PullRequest { id updatedAt } } }
+      """
+    }
+    let query = """
+      query(\(declarations)) {
+        viewer { login }
+        rateLimit { remaining resetAt }
+        \(fields.joined(separator: "\n"))
+      }
+      """
+    var variables: [String: Any] = [:]
+    for (index, search) in searches.enumerated() { variables["q\(index)"] = search.1 }
+    let response = try await request(query: query, variables: variables)
+    guard let data = response["data"] as? [String: Any],
+      let login = (data["viewer"] as? [String: Any])?["login"] as? String
+    else { throw ProcessFailure.failed("GitHub returned an incomplete pull request check.") }
+    var fingerprint = SearchFingerprint()
+    for (index, search) in searches.enumerated() {
+      guard let result = data["s\(index)"] as? [String: Any],
+        let count = result["issueCount"] as? Int,
+        let nodes = result["nodes"] as? [[String: Any]]
+      else { throw ProcessFailure.failed("GitHub returned an incomplete pull request check.") }
+      guard count <= SearchFingerprint.pageSize else { return nil }
+      for node in nodes {
+        guard let id = node["id"] as? String, let updatedAt = node["updatedAt"] as? String
+        else { throw ProcessFailure.failed("GitHub returned an incomplete pull request check.") }
+        fingerprint.add(id: id, updatedAt: updatedAt, search: search.0)
+      }
+    }
+    return (login, fingerprint)
   }
 
   /// Re-reads known PRs by ID: one cheap request per 100 PRs, and no search index delay.

@@ -157,10 +157,11 @@ struct SettingsView: View {
     }
   }
 
-  /// Rough share of GitHub's 5,000 points an hour: an active refresh costs about 1 point and
-  /// a full refresh about 5.
+  /// Rough share of GitHub's 5,000 points an hour while a PR is active: an active refresh and
+  /// a check for new PRs cost 1 point each, and the full searches every 10 minutes and the
+  /// stats add about 30.
   private var budgetShare: Int {
-    let points = 3600 / draft.activeRefreshSeconds + 3600 / draft.githubRefreshSeconds * 5
+    let points = 3600 / draft.activeRefreshSeconds + 3600 / draft.githubRefreshSeconds + 30
     return max(1, Int((points / 5000 * 100).rounded()))
   }
 

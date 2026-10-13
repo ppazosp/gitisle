@@ -360,11 +360,16 @@ public struct GitHubSnapshot: Codable, Sendable {
   /// When the full 30 days of merged PRs were last read. In between, refreshes read only
   /// recent merges and keep the rest.
   public var mergedSweptAt: Date?
+  /// What the open-PR searches found, to compare the next one-point check against. Nil when a
+  /// search found more than one check can see, or for snapshots saved before it existed.
+  public var searchFingerprint: SearchFingerprint?
 
   public init(
     login: String, pullRequests: [PullRequest], fetchedAt: Date = Date(), selection: String = "",
-    isLimited: Bool = false, mergedLimited: Bool = false, mergedSweptAt: Date? = nil
+    isLimited: Bool = false, mergedLimited: Bool = false, mergedSweptAt: Date? = nil,
+    searchFingerprint: SearchFingerprint? = nil
   ) {
+    self.searchFingerprint = searchFingerprint
     self.mergedLimited = mergedLimited
     self.mergedSweptAt = mergedSweptAt
     self.login = login
