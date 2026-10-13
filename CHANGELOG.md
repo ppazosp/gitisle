@@ -2,6 +2,13 @@
 
 Notable changes to GitIsle. Releases follow [semantic versioning](https://semver.org).
 
+## [0.1.7](https://github.com/ppazosp/gitisle/compare/v0.1.6...v0.1.7) (2026-10-13)
+
+
+### Features
+
+* announce the PRs you open, as ready or draft, and drafts marked ready ([#32](https://github.com/ppazosp/gitisle/issues/32)) ([b49fb28](https://github.com/ppazosp/gitisle/commit/b49fb2891a0a27bbc49429dca1eabbe7319684d5))
+
 ## [0.1.6](https://github.com/ppazosp/gitisle/compare/v0.1.5...v0.1.6) (2026-10-13)
 
 
