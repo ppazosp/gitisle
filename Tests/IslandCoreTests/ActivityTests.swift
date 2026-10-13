@@ -182,6 +182,66 @@ struct ActivityTests {
     #expect(events.isEmpty)
   }
 
+  private func events(_ before: PullRequest, _ after: PullRequest) -> [IslandEvent] {
+    GitHubChanges.events(
+      previous: GitHubSnapshot(login: "person", pullRequests: [before]),
+      current: GitHubSnapshot(login: "person", pullRequests: [after]))
+  }
+
+  private func ready(_ id: String = "mine") -> PullRequest {
+    var value = pr(id)
+    value.checks = "SUCCESS"
+    value.mergeStateStatus = "CLEAN"
+    return value
+  }
+
+  @Test func ownPRBecomingReadyAnnouncesItOnce() {
+    var checking = ready()
+    checking.checks = "PENDING"
+    var waiting = ready()
+    waiting.mergeStateStatus = "BLOCKED"
+    waiting.reviewDecision = "REVIEW_REQUIRED"
+    for before in [checking, waiting] {
+      let found = events(before, ready())
+      #expect(found.map(\.kind) == [.ready])
+      #expect(found.first?.title.hasSuffix("Ready to merge") == true)
+    }
+    #expect(events(ready(), ready()).isEmpty)
+  }
+
+  @Test func readyAnnouncesOncePerCommit() {
+    var settling = ready()
+    settling.mergeStateStatus = "UNKNOWN"
+    // GitHub recomputing the merge state yields the same event, which the ledger skips.
+    let first = events(settling, ready()).first?.id
+    #expect(first != nil)
+    #expect(events(ready(), ready()).isEmpty)
+    var pushed = ready()
+    pushed.headOID = "def"
+    let second = events(ready(), pushed).first?.id
+    #expect(second != nil && second != first)
+  }
+
+  @Test func readyStaysQuietForDraftsOthersAndAutoMerge() {
+    var draft = ready()
+    draft.isDraft = true
+    var checking = ready()
+    checking.checks = "PENDING"
+    #expect(events(checking, draft).isEmpty)
+    // Marking a ready draft as ready for review announces it.
+    #expect(events(draft, ready()).map(\.kind) == [.ready])
+
+    var theirs = ready("theirs")
+    theirs.author = "someone-else"
+    var theirsChecking = theirs
+    theirsChecking.checks = "PENDING"
+    #expect(events(theirsChecking, theirs).isEmpty)
+
+    var autoMerge = ready()
+    autoMerge.autoMerge = true
+    #expect(events(checking, autoMerge).map(\.kind) == [.queued])
+  }
+
   @Test func cachedSnapshotsWithoutNewFieldsStillDecode() throws {
     let legacy = Data(
       """
