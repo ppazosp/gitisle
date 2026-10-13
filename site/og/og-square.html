@@ -1,0 +1,98 @@
+<!doctype html>
+<!-- The social preview image Slack gets (public/og-square.png). Render with og/render.sh.
+     Slack sometimes shows a square thumbnail cropped from the centre, so everything sits in
+     the middle square.
+     No URL in the image: X overlays the domain on its bottom-left corner and LinkedIn prints it below. -->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      @font-face {
+        font-family: 'Geist';
+        src: url('../node_modules/@fontsource-variable/geist/files/geist-latin-wght-normal.woff2') format('woff2');
+        font-weight: 100 900;
+      }
+      * {
+        margin: 0;
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        width: 1200px;
+        height: 630px;
+        overflow: hidden;
+        background: #000;
+        color: #fff;
+        font-family: 'Geist', sans-serif;
+        -webkit-font-smoothing: antialiased;
+      }
+      .glow {
+        position: absolute;
+        inset: 0;
+        background:
+          radial-gradient(520px 420px at 6% 100%, rgba(63, 185, 80, 0.22), transparent 70%),
+          radial-gradient(560px 460px at 94% 100%, rgba(163, 113, 247, 0.26), transparent 70%);
+      }
+      /* Everything sits in the centre square (x 285-915), so a square thumbnail crop, as Slack
+         shows some links, keeps the island, the icon and the headline whole. */
+      .center {
+        position: absolute;
+        left: 0;
+        right: 0;
+        top: 0;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        text-align: center;
+      }
+      /* The real island, hanging from the top edge like the notch: one PR merging. */
+      .island {
+        width: 470px;
+        border-radius: 0 0 34px 34px;
+        overflow: hidden;
+        box-shadow:
+          0 0 0 1px rgba(255, 255, 255, 0.1),
+          0 40px 90px rgba(0, 0, 0, 0.6);
+      }
+      .island img {
+        display: block;
+        width: 100%;
+      }
+      .brand {
+        margin-top: 70px;
+        display: flex;
+        align-items: center;
+        gap: 16px;
+        font-size: 50px;
+        font-weight: 600;
+        letter-spacing: -0.03em;
+      }
+      .brand img {
+        width: 96px;
+        height: 96px;
+      }
+      h1 {
+        margin-top: 34px;
+        font-size: 64px;
+        font-weight: 600;
+        line-height: 1.04;
+        letter-spacing: -0.045em;
+      }
+      .sub {
+        margin-top: 26px;
+        font-size: 27px;
+        color: #a1a1a8;
+        letter-spacing: -0.01em;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="glow"></div>
+    <div class="center">
+      <div class="island"><img src="../src/assets/island/story-queued.png" alt="" /></div>
+      <div class="brand"><img src="../public/logo.png" alt="" />GitIsle</div>
+      <h1>Your pull requests,<br />in the notch.</h1>
+      <p class="sub">Free and open source for macOS.</p>
+    </div>
+  </body>
+</html>

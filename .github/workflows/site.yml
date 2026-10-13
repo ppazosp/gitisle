@@ -70,7 +70,8 @@ jobs:
         run: |
           mkdir -p .vercel/output
           cp -R dist .vercel/output/static
-          echo '{"version":3}' > .vercel/output/config.json
+          # Routing: Slack gets the link preview made for its square crop.
+          cp site/vercel-output-config.json .vercel/output/config.json
           printf '{"projectId":"%s","orgId":"%s"}' "$VERCEL_PROJECT_ID" "$VERCEL_ORG_ID" > .vercel/project.json
 
       - name: Install Vercel CLI

@@ -45,9 +45,13 @@ from `og/og.html` with headless Chrome at 2x:
 ./og/render.sh
 ```
 
-Everything sits in the middle square, because Slack sometimes shows the image as
-a square thumbnail cropped from the centre. Slack and others cache previews by
-URL, so bump the `?v=` in `src/layouts/Base.astro` whenever the image changes.
+Slack sometimes shows the preview as a square thumbnail cropped from the
+centre, so it gets its own image: `og/og-square.html`, rendered to
+`public/og-square.png`, keeps everything in the middle square. On Vercel,
+`vercel-output-config.json` serves it at `/og.png` to Slack's user agents;
+everyone else, and any other host, gets the wide `og.png`. Slack and others
+cache previews by URL, so bump the `?v=` in `src/layouts/Base.astro` whenever
+an image changes.
 
 `public/favicon.ico` (16, 32 and 48 px), `apple-touch-icon.png`, and the web
 manifest's `icon-192.png` and `icon-512.png` are made from `../assets/logo.png`.

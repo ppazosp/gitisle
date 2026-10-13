@@ -14,7 +14,9 @@ const site = Astro.site;
 const url = site ? new URL(Astro.url.pathname, site).href : Astro.url.pathname;
 // Bump the version when og.png changes: Slack and others cache previews by URL for weeks.
 const ogImage = site ? new URL('/og.png?v=2', site).href : '/og.png?v=2';
-const ogImageAlt = 'GitIsle: your pull requests, in the notch. The island hangs from the notch, showing a pull request merging.';
+// Slack gets og-square.png at this address instead (vercel-output-config.json), made for the
+// square thumbnail it sometimes crops from the centre.
+const ogImageAlt = 'GitIsle: your pull requests, in the notch. The island listing pull requests by repository.';
 ---
 
 <html lang="en">
