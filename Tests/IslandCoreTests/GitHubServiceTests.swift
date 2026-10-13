@@ -5,8 +5,11 @@ import Testing
 
 private actor FixtureTransport {
   var responses: [Data]
+  /// The request bodies sent, in order.
+  var sent: [String] = []
   init(_ responses: [Data]) { self.responses = responses }
   func send(_ input: Data) throws -> Data {
+    sent.append(String(decoding: input, as: UTF8.self))
     guard !responses.isEmpty else { throw Failure.exhausted }
     return responses.removeFirst()
   }
@@ -46,6 +49,77 @@ struct GitHubServiceTests {
     #expect(result.pullRequests.count == 2)
     #expect(result.pullRequests.first { $0.id == "first" }?.reviewRequested == true)
     #expect(!result.isLimited)
+  }
+
+  @Test func fullRefreshRecordsWhatTheOpenSearchesFound() async throws {
+    let fixture = try FixtureTransport([
+      page([row("mine")]), page([row("review"), row("mine")]), page([row("old", state: "MERGED")]),
+    ])
+    let service = GitHubService(transport: { try await fixture.send($0) })
+    let result = try await service.fetch(selection: RepositorySelection(text: ""), previous: nil)
+    let fingerprint = try #require(result.searchFingerprint)
+    // Merged history isn't part of the one-point check.
+    #expect(fingerprint.entries.keys.sorted() == ["mine", "review"])
+    #expect(fingerprint.found("mine", by: "mine") && fingerprint.found("mine", by: "reviews"))
+    // Pages of 50 cost GitHub one point; pages of 100 cost two.
+    let sent = await fixture.sent
+    #expect(sent.count == 3 && sent.allSatisfy { $0.contains("first: 50") })
+  }
+
+  @Test func aSearchTooBigForOneCheckLeavesNoFingerprint() async throws {
+    let rows = (0...100).map { row("pr\($0)") }
+    let fixture = try FixtureTransport([
+      page(Array(rows[0..<50]), cursor: "a"), page(Array(rows[50..<100]), cursor: "b"),
+      page(Array(rows[100...])), page([]), page([]),
+    ])
+    let service = GitHubService(transport: { try await fixture.send($0) })
+    let result = try await service.fetch(selection: RepositorySelection(text: ""), previous: nil)
+    #expect(result.pullRequests.count == 101)
+    #expect(result.searchFingerprint == nil)
+  }
+
+  private func check(_ searches: [[String: Any]], login: String = "person") throws -> Data {
+    var data: [String: Any] = ["viewer": ["login": login]]
+    for (index, search) in searches.enumerated() { data["s\(index)"] = search }
+    return try JSONSerialization.data(withJSONObject: ["data": data])
+  }
+
+  @Test func oneRequestChecksEveryOpenSearch() async throws {
+    let fixture = try FixtureTransport([
+      check([
+        ["issueCount": 1, "nodes": [["id": "a", "updatedAt": "2026-10-13T10:00:00Z"]]],
+        ["issueCount": 0, "nodes": []],
+        ["issueCount": 1, "nodes": [["id": "b", "updatedAt": "2026-10-13T11:00:00Z"]]],
+      ])
+    ])
+    let service = GitHubService(transport: { try await fixture.send($0) })
+    let result = try #require(
+      try await service.searchFingerprint(selection: RepositorySelection(text: "example/app")))
+    #expect(result.login == "person")
+    #expect(result.fingerprint.entries.keys.sorted() == ["a", "b"])
+    #expect(result.fingerprint.found("a", by: "mine") && result.fingerprint.found("b", by: "repos"))
+    let sent = await fixture.sent
+    #expect(sent.count == 1)
+    let body = try #require(
+      try JSONSerialization.jsonObject(with: Data(sent[0].utf8)) as? [String: Any])
+    let variables = try #require(body["variables"] as? [String: String])
+    #expect(variables["q2"] == "is:pr is:open repo:example/app")
+  }
+
+  @Test func theCheckGivesWayWhenASearchFindsMoreThanItCanSee() async throws {
+    let fixture = try FixtureTransport([
+      check([["issueCount": 101, "nodes": []], ["issueCount": 0, "nodes": []]])
+    ])
+    let service = GitHubService(transport: { try await fixture.send($0) })
+    #expect(try await service.searchFingerprint(selection: RepositorySelection(text: "")) == nil)
+  }
+
+  @Test func anIncompleteCheckIsRejected() async throws {
+    let fixture = try FixtureTransport([check([["issueCount": 0, "nodes": []]])])
+    let service = GitHubService(transport: { try await fixture.send($0) })
+    await #expect(throws: ProcessFailure.self) {
+      try await service.searchFingerprint(selection: RepositorySelection(text: ""))
+    }
   }
 
   @Test func accountSwitchDuringPaginationRejectsTheSnapshot() async throws {

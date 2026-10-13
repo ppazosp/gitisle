@@ -118,9 +118,13 @@ dollars for costs.
 
 ## How the numbers work
 
-- **GitHub** refreshes every minute by default (every 2 or 5 minutes in
-  Settings) and stats every 10 minutes, using about 6% of your hourly GitHub
-  API budget. On an error, the last snapshot stays on screen marked as cached.
+- **GitHub** checks for new and changed PRs every minute by default (every 2
+  or 5 minutes in Settings) with one cheap query, and reads only the PRs that
+  changed. Every search runs in full every 10 minutes. PRs with checks running,
+  merging, or just updated refresh every 10 seconds, or every minute after 5
+  minutes without keyboard or mouse input. While a PR is active this uses
+  about 9% of your hourly GitHub API budget, and under 2% otherwise. On an
+  error, the last snapshot stays on screen marked as cached.
 - **Needs you** flags open PRs with a review request, failed checks, conflicts,
   requested changes, or that are ready to merge, behind, or blocked.
 - **Claude Code and Codex usage** comes from the history files on your Mac,
