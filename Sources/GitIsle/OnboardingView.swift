@@ -101,8 +101,8 @@ struct OnboardingFooter: View {
       .keyboardShortcut(.defaultAction)
       .disabled(!canContinue)
     }
-    // The same margin from the side and the bottom of the island.
-    .padding(.horizontal, 24).padding(.bottom, 18.5)
+    // Like the app's footer: closer to the bottom of the island than to its sides.
+    .padding(.horizontal, 24).padding(.bottom, 6.5)
   }
 
   private func move(_ offset: Int) {
