@@ -2,25 +2,28 @@
 // A MacBook screen with a notch. The island inside it morphs between real captures of the
 // app (src/assets/island), driven by scripts/landing.ts. Sizes are in points of a 1200 × 740
 // screen; the whole screen is scaled to fit with --s.
-import bannerFailed from '../assets/island/banner-failed.png';
-import bannerMerged from '../assets/island/banner-merged.png';
-import bannerOpened from '../assets/island/banner-opened.png';
-import bannerReady from '../assets/island/banner-ready.png';
-import bannerReview from '../assets/island/banner-review.png';
 import board from '../assets/island/board.png';
 import list from '../assets/island/list.png';
 import live from '../assets/island/live.png';
 import sizes from '../assets/island/sizes.json';
 import stats from '../assets/island/stats.png';
+import storyDraft from '../assets/island/story-draft.png';
+import storyFailed from '../assets/island/story-failed.png';
+import storyMerged from '../assets/island/story-merged.png';
+import storyQueued from '../assets/island/story-queued.png';
+import storyReady from '../assets/island/story-ready.png';
+import storyReview from '../assets/island/story-readyForReview.png';
 
-// The banner step plays several announcements in turn; they share the banner's size.
+// One PR's life, then the expanded views. Banners share one size; the live bar shows only
+// while the PR is merging.
 const states = [
+  { id: 'story-draft', size: 'banner', image: storyDraft, alt: 'A banner sliding out of the notch: New draft PR, Cache workspace metadata' },
+  { id: 'story-readyForReview', size: 'banner', image: storyReview, alt: 'A banner: Ready for review, Cache workspace metadata' },
+  { id: 'story-failed', size: 'banner', image: storyFailed, alt: 'A banner: Checks failed, Cache workspace metadata' },
+  { id: 'story-ready', size: 'banner', image: storyReady, alt: 'A banner: Ready to merge, Cache workspace metadata' },
+  { id: 'story-queued', size: 'banner', image: storyQueued, alt: 'A banner: Merging, Cache workspace metadata, under the live bar with a timer' },
   { id: 'live', size: 'live', image: live, alt: 'The island showing pull request 433 merging, with a timer' },
-  { id: 'banner-opened', size: 'banner', image: bannerOpened, alt: 'A banner sliding out of the notch: New PR, Polish onboarding animations' },
-  { id: 'banner-ready', size: 'banner', image: bannerReady, alt: 'A banner: Ready to merge, Polish onboarding animations' },
-  { id: 'banner-merged', size: 'banner', image: bannerMerged, alt: 'A banner: Merged, Ship the notch island' },
-  { id: 'banner-failed', size: 'banner', image: bannerFailed, alt: 'A banner: Checks failed, Add keyboard shortcuts' },
-  { id: 'banner-review', size: 'banner', image: bannerReview, alt: 'A banner: Review requested, Speed up cold start' },
+  { id: 'story-merged', size: 'banner', image: storyMerged, alt: 'A banner: Merged, Cache workspace metadata' },
   { id: 'list', size: 'list', image: list, alt: 'The expanded island listing pull requests by repository' },
   { id: 'board', size: 'board', image: board, alt: 'The island as a board with draft, open, merging, and merged columns' },
   { id: 'stats', size: 'stats', image: stats, alt: 'Stats: GitHub activity and Claude Code and Codex usage charts' },

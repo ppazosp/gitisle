@@ -12,8 +12,9 @@ interface Props {
 const { title, description } = Astro.props;
 const site = Astro.site;
 const url = site ? new URL(Astro.url.pathname, site).href : Astro.url.pathname;
-const ogImage = site ? new URL('/og.png', site).href : '/og.png';
-const ogImageAlt = 'GitIsle: your pull requests, in the notch. The island listing pull requests by repository.';
+// Bump the version when og.png changes: Slack and others cache previews by URL for weeks.
+const ogImage = site ? new URL('/og.png?v=2', site).href : '/og.png?v=2';
+const ogImageAlt = 'GitIsle: your pull requests, in the notch. The island hangs from the notch, showing a pull request merging.';
 ---
 
 <html lang="en">
