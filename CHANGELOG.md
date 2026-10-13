@@ -2,6 +2,18 @@
 
 Notable changes to GitIsle. Releases follow [semantic versioning](https://semver.org).
 
+## [0.1.6](https://github.com/ppazosp/gitisle/compare/v0.1.5...v0.1.6) (2026-10-13)
+
+
+### Features
+
+* Pick several repositories at once. Activity, the live bar, banners, and notifications all follow your pick ([#30](https://github.com/ppazosp/gitisle/issues/30)) ([733c572](https://github.com/ppazosp/gitisle/commit/733c572062da54c8c98715936606e958833320eb))
+
+
+### Performance Improvements
+
+* GitIsle uses about half as much of your GitHub API budget. A cheap check finds what changed before any full search, and PRs refresh less often while you're away from the Mac ([#29](https://github.com/ppazosp/gitisle/issues/29)) ([bbf7bcb](https://github.com/ppazosp/gitisle/commit/bbf7bcb385ea894c92d11937fb3405e7dbd2f020))
+
 ## [0.1.5](https://github.com/ppazosp/gitisle/compare/v0.1.4...v0.1.5) (2026-10-13)
 
 
