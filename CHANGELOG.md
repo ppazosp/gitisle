@@ -7,7 +7,7 @@ Notable changes to GitIsle. Releases follow [semantic versioning](https://semver
 
 ### Features
 
-* announce the PRs you open, as ready or draft, and drafts marked ready ([#32](https://github.com/ppazosp/gitisle/issues/32)) ([b49fb28](https://github.com/ppazosp/gitisle/commit/b49fb2891a0a27bbc49429dca1eabbe7319684d5))
+* GitIsle tells you when one of your PRs is opened, as a new PR or a new draft, and when a draft is marked ready for review. Switch it off under Settings → Announce → New PR ([#32](https://github.com/ppazosp/gitisle/issues/32)) ([b49fb28](https://github.com/ppazosp/gitisle/commit/b49fb2891a0a27bbc49429dca1eabbe7319684d5))
 
 ## [0.1.6](https://github.com/ppazosp/gitisle/compare/v0.1.5...v0.1.6) (2026-10-13)
 
