@@ -90,6 +90,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
           id: "demo-banner", title: "\(pr.repository) #\(pr.number) · Merged", detail: pr.title,
           url: pr.url, occurredAt: Date(), kind: .merged), extra: 1)
     }
+    if arguments.contains("--update"), store.isDemo { store.updater.preview() }
     if arguments.contains("--showcase") { store.runShowcase() }
     if arguments.contains("--tour") { store.runTour() }
     island = IslandPanelController(store: store)

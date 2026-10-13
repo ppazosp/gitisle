@@ -53,6 +53,7 @@ enum Palette {
   static let failed = Color(red: 0.97, green: 0.32, blue: 0.29)
   static let attention = Color(red: 0.94, green: 0.62, blue: 0.27)
   static let claude = Color(red: 0.85, green: 0.47, blue: 0.34)
+  static let update = Color(red: 0.24, green: 0.56, blue: 1.0)
   static let surface = Color.white.opacity(0.055)
   static let hairline = Color.white.opacity(0.09)
 }

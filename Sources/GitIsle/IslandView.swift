@@ -369,10 +369,9 @@ private struct ExpandedIsland: View {
     .frame(height: Self.headerHeight)
   }
 
+  /// Refresh sits with the status it updates; settings and app updates sit on the right.
   private var footer: some View {
     HStack(spacing: 4) {
-      status.font(.system(size: 10.5)).foregroundStyle(.white.opacity(0.4)).lineLimit(1)
-      Spacer()
       FooterButton(glyph: .sync, label: "Refresh", spinning: refreshing) {
         Task {
           async let github: Void = store.refreshGitHub()
@@ -382,17 +381,33 @@ private struct ExpandedIsland: View {
         }
       }
       .disabled(refreshing || store.isDemo)
+      status.font(.system(size: 10.5)).foregroundStyle(.white.opacity(0.4)).lineLimit(1)
+      Spacer()
       FooterButton(glyph: .gear, label: "GitIsle settings") {
         withAnimation(Motion.snappy) { store.showingSettings.toggle() }
       }
+      if let release = store.updater.available {
+        FooterButton(
+          glyph: .download, label: "Update to GitIsle \(release.version)", tint: Palette.update
+        ) {
+          if !store.isDemo { store.updater.install() }
+        }
+        .disabled(store.updater.installing)
+        .transition(.scale(scale: 0.6).combined(with: .opacity))
+      }
     }
-    .padding(.horizontal, 24)
+    .padding(.horizontal, 18)
+    .animation(Motion.snappy, value: store.updater.available)
   }
 
   private var refreshing: Bool { store.githubRefreshing || store.usageRefreshing }
 
   @ViewBuilder private var status: some View {
-    if store.isDemo {
+    if let release = store.updater.available, store.updater.installing {
+      Text("Updating to \(release.version)…")
+    } else if let error = store.updater.error {
+      Text(error).foregroundStyle(Palette.failed)
+    } else if store.isDemo {
       // Marketing captures can relabel the example data, for example "Updated just now".
       Text(ProcessInfo.processInfo.environment["GITISLE_PREVIEW_LABEL"] ?? "Example data")
     } else if let github = store.github {
@@ -481,6 +496,8 @@ private struct FooterButton: View {
   var systemImage = "chevron.up"
   let label: String
   var spinning = false
+  /// Colors the button to stand out, for something waiting on you.
+  var tint: Color?
   let action: () -> Void
   @State private var hovered = false
 
@@ -502,12 +519,16 @@ private struct FooterButton: View {
         }
       }
       .frame(width: 26, height: 24)
-      .background(RoundedRectangle(cornerRadius: 6).fill(.white.opacity(hovered ? 0.08 : 0)))
+      .background(
+        RoundedRectangle(cornerRadius: 6).fill(
+          tint.map { $0.opacity(hovered ? 0.3 : 0.18) } ?? .white.opacity(hovered ? 0.08 : 0))
+      )
       .contentShape(Rectangle())
     }
     .buttonStyle(.plain)
-    .foregroundStyle(.white.opacity(hovered ? 0.9 : 0.55))
+    .foregroundStyle(tint ?? .white.opacity(hovered ? 0.9 : 0.55))
     .onHover { hovered = $0 }
+    .help(label)
     .accessibilityLabel(label)
   }
 }
