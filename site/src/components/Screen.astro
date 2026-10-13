@@ -2,19 +2,31 @@
 // A MacBook screen with a notch. The island inside it morphs between real captures of the
 // app (src/assets/island), driven by scripts/landing.ts. Sizes are in points of a 1200 × 740
 // screen; the whole screen is scaled to fit with --s.
-import banner from '../assets/island/banner.png';
 import board from '../assets/island/board.png';
 import list from '../assets/island/list.png';
 import live from '../assets/island/live.png';
 import sizes from '../assets/island/sizes.json';
 import stats from '../assets/island/stats.png';
+import storyDraft from '../assets/island/story-draft.png';
+import storyFailed from '../assets/island/story-failed.png';
+import storyMerged from '../assets/island/story-merged.png';
+import storyQueued from '../assets/island/story-queued.png';
+import storyReady from '../assets/island/story-ready.png';
+import storyReview from '../assets/island/story-readyForReview.png';
 
+// One PR's life, then the expanded views. Banners share one size; the live bar shows only
+// while the PR is merging.
 const states = [
-  { id: 'live', image: live, alt: 'The island showing pull request 433 merging, with a timer' },
-  { id: 'banner', image: banner, alt: 'A banner sliding out of the notch: Merged, Ship the notch island' },
-  { id: 'list', image: list, alt: 'The expanded island listing pull requests by repository' },
-  { id: 'board', image: board, alt: 'The island as a board with draft, open, merging, and merged columns' },
-  { id: 'stats', image: stats, alt: 'Stats: GitHub activity and Claude Code and Codex usage charts' },
+  { id: 'story-draft', size: 'banner', image: storyDraft, alt: 'A banner sliding out of the notch: New draft PR, Cache workspace metadata' },
+  { id: 'story-readyForReview', size: 'banner', image: storyReview, alt: 'A banner: Ready for review, Cache workspace metadata' },
+  { id: 'story-failed', size: 'banner', image: storyFailed, alt: 'A banner: Checks failed, Cache workspace metadata' },
+  { id: 'story-ready', size: 'banner', image: storyReady, alt: 'A banner: Ready to merge, Cache workspace metadata' },
+  { id: 'story-queued', size: 'banner', image: storyQueued, alt: 'A banner: Merging, Cache workspace metadata, under the live bar with a timer' },
+  { id: 'live', size: 'live', image: live, alt: 'The island showing pull request 433 merging, with a timer' },
+  { id: 'story-merged', size: 'banner', image: storyMerged, alt: 'A banner: Merged, Cache workspace metadata' },
+  { id: 'list', size: 'list', image: list, alt: 'The expanded island listing pull requests by repository' },
+  { id: 'board', size: 'board', image: board, alt: 'The island as a board with draft, open, merging, and merged columns' },
+  { id: 'stats', size: 'stats', image: stats, alt: 'Stats: GitHub activity and Claude Code and Codex usage charts' },
 ] as const;
 ---
 
@@ -48,8 +60,8 @@ const states = [
               data-state={s.id}
               src={s.image.src}
               alt={s.alt}
-              width={sizes[s.id].w}
-              height={sizes[s.id].h}
+              width={sizes[s.size].w}
+              height={sizes[s.size].h}
               decoding="async"
               draggable="false"
             />

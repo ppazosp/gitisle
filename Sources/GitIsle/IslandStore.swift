@@ -697,6 +697,46 @@ final class IslandStore {
     showEvent(event)
   }
 
+  /// Example data only: one PR's life for the website's captures (`--story <kind>`). #433 is in
+  /// the state the announcement is about, and nothing else is live, so the live bar shows only
+  /// while #433 is merging.
+  func previewStory(_ kind: PRStatus) {
+    guard isDemo, var snapshot = github,
+      let index = snapshot.pullRequests.firstIndex(where: { $0.id == "demo3" })
+    else { return }
+    for other in snapshot.pullRequests.indices where other != index {
+      snapshot.pullRequests[other].checks = "SUCCESS"
+      snapshot.pullRequests[other].checkSummary = CheckSummary(passed: 5, failed: 0, pending: 0)
+      snapshot.pullRequests[other].autoMerge = false
+      snapshot.pullRequests[other].queuePosition = nil
+    }
+    var pr = snapshot.pullRequests[index]
+    if kind != .queued {
+      pr.autoMerge = false
+      pr.queuePosition = nil
+      pr.mergingSince = nil
+      pr.checks = "SUCCESS"
+      pr.checkSummary = CheckSummary(passed: 5, failed: 0, pending: 0)
+    }
+    switch kind {
+    case .draft: pr.isDraft = true
+    case .failed:
+      pr.checks = "FAILURE"
+      pr.checkSummary = CheckSummary(passed: 4, failed: 1, pending: 0)
+    case .ready: pr.mergeStateStatus = "CLEAN"
+    case .merged:
+      pr.state = "MERGED"
+      pr.mergedAt = Date()
+    default: break
+    }
+    snapshot.pullRequests[index] = pr
+    setGitHub(snapshot)
+    showEvent(
+      IslandEvent(
+        id: "story-\(kind.rawValue)", title: "\(pr.repository) #\(pr.number) · \(kind.label)",
+        detail: pr.title, url: pr.url, occurredAt: Date(), kind: kind, repository: pr.repository))
+  }
+
   /// Example data only: plays each kind of announcement in turn, to preview the banners.
   func runShowcase() {
     guard isDemo else { return }

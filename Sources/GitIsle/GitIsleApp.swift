@@ -12,6 +12,7 @@ import UserNotifications
     let demo =
       CommandLine.arguments.contains("--demo") || CommandLine.arguments.contains("--snapshot")
       || CommandLine.arguments.contains("--banner") || CommandLine.arguments.contains("--event")
+      || CommandLine.arguments.contains("--story")
       || CommandLine.arguments.contains("--showcase") || CommandLine.arguments.contains("--tour")
     let model = IslandStore(demo: demo)
     _store = State(initialValue: model)
@@ -55,7 +56,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     let arguments = CommandLine.arguments
     if (arguments.contains("--expanded") || arguments.contains("--snapshot"))
       && !arguments.contains("--collapsed") && !arguments.contains("--banner")
-      && !arguments.contains("--event")
+      && !arguments.contains("--event") && !arguments.contains("--story")
     {
       store.expanded = true
     }
@@ -96,6 +97,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
           url: pr.url, occurredAt: Date(), kind: .merged, repository: pr.repository), extra: 1)
     }
     if arguments.contains("--update"), store.isDemo { store.updater.preview() }
+    // `--story <kind>` is one PR's life for the website: the banner, with the live bar only
+    // while that PR merges.
+    if let index = arguments.firstIndex(of: "--story"), arguments.count > index + 1,
+      let kind = PRStatus(rawValue: arguments[index + 1])
+    {
+      store.previewStory(kind)
+    }
     // `--event <kind>` previews one announcement's banner, for example `--event draft`.
     if let index = arguments.firstIndex(of: "--event"), arguments.count > index + 1,
       let kind = PRStatus(rawValue: arguments[index + 1])

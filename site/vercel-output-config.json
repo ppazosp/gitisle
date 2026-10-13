@@ -1,0 +1,10 @@
+{
+  "version": 3,
+  "routes": [
+    {
+      "src": "^/og\\.png$",
+      "has": [{ "type": "header", "key": "user-agent", "value": ".*[Ss]lack.*" }],
+      "dest": "/og-square.png"
+    }
+  ]
+}

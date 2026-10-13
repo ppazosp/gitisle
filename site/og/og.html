@@ -49,8 +49,8 @@
       h1 {
         position: absolute;
         left: 72px;
-        top: 222px;
-        font-size: 68px;
+        top: 232px;
+        font-size: 60px;
         font-weight: 600;
         line-height: 1.02;
         letter-spacing: -0.045em;
@@ -58,26 +58,51 @@
       .sub {
         position: absolute;
         left: 72px;
-        top: 396px;
-        font-size: 28px;
+        top: 390px;
+        font-size: 26px;
         color: #a1a1a8;
         letter-spacing: -0.01em;
       }
-      /* The real island, hanging from the top edge like the notch. */
-      .island {
+      /* The real island, hanging from the top edge like the notch: large enough to read, with
+         the notch's curved ears and an edge that shows against the black. */
+      .notch {
         position: absolute;
         top: 0;
-        right: 56px;
-        width: 430px;
-        border-radius: 0 0 30px 30px;
+        right: 44px;
+        width: 548px;
+      }
+      .notch::before {
+        content: '';
+        position: absolute;
+        inset: -120px -160px auto;
+        height: 420px;
+        background: radial-gradient(closest-side, rgba(255, 255, 255, 0.07), transparent);
+      }
+      .island {
+        position: relative;
+        border-radius: 0 0 34px 34px;
         overflow: hidden;
         box-shadow:
-          0 0 0 1px rgba(255, 255, 255, 0.1),
-          0 40px 90px rgba(0, 0, 0, 0.6);
+          0 0 0 1.5px rgba(255, 255, 255, 0.16),
+          0 40px 90px rgba(0, 0, 0, 0.7);
       }
       .island img {
         display: block;
         width: 100%;
+      }
+      .ear {
+        position: absolute;
+        top: 0;
+        width: 18px;
+        height: 18px;
+      }
+      .ear--l {
+        left: -18px;
+        background: radial-gradient(circle at 0 100%, transparent 17.5px, #000 18px);
+      }
+      .ear--r {
+        right: -18px;
+        background: radial-gradient(circle at 100% 100%, transparent 17.5px, #000 18px);
       }
     </style>
   </head>
@@ -86,6 +111,10 @@
     <div class="brand"><img src="../public/logo.png" alt="" />GitIsle</div>
     <h1>Your pull requests,<br />in the notch.</h1>
     <p class="sub">Free and open source for macOS.</p>
-    <div class="island"><img src="../src/assets/island/list.png" alt="" /></div>
+    <div class="notch">
+      <span class="ear ear--l"></span>
+      <span class="ear ear--r"></span>
+      <div class="island"><img src="../src/assets/island/list.png" alt="" /></div>
+    </div>
   </body>
 </html>

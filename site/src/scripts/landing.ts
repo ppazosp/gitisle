@@ -16,7 +16,8 @@ const NAV_SPACE = 72;
 const CAPTION_SPACE = 120 + 28 + 56;
 
 type Size = { w: number; h: number };
-type State = { id: string; w: number; h: number; r: number };
+/** One capture of the island. Captures in a row with the same caption play under it. */
+type State = { id: string; w: number; h: number; r: number; caption: string };
 
 const hero = document.querySelector<HTMLElement>('.hero');
 const stage = hero?.querySelector<HTMLElement>('[data-stage]');
@@ -26,13 +27,20 @@ const island = hero?.querySelector<HTMLElement>('[data-island]');
 if (hero && stage && frame && island) {
   const sizes = JSON.parse(island.dataset.sizes ?? '{}') as Record<string, Size>;
   // At rest the island is the notch itself; every other state is a real capture of the app.
+  // One PR's life comes first: its announcements, then the live bar once it's merging.
+  const banner = (id: string, caption: string): State => ({ id, ...sizes.banner, r: 24, caption });
   const states: State[] = [
-    { id: 'idle', w: 185, h: 32, r: 10 },
-    { id: 'live', ...sizes.live, r: 12 },
-    { id: 'banner', ...sizes.banner, r: 24 },
-    { id: 'list', ...sizes.list, r: 32 },
-    { id: 'board', ...sizes.board, r: 32 },
-    { id: 'stats', ...sizes.stats, r: 32 },
+    { id: 'idle', w: 185, h: 32, r: 10, caption: 'idle' },
+    banner('story-draft', 'banner'),
+    banner('story-readyForReview', 'banner'),
+    banner('story-failed', 'banner'),
+    banner('story-ready', 'banner'),
+    banner('story-queued', 'live'),
+    { id: 'live', ...sizes.live, r: 12, caption: 'live' },
+    banner('story-merged', 'live'),
+    { id: 'list', ...sizes.list, r: 32, caption: 'list' },
+    { id: 'board', ...sizes.board, r: 32, caption: 'board' },
+    { id: 'stats', ...sizes.stats, r: 32, caption: 'stats' },
   ];
   const image = (id: string) => island.querySelector<HTMLImageElement>(`img[data-state="${id}"]`);
   const caption = (id: string) => hero.querySelector<HTMLElement>(`[data-step="${id}"]`);
@@ -55,9 +63,8 @@ if (hero && stage && frame && island) {
 
   const setState = (state: State) => {
     gsap.set(island, { width: state.w, height: state.h, '--r': `${state.r}px`, '--ear': state.id === 'idle' ? 0 : 1 });
-    states.forEach((s) => {
-      const img = image(s.id);
-      if (img) gsap.set(img, { opacity: s.id === state.id ? 1 : 0 });
+    island.querySelectorAll<HTMLImageElement>('img[data-state]').forEach((img) => {
+      gsap.set(img, { opacity: img.dataset.state === state.id ? 1 : 0 });
     });
   };
 
@@ -98,7 +105,12 @@ if (hero && stage && frame && island) {
     );
 
     const STEP = 1.2;
-    const scrollLength = () => window.innerHeight * (1.2 + states.length * 0.85);
+    // A capture that continues the caption before it holds for less.
+    const FOLLOW = 0.75;
+    const continues = (i: number) => i > 0 && states[i - 1].caption === states[i].caption;
+    const lengthOf = (i: number) => (continues(i) ? FOLLOW : STEP);
+    const totalSteps = states.reduce((sum, _, i) => sum + lengthOf(i), 0) / STEP;
+    const scrollLength = () => window.innerHeight * (1.2 + totalSteps * 0.85);
     const tl = gsap.timeline({
       defaults: { ease: 'none' },
       scrollTrigger: {
@@ -116,8 +128,10 @@ if (hero && stage && frame && island) {
       .to('.hero-glow', { autoAlpha: 0, duration: 0.6 }, 0)
       .fromTo(stage, { y: startY }, { y: NAV_SPACE, duration: 1, ease: 'power2.inOut', immediateRender: false }, 0);
 
+    let at = 1;
+    let captionAt = at;
     states.forEach((state, i) => {
-      const at = 1 + i * STEP;
+      const length = lengthOf(i);
       if (i > 0) {
         const previous = states[i - 1];
         const morphAt = at - 0.35;
@@ -134,10 +148,14 @@ if (hero && stage && frame && island) {
         const into = image(state.id);
         if (into) tl.fromTo(into, { opacity: 0 }, { opacity: 1, duration: 0.3 }, morphAt + 0.12);
       }
-      const text = caption(state.id);
-      if (!text) return;
-      tl.fromTo(text, { autoAlpha: 0, y: 16 }, { autoAlpha: 1, y: 0, duration: 0.3, ease: 'power2.out' }, at);
-      if (i < states.length - 1) tl.to(text, { autoAlpha: 0, y: -12, duration: 0.25 }, at + STEP - 0.4);
+      if (!continues(i)) captionAt = at;
+      at += length;
+      // A caption shows from its first capture until its last one ends.
+      const last = i === states.length - 1 || states[i + 1].caption !== state.caption;
+      const text = caption(state.caption);
+      if (!last || !text) return;
+      tl.fromTo(text, { autoAlpha: 0, y: 16 }, { autoAlpha: 1, y: 0, duration: 0.3, ease: 'power2.out' }, captionAt);
+      if (i < states.length - 1) tl.to(text, { autoAlpha: 0, y: -12, duration: 0.25 }, at - 0.4);
     });
     tl.to({}, { duration: 0.5 });
 
@@ -160,8 +178,9 @@ if (hero && stage && frame && island) {
   // Without motion, show the expanded island and every caption at once.
   mm.add('(prefers-reduced-motion: reduce)', () => {
     hero.classList.add('is-static');
-    setState(states[3]);
-    fit(window.innerWidth < 760, states[3]);
+    const expanded = states.find((state) => state.id === 'list') ?? states[0];
+    setState(expanded);
+    fit(window.innerWidth < 760, expanded);
     gsap.set(stage, { clearProps: 'transform' });
     hero.querySelectorAll<HTMLElement>('.caption').forEach((el) => gsap.set(el, { autoAlpha: 1 }));
   });
