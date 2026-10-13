@@ -41,7 +41,7 @@ struct AppSettings: Codable, Equatable {
   var bannersEnabled = true
   var notificationSound = true
   /// Which changes announce themselves, by `PRStatus` raw value.
-  var announcedKinds: Set<String> = ["merged", "failed", "review", "queued"]
+  var announcedKinds: Set<String> = ["ready", "queued", "merged", "failed", "review"]
   /// Costs are recorded in US dollars; euros use `usdToEur`, which the person sets.
   var currency: CostCurrency = .usd
   var usdToEur = 0.86

@@ -522,10 +522,16 @@ public enum GitHubChanges {
       let merged = prior.state == "OPEN" && pr.state == "MERGED"
       let failed = pr.status == .failed && (prior.status != .failed || prior.headOID != pr.headOID)
       let review = pr.reviewRequested && !prior.reviewRequested
-      // Only your own PRs announce merging; watched repositories would be too noisy.
-      let merging = pr.isMerging && !prior.isMerging && pr.author == current.login
-      guard merged || failed || review || merging else { return nil }
-      let kind: PRStatus = merged ? .merged : failed ? .failed : review ? .review : .queued
+      // Only your own PRs announce merging or ready; watched repositories would be too noisy.
+      let mine = pr.author == current.login
+      let merging = mine && pr.isMerging && !prior.isMerging
+      // Once per commit, and not while set to merge, since "Merging" and "Merged" follow.
+      let ready =
+        mine && pr.status == .ready && !pr.isMerging
+        && (prior.status != .ready || prior.headOID != pr.headOID)
+      guard merged || failed || review || merging || ready else { return nil }
+      let kind: PRStatus =
+        merged ? .merged : failed ? .failed : review ? .review : merging ? .queued : .ready
       let occurrence =
         merged ? (pr.mergedAt ?? pr.updatedAt).timeIntervalSince1970.description : pr.headOID
       return IslandEvent(

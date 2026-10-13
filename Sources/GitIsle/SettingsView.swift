@@ -210,9 +210,10 @@ struct SettingsView: View {
     }
   }
 
+  /// Your own PRs as they head to merge, then what can go wrong or wait on you.
   private static let announcements: [(kind: PRStatus, glyph: Glyph, label: String)] = [
-    (.merged, .merge, "Merged"), (.failed, .failFill, "Failed"), (.review, .eye, "Review"),
-    (.queued, .mergeQueue, "Merging"),
+    (.ready, .checkFill, "Ready"), (.queued, .mergeQueue, "Merging"), (.merged, .merge, "Merged"),
+    (.failed, .failFill, "Failed"), (.review, .eye, "Review"),
   ]
 
   private var island: some View {
