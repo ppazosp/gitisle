@@ -1,7 +1,8 @@
 #!/bin/bash
 # Builds a release of GitIsle and packages it for distribution:
 #   bash scripts/package-release.sh 0.2.0
-# Produces dist/GitIsle.zip, dist/GitIsle.dmg, and SHA-256 checksums for both.
+# Produces dist/GitIsle.zip, dist/GitIsle.dmg, and SHA-256 checksums for both. The release
+# workflow signs GitIsle.zip separately (scripts/sign-release.swift), away from the build.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 version="${1:?Usage: package-release.sh VERSION}"
@@ -10,7 +11,7 @@ version="${version#v}"
 echo "Building GitIsle $version"
 GITISLE_VERSION="$version" bash scripts/build-app.sh release
 
-rm -f dist/GitIsle.zip dist/GitIsle.dmg dist/checksums.txt
+rm -f dist/GitIsle.zip dist/GitIsle.zip.sig dist/GitIsle.dmg dist/checksums.txt
 echo "Zipping"
 ditto -c -k --keepParent dist/GitIsle.app dist/GitIsle.zip
 

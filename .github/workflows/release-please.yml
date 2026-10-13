@@ -31,3 +31,5 @@ jobs:
     uses: ./.github/workflows/release.yml
     with:
       tag: ${{ needs.release-please.outputs.tag }}
+    secrets:
+      GITISLE_SIGNING_KEY: ${{ secrets.GITISLE_SIGNING_KEY }}

@@ -98,6 +98,15 @@ feat: show PR details
 Release-As: 0.2.0
 ```
 
+Releases are signed: the release workflow signs `GitIsle.zip` with the
+`GITISLE_SIGNING_KEY` secret, and installed copies only update to an archive
+that verifies against the public key in `Sources/IslandCore/AppRelease.swift`.
+Signing runs in its own job from a clean checkout, because the build runs
+third-party code and never sees the key.
+The maintainer keeps a backup of the private key. Losing it means installed
+copies can't verify new updates; replacing it means shipping the new public
+key in a release signed with the old one.
+
 Pushing a version tag by hand (`git tag v0.2.0 && git push origin v0.2.0`)
 still publishes a release. To try a release build locally, run
 `bash scripts/package-release.sh 0.2.0`.

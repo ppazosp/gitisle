@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 import Testing
 
@@ -5,7 +6,8 @@ import Testing
 
 struct AppReleaseTests {
   private func response(
-    tag: String = "v0.1.4", assets: [String] = ["GitIsle.zip", "GitIsle.dmg", "checksums.txt"],
+    tag: String = "v0.1.4",
+    assets: [String] = ["GitIsle.zip", "GitIsle.zip.sig", "GitIsle.dmg", "checksums.txt"],
     draft: Bool = false, prerelease: Bool = false
   ) -> Data {
     let list = assets.map {
@@ -22,10 +24,29 @@ struct AppReleaseTests {
     #expect(try AppRelease.latest(from: response()) == AppRelease(tag: "v0.1.4", version: "0.1.4"))
   }
 
-  @Test func waitsUntilTheAppAndItsChecksumsAreAttached() throws {
+  @Test func waitsUntilTheAppItsSignatureAndChecksumsAreAttached() throws {
     #expect(try AppRelease.latest(from: response(assets: [])) == nil)
-    #expect(try AppRelease.latest(from: response(assets: ["GitIsle.zip"])) == nil)
-    #expect(try AppRelease.latest(from: response(assets: ["checksums.txt"])) == nil)
+    #expect(try AppRelease.latest(from: response(assets: ["GitIsle.zip", "checksums.txt"])) == nil)
+    #expect(
+      try AppRelease.latest(from: response(assets: ["GitIsle.zip", "GitIsle.zip.sig"])) == nil)
+  }
+
+  @Test func acceptsOnlyArchivesSignedByTheReleaseKey() throws {
+    let key = Curve25519.Signing.PrivateKey()
+    let trusted = key.publicKey.rawRepresentation.base64EncodedString()
+    let archive = Data("GitIsle.app".utf8)
+    let signature = try key.signature(for: archive).base64EncodedString()
+    #expect(AppRelease.isSigned(archive, signature: signature, key: trusted))
+    #expect(AppRelease.isSigned(archive, signature: signature + "\n", key: trusted))
+    #expect(!AppRelease.isSigned(Data("tampered".utf8), signature: signature, key: trusted))
+    let stranger = try Curve25519.Signing.PrivateKey().signature(for: archive)
+    #expect(!AppRelease.isSigned(archive, signature: stranger.base64EncodedString(), key: trusted))
+    #expect(!AppRelease.isSigned(archive, signature: "not base64", key: trusted))
+    #expect(!AppRelease.isSigned(archive, signature: signature, key: "short"))
+    // The release key is a real Ed25519 public key.
+    let raw = try #require(Data(base64Encoded: AppRelease.signingKey))
+    #expect((try? Curve25519.Signing.PublicKey(rawRepresentation: raw)) != nil)
+    #expect(!AppRelease.isSigned(archive, signature: signature))
   }
 
   @Test func ignoresDraftsPrereleasesAndOddTags() throws {

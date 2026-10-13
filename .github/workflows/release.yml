@@ -3,6 +3,9 @@ name: Release
 # Builds the app and attaches it to a release. Release Please calls this when its release PR
 # merges; pushing a version tag by hand still works too:
 #   git tag v0.2.0 && git push origin v0.2.0
+#
+# Building runs third-party code (Swift packages, dmgbuild), so it gets neither the signing
+# key nor write access. A separate job signs the result from a clean checkout and publishes.
 on:
   push:
     tags: ["v*"]
@@ -11,22 +14,29 @@ on:
       tag:
         type: string
         required: true
+    secrets:
+      GITISLE_SIGNING_KEY:
+        required: true
 
-permissions:
-  contents: write
+permissions: {}
+
+env:
+  TAG: ${{ inputs.tag || github.ref_name }}
 
 jobs:
-  release:
+  build:
     runs-on: macos-15
     timeout-minutes: 60
+    permissions:
+      contents: read
     env:
       DEVELOPER_DIR: /Applications/Xcode_26.2.app/Contents/Developer
-      TAG: ${{ inputs.tag || github.ref_name }}
     # Plain steps with GitHub's own time limits; their output streams into the run log.
     steps:
       - uses: actions/checkout@v5
         with:
           ref: ${{ env.TAG }}
+          persist-credentials: false
       - name: Test
         timeout-minutes: 20
         run: swift test --jobs 2
@@ -34,15 +44,50 @@ jobs:
         # The optimized build stays quiet for minutes; on the runner it takes about 10.
         timeout-minutes: 30
         run: bash scripts/package-release.sh "$TAG"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release
+          path: |
+            dist/GitIsle.zip
+            dist/GitIsle.dmg
+            dist/checksums.txt
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    needs: build
+    runs-on: macos-15
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ env.TAG }}
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: release
+          path: dist
+      - name: Sign
+        # Only this step sees the key, and it runs only the repository's signing script,
+        # which uses Apple's CryptoKit and nothing else.
+        env:
+          GITISLE_SIGNING_KEY: ${{ secrets.GITISLE_SIGNING_KEY }}
+        run: |
+          public_key="$(sed -n 's/.*signingKey = "\(.*\)".*/\1/p' Sources/IslandCore/AppRelease.swift)"
+          swift scripts/sign-release.swift dist/GitIsle.zip "$public_key"
       - name: Publish
         env:
           GH_TOKEN: ${{ github.token }}
         # Release Please has already created the release with its changelog; a hand-pushed
         # tag has none yet. Checksums go last: installed copies offer an update only once
-        # both the app and its checksums are attached.
+        # the app, its signature, and its checksums are all attached.
         run: |
-          if ! gh release view "$TAG" > /dev/null 2>&1; then
-            gh release create "$TAG" --title "GitIsle ${TAG#v}" --generate-notes
+          if ! gh release view "$TAG" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --title "GitIsle ${TAG#v}" \
+              --generate-notes
           fi
-          gh release upload "$TAG" dist/GitIsle.zip dist/GitIsle.dmg --clobber
-          gh release upload "$TAG" dist/checksums.txt --clobber
+          gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" --clobber \
+            dist/GitIsle.zip dist/GitIsle.zip.sig dist/GitIsle.dmg
+          gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" --clobber dist/checksums.txt

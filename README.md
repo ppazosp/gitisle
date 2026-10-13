@@ -131,8 +131,8 @@ dollars for costs.
 
 GitIsle talks to GitHub through your existing `gh` login, and loads avatars
 from GitHub's avatar host. Installed releases check GitHub for a newer
-GitIsle every 6 hours; updating downloads it from the release and checks it
-against the release's checksums. Usage statistics never leave your Mac. There is no
+GitIsle every 6 hours; updating downloads it from the release and installs it
+only if it carries GitIsle's release signature. Usage statistics never leave your Mac. There is no
 telemetry, account, or GitIsle server. Settings and caches live in
 `~/Library/Application Support/GitIsle/`, and GitIsle never writes to agent
 configuration, transcripts, or credentials.

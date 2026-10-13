@@ -65,8 +65,8 @@ import Observation
     }
   }
 
-  /// Downloads the release, checks it against its published checksum, and swaps it in for
-  /// the running app. The old copy keeps running until GitIsle relaunches.
+  /// Downloads the release, checks its signature and checksum, and swaps it in for the
+  /// running app. The old copy keeps running until GitIsle relaunches.
   nonisolated private static func replace(_ app: URL, with release: AppRelease) async throws {
     guard let gh = ProcessRunner.executable("gh") else {
       throw ProcessFailure.unavailable("GitHub CLI (gh)")
@@ -80,13 +80,21 @@ import Observation
       gh,
       arguments: [
         "release", "download", release.tag, "--repo", AppRelease.repository,
-        "--pattern", AppRelease.archive, "--pattern", AppRelease.checksums, "--dir", work.path,
+        "--pattern", AppRelease.archive, "--pattern", AppRelease.signature,
+        "--pattern", AppRelease.checksums, "--dir", work.path,
       ], deadline: 300)
     let archive = work.appendingPathComponent(AppRelease.archive)
+    let contents = try Data(contentsOf: archive)
+    // The signature proves GitIsle's release workflow made this archive; the checksum only
+    // that it arrived intact.
+    let signature = try? String(
+      contentsOf: work.appendingPathComponent(AppRelease.signature), encoding: .utf8)
+    guard let signature, AppRelease.isSigned(contents, signature: signature) else {
+      throw UpdateFailure("the download isn't signed by GitIsle.")
+    }
     let sums = try String(
       contentsOf: work.appendingPathComponent(AppRelease.checksums), encoding: .utf8)
-    let digest = SHA256.hash(data: try Data(contentsOf: archive))
-      .map { String(format: "%02x", $0) }.joined()
+    let digest = SHA256.hash(data: contents).map { String(format: "%02x", $0) }.joined()
     guard AppRelease.checksum(of: AppRelease.archive, in: sums) == digest else {
       throw UpdateFailure("the download doesn't match its checksum.")
     }

@@ -1,11 +1,16 @@
+import CryptoKit
 import Foundation
 
 /// A published GitIsle release that an installed copy can update to.
 public struct AppRelease: Equatable, Sendable {
   public static let repository = "ppazosp/gitisle"
-  /// The release files an update needs: the app and the checksums that vouch for it.
+  /// The release files an update needs: the app, its signature, and its checksums.
   public static let archive = "GitIsle.zip"
+  public static let signature = "GitIsle.zip.sig"
   public static let checksums = "checksums.txt"
+  /// Ed25519 public key for release signatures. The private key is the repository's
+  /// `GITISLE_SIGNING_KEY` secret; only the release workflow signs with it.
+  public static let signingKey = "xj86zYHI4tbnZRukAzO00X7WmdvH0ssWB03hR6H9QOY="
 
   public var tag: String
   public var version: String
@@ -15,8 +20,8 @@ public struct AppRelease: Equatable, Sendable {
     self.version = version
   }
 
-  /// Reads GitHub's latest-release response. A release counts only once it has both files,
-  /// since the build uploads them several minutes after the release appears.
+  /// Reads GitHub's latest-release response. A release counts only once it has all its
+  /// files, since the build uploads them several minutes after the release appears.
   public static func latest(from data: Data) throws -> AppRelease? {
     struct Response: Decodable {
       struct Asset: Decodable { let name: String }
@@ -30,10 +35,24 @@ public struct AppRelease: Equatable, Sendable {
     let response = try decoder.decode(Response.self, from: data)
     let names = Set(response.assets.map(\.name))
     guard response.draft != true, response.prerelease != true,
-      names.isSuperset(of: [archive, checksums]),
+      names.isSuperset(of: [archive, signature, checksums]),
       let version = version(response.tagName)
     else { return nil }
     return AppRelease(tag: response.tagName, version: version)
+  }
+
+  /// Whether `signature` (base64, as in `GitIsle.zip.sig`) is a valid Ed25519 signature of
+  /// `data` by the key that signs GitIsle releases.
+  public static func isSigned(
+    _ data: Data, signature: String, key: String = signingKey
+  ) -> Bool {
+    guard
+      let signature = Data(
+        base64Encoded: signature.trimmingCharacters(in: .whitespacesAndNewlines)),
+      let raw = Data(base64Encoded: key),
+      let key = try? Curve25519.Signing.PublicKey(rawRepresentation: raw)
+    else { return false }
+    return key.isValidSignature(signature, for: data)
   }
 
   /// Whether `candidate` is a later version than `current`, comparing numbers part by part.
