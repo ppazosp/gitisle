@@ -3,7 +3,8 @@ import Foundation
 public actor GitHubService {
   private static let fields = """
     fragment PRFields on PullRequest {
-      id number title url state isDraft updatedAt mergedAt mergeable mergeStateStatus reviewDecision
+      id number title url state isDraft createdAt updatedAt mergedAt mergeable mergeStateStatus
+      reviewDecision
       headRefOid autoMergeRequest { enabledAt } mergeQueueEntry { position enqueuedAt }
       repository { nameWithOwner owner { avatarUrl(size: 64) } } author { login }
       commits(last: 1) { nodes { commit { statusCheckRollup {
@@ -296,7 +297,8 @@ public actor GitHubService {
       queuePosition: queue?["position"] as? Int, mergingSince: mergingSince,
       updatedAt: updatedAt, mergedAt: (row["mergedAt"] as? String).flatMap(Dates.parse),
       author: (row["author"] as? [String: Any])?["login"] as? String,
-      ownerAvatar: avatar(row["repository"]))
+      ownerAvatar: avatar(row["repository"]),
+      createdAt: (row["createdAt"] as? String).flatMap(Dates.parse))
   }
 
   /// Only GitHub's own avatar host is accepted, so a response cannot point the app elsewhere.

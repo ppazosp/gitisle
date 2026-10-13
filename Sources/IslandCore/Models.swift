@@ -4,6 +4,8 @@ public enum PRStatus: String, Codable, Sendable {
   case review, failed, conflicts, changesRequested, queued, checking, ready, draft, waiting, behind,
     blocked, merged,
     closed, unknown
+  /// Only announced: one of your PRs opened ready for review, or a draft of yours marked ready.
+  case opened, readyForReview
 
   public var label: String {
     switch self {
@@ -21,6 +23,8 @@ public enum PRStatus: String, Codable, Sendable {
     case .merged: "Merged"
     case .closed: "Closed"
     case .unknown: "Status unavailable"
+    case .opened: "New PR"
+    case .readyForReview: "Ready for review"
     }
   }
 
@@ -90,6 +94,8 @@ public struct PullRequest: Codable, Hashable, Identifiable, Sendable {
   public var mergingSince: Date?
   public var updatedAt: Date
   public var mergedAt: Date?
+  /// When the PR was opened; nil in snapshots saved before it was read.
+  public var createdAt: Date?
 
   public init(
     id: String, number: Int, repository: String, title: String, url: URL, state: String = "OPEN",
@@ -97,8 +103,9 @@ public struct PullRequest: Codable, Hashable, Identifiable, Sendable {
     mergeable: String = "UNKNOWN", mergeStateStatus: String = "UNKNOWN", checks: String? = nil,
     checkSummary: CheckSummary? = nil, headOID: String = "", autoMerge: Bool = false,
     queuePosition: Int? = nil, mergingSince: Date? = nil, updatedAt: Date = Date(),
-    mergedAt: Date? = nil, author: String? = nil, ownerAvatar: URL? = nil
+    mergedAt: Date? = nil, author: String? = nil, ownerAvatar: URL? = nil, createdAt: Date? = nil
   ) {
+    self.createdAt = createdAt
     self.id = id
     self.number = number
     self.repository = repository
@@ -520,35 +527,49 @@ public enum GitHubChanges {
     else { return [] }
     let old = Dictionary(
       previous.pullRequests.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
-    return current.pullRequests.compactMap { pr in
+    func event(_ pr: PullRequest, _ kind: PRStatus, _ occurrence: String) -> IslandEvent {
+      let label: String =
+        switch kind {
+        case .queued: "Merging"
+        case .draft: "New draft PR"
+        default: kind.label
+        }
+      return IslandEvent(
+        id: "\(pr.id):\(kind.rawValue):\(occurrence)",
+        title: "\(pr.repository) #\(pr.number) · \(label)", detail: pr.title, url: pr.url,
+        occurredAt: current.fetchedAt, kind: kind, repository: pr.repository)
+    }
+    return current.pullRequests.flatMap { pr -> [IslandEvent] in
+      // Only your own PRs announce opening, merging, or being ready; watched repositories would
+      // be too noisy.
+      let mine = pr.author == current.login
       guard let prior = old[pr.id] else {
-        guard pr.reviewRequested else { return nil }
-        return IslandEvent(
-          id: "\(pr.id):review:\(pr.headOID)",
-          title: "\(pr.repository) #\(pr.number) · Review requested",
-          detail: pr.title, url: pr.url, occurredAt: current.fetchedAt, kind: .review,
-          repository: pr.repository)
+        if pr.reviewRequested { return [event(pr, .review, pr.headOID)] }
+        // A PR of yours first seen soon after it was opened; one that only showed up again,
+        // such as a reopened PR, stays quiet. The slack covers search delays between refreshes.
+        guard mine, pr.state == "OPEN", let created = pr.createdAt,
+          created >= previous.fetchedAt.addingTimeInterval(-600)
+        else { return [] }
+        return [event(pr, pr.isDraft ? .draft : .opened, "created")]
       }
       let merged = prior.state == "OPEN" && pr.state == "MERGED"
       let failed = pr.status == .failed && (prior.status != .failed || prior.headOID != pr.headOID)
       let review = pr.reviewRequested && !prior.reviewRequested
-      // Only your own PRs announce merging or ready; watched repositories would be too noisy.
-      let mine = pr.author == current.login
       let merging = mine && pr.isMerging && !prior.isMerging
       // Once per commit, and not while set to merge, since "Merging" and "Merged" follow.
       let ready =
         mine && pr.status == .ready && !pr.isMerging
         && (prior.status != .ready || prior.headOID != pr.headOID)
-      guard merged || failed || review || merging || ready else { return nil }
+      // Marking a draft ready can also make it ready to merge, so both can announce.
+      let undrafted = mine && prior.isDraft && !pr.isDraft && pr.state == "OPEN"
+      var events = undrafted ? [event(pr, .readyForReview, pr.headOID)] : []
+      guard merged || failed || review || merging || ready else { return events }
       let kind: PRStatus =
         merged ? .merged : failed ? .failed : review ? .review : merging ? .queued : .ready
       let occurrence =
         merged ? (pr.mergedAt ?? pr.updatedAt).timeIntervalSince1970.description : pr.headOID
-      return IslandEvent(
-        id: "\(pr.id):\(kind.rawValue):\(occurrence)",
-        title: "\(pr.repository) #\(pr.number) · \(kind == .queued ? "Merging" : kind.label)",
-        detail: pr.title,
-        url: pr.url, occurredAt: current.fetchedAt, kind: kind, repository: pr.repository)
+      events.append(event(pr, kind, occurrence))
+      return events
     }
   }
 }

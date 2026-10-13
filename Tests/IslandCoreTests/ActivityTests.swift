@@ -228,8 +228,8 @@ struct ActivityTests {
     var checking = ready()
     checking.checks = "PENDING"
     #expect(events(checking, draft).isEmpty)
-    // Marking a ready draft as ready for review announces it.
-    #expect(events(draft, ready()).map(\.kind) == [.ready])
+    // Marking a ready draft as ready for review announces both.
+    #expect(events(draft, ready()).map(\.kind) == [.readyForReview, .ready])
 
     var theirs = ready("theirs")
     theirs.author = "someone-else"
@@ -242,6 +242,66 @@ struct ActivityTests {
     #expect(events(checking, autoMerge).map(\.kind) == [.queued])
   }
 
+  /// What GitIsle announces when `pr` first shows up, a minute after the last refresh.
+  private func appearing(_ pr: PullRequest) -> [PRStatus] {
+    GitHubChanges.events(
+      previous: GitHubSnapshot(login: "person", pullRequests: [], fetchedAt: now),
+      current: GitHubSnapshot(
+        login: "person", pullRequests: [pr], fetchedAt: now.addingTimeInterval(60))
+    ).map(\.kind)
+  }
+
+  @Test func yourNewPRsAnnounceAsReadyOrDraft() {
+    var opened = pr("new")
+    opened.createdAt = now.addingTimeInterval(30)
+    #expect(appearing(opened) == [.opened])
+    var draft = opened
+    draft.isDraft = true
+    #expect(appearing(draft) == [.draft])
+    let titles = GitHubChanges.events(
+      previous: GitHubSnapshot(login: "person", pullRequests: [], fetchedAt: now),
+      current: GitHubSnapshot(login: "person", pullRequests: [draft])
+    ).map(\.title)
+    #expect(titles == ["example/app #12 · New draft PR"])
+  }
+
+  @Test func onlyYourFreshlyOpenedPRsAnnounce() {
+    var theirs = pr("theirs")
+    theirs.author = "someone-else"
+    theirs.createdAt = now.addingTimeInterval(30)
+    #expect(appearing(theirs).isEmpty)
+    // A PR that only shows up again, such as one reopened long after it was opened.
+    var reopened = pr("old")
+    reopened.createdAt = now.addingTimeInterval(-86_400)
+    #expect(appearing(reopened).isEmpty)
+    // Snapshots saved before creation times were read.
+    #expect(appearing(pr("unknown")).isEmpty)
+    var merged = pr("merged")
+    merged.createdAt = now
+    merged.state = "MERGED"
+    #expect(appearing(merged).isEmpty)
+  }
+
+  @Test func markingADraftReadyAnnouncesIt() {
+    var draft = pr("mine")
+    draft.isDraft = true
+    draft.checks = "PENDING"
+    var undrafted = draft
+    undrafted.isDraft = false
+    #expect(events(draft, undrafted).map(\.kind) == [.readyForReview])
+    #expect(events(undrafted, undrafted).isEmpty)
+    // Ready to merge the moment it leaves draft: both announce.
+    var clean = undrafted
+    clean.checks = "SUCCESS"
+    clean.mergeStateStatus = "CLEAN"
+    #expect(events(draft, clean).map(\.kind) == [.readyForReview, .ready])
+    var theirs = draft
+    theirs.author = "someone-else"
+    var theirsReady = theirs
+    theirsReady.isDraft = false
+    #expect(events(theirs, theirsReady).isEmpty)
+  }
+
   @Test func cachedSnapshotsWithoutNewFieldsStillDecode() throws {
     let legacy = Data(
       """
@@ -252,5 +312,6 @@ struct ActivityTests {
     let decoded = try JSONDecoder().decode(PullRequest.self, from: legacy)
     #expect(decoded.checkSummary == nil)
     #expect(decoded.author == nil)
+    #expect(decoded.createdAt == nil)
   }
 }

@@ -143,6 +143,13 @@ struct GitHubServiceTests {
     #expect(result.pullRequests.first?.state == "MERGED")
   }
 
+  @Test func creationTimeDecodes() throws {
+    var opened = row("opened")
+    opened["createdAt"] = "2026-10-13T09:00:00Z"
+    #expect(try GitHubService.decode(opened).createdAt == Dates.parse("2026-10-13T09:00:00Z"))
+    #expect(try GitHubService.decode(row("legacy")).createdAt == nil)
+  }
+
   @Test func checkCountsAndAuthorDecodeFromTheRollup() throws {
     var node = row("checked")
     node["author"] = ["login": "person"]

@@ -41,7 +41,14 @@ struct AppSettings: Codable, Equatable {
   var bannersEnabled = true
   var notificationSound = true
   /// Which changes announce themselves, by `PRStatus` raw value.
-  var announcedKinds: Set<String> = ["ready", "queued", "merged", "failed", "review"]
+  var announcedKinds: Set<String> = [
+    "opened", "draft", "readyForReview", "ready", "queued", "merged", "failed", "review",
+  ]
+  /// Every kind these settings have offered, so a kind added in a later version starts on
+  /// once, while one switched off stays off.
+  var offeredKinds: Set<String> = [
+    "opened", "draft", "readyForReview", "ready", "queued", "merged", "failed", "review",
+  ]
   /// Costs are recorded in US dollars; euros use `usdToEur`, which the person sets.
   var currency: CostCurrency = .usd
   var usdToEur = 0.86
@@ -72,6 +79,11 @@ struct AppSettings: Codable, Equatable {
     bannersEnabled = value(.bannersEnabled, defaults.bannersEnabled)
     notificationSound = value(.notificationSound, defaults.notificationSound)
     announcedKinds = value(.announcedKinds, defaults.announcedKinds)
+    // Settings saved before kinds were tracked had offered these.
+    let offered: Set<String> = value(
+      .offeredKinds, ["ready", "queued", "merged", "failed", "review"])
+    announcedKinds.formUnion(defaults.offeredKinds.subtracting(offered))
+    offeredKinds = offered.union(defaults.offeredKinds)
     currency = value(.currency, defaults.currency)
     usdToEur = value(.usdToEur, defaults.usdToEur)
     githubChart = value(.githubChart, defaults.githubChart)

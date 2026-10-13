@@ -26,9 +26,9 @@ shows what's merging, which checks are running, and what needs you.
 - **Invisible at rest.** With nothing going on, the island is just the notch.
 - **Live work.** While one of your PRs merges or runs checks, the island shows
   its number and a timer or check progress. Click it to open the PR.
-- **Banners.** Your PRs becoming ready to merge or starting to merge, merges,
-  failed checks, and review requests slide out of the notch. Click one to open
-  the PR.
+- **Banners.** PRs you open (ready or draft), drafts marked ready for review,
+  your PRs becoming ready to merge or starting to merge, merges, failed checks,
+  and review requests slide out of the notch. Click one to open the PR.
 - **Activity.** Hover to open your PRs by repository, or as a board of GitHub
   states: draft, open, merging, merged. Filter by state, by what needs you,
   by repository, and by today, 7 days, or 30 days.

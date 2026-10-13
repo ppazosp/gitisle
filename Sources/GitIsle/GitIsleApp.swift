@@ -11,7 +11,7 @@ import UserNotifications
   init() {
     let demo =
       CommandLine.arguments.contains("--demo") || CommandLine.arguments.contains("--snapshot")
-      || CommandLine.arguments.contains("--banner")
+      || CommandLine.arguments.contains("--banner") || CommandLine.arguments.contains("--event")
       || CommandLine.arguments.contains("--showcase") || CommandLine.arguments.contains("--tour")
     let model = IslandStore(demo: demo)
     _store = State(initialValue: model)
@@ -55,6 +55,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     let arguments = CommandLine.arguments
     if (arguments.contains("--expanded") || arguments.contains("--snapshot"))
       && !arguments.contains("--collapsed") && !arguments.contains("--banner")
+      && !arguments.contains("--event")
     {
       store.expanded = true
     }
@@ -95,6 +96,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
           url: pr.url, occurredAt: Date(), kind: .merged, repository: pr.repository), extra: 1)
     }
     if arguments.contains("--update"), store.isDemo { store.updater.preview() }
+    // `--event <kind>` previews one announcement's banner, for example `--event draft`.
+    if let index = arguments.firstIndex(of: "--event"), arguments.count > index + 1,
+      let kind = PRStatus(rawValue: arguments[index + 1])
+    {
+      store.previewEvent(kind)
+    }
     if arguments.contains("--showcase") { store.runShowcase() }
     if arguments.contains("--tour") { store.runTour() }
     island = IslandPanelController(store: store)

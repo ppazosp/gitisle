@@ -673,20 +673,34 @@ final class IslandStore {
     }
   }
 
+  /// Every kind of announcement, in the order the showcase plays them.
+  static let announcementKinds: [PRStatus] = [
+    .opened, .draft, .readyForReview, .ready, .queued, .merged, .failed, .review,
+  ]
+
+  /// Example data only: an announcement of this kind about a fitting example PR.
+  private func demoEvent(_ kind: PRStatus) -> IslandEvent? {
+    let examples: [PRStatus: String] = [
+      .opened: "demo4", .draft: "demo5", .readyForReview: "demo4", .ready: "demo4",
+      .queued: "demo3", .merged: "demo6", .failed: "demo2", .review: "demo1",
+    ]
+    guard let id = examples[kind], let pr = github?.pullRequests.first(where: { $0.id == id })
+    else { return nil }
+    return IslandEvent(
+      id: "showcase-\(kind.rawValue)", title: "\(pr.repository) #\(pr.number) · \(kind.label)",
+      detail: pr.title, url: pr.url, occurredAt: Date(), kind: kind, repository: pr.repository)
+  }
+
+  /// Example data only: shows one announcement's banner, to preview it.
+  func previewEvent(_ kind: PRStatus) {
+    guard isDemo, let event = demoEvent(kind) else { return }
+    showEvent(event)
+  }
+
   /// Example data only: plays each kind of announcement in turn, to preview the banners.
   func runShowcase() {
     guard isDemo else { return }
-    let prs = github?.pullRequests ?? []
-    func event(_ kind: PRStatus, _ id: String) -> IslandEvent? {
-      guard let pr = prs.first(where: { $0.id == id }) else { return nil }
-      return IslandEvent(
-        id: "showcase-\(kind.rawValue)", title: "\(pr.repository) #\(pr.number) · \(kind.label)",
-        detail: pr.title, url: pr.url, occurredAt: Date(), kind: kind, repository: pr.repository)
-    }
-    let sequence = [
-      event(.ready, "demo4"), event(.queued, "demo3"), event(.merged, "demo6"),
-      event(.failed, "demo2"), event(.review, "demo1"),
-    ].compactMap { $0 }
+    let sequence = Self.announcementKinds.compactMap(demoEvent)
     loops.append(
       Task { [weak self] in
         while !Task.isCancelled {
