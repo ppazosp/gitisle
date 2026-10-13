@@ -97,6 +97,7 @@ final class IslandStore {
   @ObservationIgnored var islandSize: CGSize = .zero
 
   @ObservationIgnored private let githubService = GitHubService()
+  let updater = Updater()
   @ObservationIgnored private let usageService: UsageService
   @ObservationIgnored private var loops: [Task<Void, Never>] = []
   @ObservationIgnored private var hoverTask: Task<Void, Never>?
@@ -242,6 +243,7 @@ final class IslandStore {
   func start() {
     guard !isDemo, loops.isEmpty else { return }
     observeSystem()
+    updater.start()
     // One loop for GitHub, so a full refresh and an active one never overlap. Discovery finds
     // new PRs and refreshes quiet ones; in between, active PRs refresh on their own schedule.
     loops.append(
@@ -339,6 +341,7 @@ final class IslandStore {
   func stop() {
     for loop in loops { loop.cancel() }
     loops = []
+    updater.stop()
     for observer in systemObservers {
       NSWorkspace.shared.notificationCenter.removeObserver(observer)
     }

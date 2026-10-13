@@ -15,10 +15,12 @@ for resource in "$binary_directory"/*.bundle; do
     if [ -d "$resource" ]; then cp -R "$resource" "$bundle/Contents/Resources/"; fi
 done
 cp Resources/Info.plist "$bundle/Contents/Info.plist"
-# Release builds stamp the version from the tag, for example GITISLE_VERSION=0.2.0.
+# Release builds stamp the version from the tag, for example GITISLE_VERSION=0.2.0, and
+# update themselves from later releases. Builds from source update with `git pull`.
 if [ -n "${GITISLE_VERSION:-}" ]; then
     /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $GITISLE_VERSION" "$bundle/Contents/Info.plist"
     /usr/libexec/PlistBuddy -c "Set :CFBundleVersion ${GITISLE_BUILD:-$GITISLE_VERSION}" "$bundle/Contents/Info.plist"
+    /usr/libexec/PlistBuddy -c "Add :GitIsleUpdates bool true" "$bundle/Contents/Info.plist"
 fi
 swift scripts/make-icon.swift assets/icon.png dist/GitIsle.iconset
 iconutil -c icns dist/GitIsle.iconset -o "$bundle/Contents/Resources/GitIsle.icns"

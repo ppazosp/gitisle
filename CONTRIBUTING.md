@@ -41,8 +41,8 @@ dist/GitIsle.app/Contents/MacOS/GitIsle --snapshot "$PWD/.artifacts/activity.png
 ```
 
 Add `--stats`, `--board`, `--settings`, `--banner`, `--collapsed`,
-`--states draft,merged`, or `--chart area` to a snapshot to render another
-view. Quit any running GitIsle first, since only one island fits the notch.
+`--states draft,merged`, `--update`, or `--chart area` to a snapshot to render
+another view. Quit any running GitIsle first, since only one island fits the notch.
 
 ## Check your change
 
@@ -83,14 +83,23 @@ See [the architecture](docs/architecture.md) for how the pieces fit together.
 
 ## Releases
 
-Maintainers publish a release by pushing a version tag:
+Release Please keeps a release pull request open. Every `fix:` and `feat:`
+merged to `main` lands in it with its changelog entry, and both bump the patch
+version (0.1.3 to 0.1.4). Merging the release pull request tags the release;
+the release workflow then tests, builds, and attaches `GitIsle.zip`,
+`GitIsle.dmg`, and checksums. Installed copies offer the update within 6 hours.
 
-```sh
-git tag v0.2.0 && git push origin v0.2.0
+Minor versions mark milestones. To make the next release one, add a footer to
+a commit on `main`, for example:
+
+```text
+feat: show PR details
+
+Release-As: 0.2.0
 ```
 
-The release workflow tests, builds, and attaches `GitIsle.zip`, `GitIsle.dmg`,
-and checksums to a GitHub release. To try a release build locally, run
+Pushing a version tag by hand (`git tag v0.2.0 && git push origin v0.2.0`)
+still publishes a release. To try a release build locally, run
 `bash scripts/package-release.sh 0.2.0`.
 
 ## Code of conduct

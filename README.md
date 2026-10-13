@@ -103,6 +103,7 @@ To uninstall, quit GitIsle (right-click the island), then delete
 | Switch between list and board | Use the toggle at the top right |
 | Filter | Use the state chips, the repository menu, and Today / 7 days / 30 days |
 | Change settings | Click the gear, or right-click the island |
+| Update GitIsle | Click the blue download button at the bottom right, when it shows |
 | Quit | Right-click the island |
 
 GitIsle works on Macs with a notch and on external displays. In Settings you
@@ -129,7 +130,9 @@ dollars for costs.
 ## Privacy
 
 GitIsle talks to GitHub through your existing `gh` login, and loads avatars
-from GitHub's avatar host. Usage statistics never leave your Mac. There is no
+from GitHub's avatar host. Installed releases check GitHub for a newer
+GitIsle every 6 hours; updating downloads it from the release and checks it
+against the release's checksums. Usage statistics never leave your Mac. There is no
 telemetry, account, or GitIsle server. Settings and caches live in
 `~/Library/Application Support/GitIsle/`, and GitIsle never writes to agent
 configuration, transcripts, or credentials.
