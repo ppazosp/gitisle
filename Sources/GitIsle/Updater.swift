@@ -3,7 +3,8 @@ import CryptoKit
 import IslandCore
 import Observation
 
-/// Looks for a newer GitIsle release every few hours and installs it when asked. Only release
+/// Looks for a newer GitIsle release every hour and when the Mac wakes, and installs it when
+/// asked. Only release
 /// builds update themselves; a build from source updates with `git pull`. GitHub is reached
 /// through `gh`, like everything else GitIsle reads.
 @MainActor @Observable final class Updater {
@@ -11,6 +12,7 @@ import Observation
   private(set) var installing = false
   private(set) var error: String?
   @ObservationIgnored private var loop: Task<Void, Never>?
+  @ObservationIgnored private var wakeObserver: NSObjectProtocol?
 
   static var version: String {
     Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? ""
@@ -26,7 +28,16 @@ import Observation
     loop = Task { [weak self] in
       while !Task.isCancelled {
         await self?.check()
-        do { try await Task.sleep(for: .seconds(6 * 3600)) } catch { return }
+        do { try await Task.sleep(for: .seconds(3600)) } catch { return }
+      }
+    }
+    // A Mac that slept through a release hears about it on waking, once the network is back.
+    wakeObserver = NSWorkspace.shared.notificationCenter.addObserver(
+      forName: NSWorkspace.didWakeNotification, object: nil, queue: .main
+    ) { [weak self] _ in
+      Task { @MainActor in
+        do { try await Task.sleep(for: .seconds(15)) } catch { return }
+        await self?.check()
       }
     }
   }
@@ -34,6 +45,8 @@ import Observation
   func stop() {
     loop?.cancel()
     loop = nil
+    if let wakeObserver { NSWorkspace.shared.notificationCenter.removeObserver(wakeObserver) }
+    wakeObserver = nil
   }
 
   /// Example data only: shows the update button as it looks when a release is waiting.
