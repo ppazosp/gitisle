@@ -260,8 +260,9 @@ private struct ExpandedIsland: View {
   static let headerHeight: CGFloat = 54
   static let filterBarHeight: CGFloat = 36
   static let footerHeight: CGFloat = 38
-  /// Setup's buttons need room to clear the island's rounded bottom corners.
-  static let onboardingFooterHeight: CGFloat = 58
+  /// Setup's buttons are taller than the footer's icons and need room to clear the
+  /// island's rounded bottom corners.
+  static let onboardingFooterHeight: CGFloat = 46
 
   static func footerHeight(_ store: IslandStore) -> CGFloat {
     store.showingOnboarding ? onboardingFooterHeight : footerHeight
