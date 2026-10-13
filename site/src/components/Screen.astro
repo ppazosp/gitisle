@@ -2,19 +2,28 @@
 // A MacBook screen with a notch. The island inside it morphs between real captures of the
 // app (src/assets/island), driven by scripts/landing.ts. Sizes are in points of a 1200 × 740
 // screen; the whole screen is scaled to fit with --s.
-import banner from '../assets/island/banner.png';
+import bannerFailed from '../assets/island/banner-failed.png';
+import bannerMerged from '../assets/island/banner-merged.png';
+import bannerOpened from '../assets/island/banner-opened.png';
+import bannerReady from '../assets/island/banner-ready.png';
+import bannerReview from '../assets/island/banner-review.png';
 import board from '../assets/island/board.png';
 import list from '../assets/island/list.png';
 import live from '../assets/island/live.png';
 import sizes from '../assets/island/sizes.json';
 import stats from '../assets/island/stats.png';
 
+// The banner step plays several announcements in turn; they share the banner's size.
 const states = [
-  { id: 'live', image: live, alt: 'The island showing pull request 433 merging, with a timer' },
-  { id: 'banner', image: banner, alt: 'A banner sliding out of the notch: Merged, Ship the notch island' },
-  { id: 'list', image: list, alt: 'The expanded island listing pull requests by repository' },
-  { id: 'board', image: board, alt: 'The island as a board with draft, open, merging, and merged columns' },
-  { id: 'stats', image: stats, alt: 'Stats: GitHub activity and Claude Code and Codex usage charts' },
+  { id: 'live', size: 'live', image: live, alt: 'The island showing pull request 433 merging, with a timer' },
+  { id: 'banner-opened', size: 'banner', image: bannerOpened, alt: 'A banner sliding out of the notch: New PR, Polish onboarding animations' },
+  { id: 'banner-ready', size: 'banner', image: bannerReady, alt: 'A banner: Ready to merge, Polish onboarding animations' },
+  { id: 'banner-merged', size: 'banner', image: bannerMerged, alt: 'A banner: Merged, Ship the notch island' },
+  { id: 'banner-failed', size: 'banner', image: bannerFailed, alt: 'A banner: Checks failed, Add keyboard shortcuts' },
+  { id: 'banner-review', size: 'banner', image: bannerReview, alt: 'A banner: Review requested, Speed up cold start' },
+  { id: 'list', size: 'list', image: list, alt: 'The expanded island listing pull requests by repository' },
+  { id: 'board', size: 'board', image: board, alt: 'The island as a board with draft, open, merging, and merged columns' },
+  { id: 'stats', size: 'stats', image: stats, alt: 'Stats: GitHub activity and Claude Code and Codex usage charts' },
 ] as const;
 ---
 
@@ -48,8 +57,8 @@ const states = [
               data-state={s.id}
               src={s.image.src}
               alt={s.alt}
-              width={sizes[s.id].w}
-              height={sizes[s.id].h}
+              width={sizes[s.size].w}
+              height={sizes[s.size].h}
               decoding="async"
               draggable="false"
             />

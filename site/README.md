@@ -14,7 +14,8 @@ npm run build    # writes dist/
 - The hero pins while you scroll, and a MacBook screen rises from the bottom.
   Its island morphs between real captures of the app in
   `src/assets/island/`, with a caption for each state
-  (`src/scripts/landing.ts`). On phones the view zooms onto the island
+  (`src/scripts/landing.ts`). The banner state plays several announcements in
+  turn under one caption. On phones the view zooms onto the island
   instead of shrinking the whole screen.
 - With reduced motion, the page shows the expanded island and every caption
   without animation.
@@ -29,8 +30,9 @@ GITISLE_PREVIEW_LABEL="Updated just now" dist/GitIsle.app/Contents/MacOS/GitIsle
   --snapshot "$PWD/.artifacts/list.png" -AppleLocale en_US -AppleLanguages "(en)"
 ```
 
-Use `--collapsed`, `--banner`, `--board`, or `--stats` for the other states,
-then crop each capture to the island body: 52 px from each side and 32 px from
+Use `--collapsed`, `--board`, or `--stats` for the other states. The banner
+step plays five announcements; capture each with `--event opened`, `ready`,
+`merged`, `failed`, and `review`, saved as `banner-<kind>.png`. Then crop each capture to the island body: 52 px from each side and 32 px from
 the bottom (the capture's margin plus the notch corners), and update
 `src/assets/island/sizes.json` with the cropped size in points.
 

@@ -16,7 +16,8 @@ const NAV_SPACE = 72;
 const CAPTION_SPACE = 120 + 28 + 56;
 
 type Size = { w: number; h: number };
-type State = { id: string; w: number; h: number; r: number };
+/** One island state. A state with `frames` plays those captures in turn, all at its size. */
+type State = { id: string; w: number; h: number; r: number; frames?: string[] };
 
 const hero = document.querySelector<HTMLElement>('.hero');
 const stage = hero?.querySelector<HTMLElement>('[data-stage]');
@@ -29,12 +30,18 @@ if (hero && stage && frame && island) {
   const states: State[] = [
     { id: 'idle', w: 185, h: 32, r: 10 },
     { id: 'live', ...sizes.live, r: 12 },
-    { id: 'banner', ...sizes.banner, r: 24 },
+    {
+      id: 'banner',
+      ...sizes.banner,
+      r: 24,
+      frames: ['banner-opened', 'banner-ready', 'banner-merged', 'banner-failed', 'banner-review'],
+    },
     { id: 'list', ...sizes.list, r: 32 },
     { id: 'board', ...sizes.board, r: 32 },
     { id: 'stats', ...sizes.stats, r: 32 },
   ];
   const image = (id: string) => island.querySelector<HTMLImageElement>(`img[data-state="${id}"]`);
+  const frames = (state: State) => state.frames ?? [state.id];
   const caption = (id: string) => hero.querySelector<HTMLElement>(`[data-step="${id}"]`);
 
   const pad = () => parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--pad')) || 20;
@@ -55,9 +62,9 @@ if (hero && stage && frame && island) {
 
   const setState = (state: State) => {
     gsap.set(island, { width: state.w, height: state.h, '--r': `${state.r}px`, '--ear': state.id === 'idle' ? 0 : 1 });
-    states.forEach((s) => {
-      const img = image(s.id);
-      if (img) gsap.set(img, { opacity: s.id === state.id ? 1 : 0 });
+    const shown = frames(state)[0];
+    island.querySelectorAll<HTMLImageElement>('img[data-state]').forEach((img) => {
+      gsap.set(img, { opacity: img.dataset.state === shown ? 1 : 0 });
     });
   };
 
@@ -98,7 +105,11 @@ if (hero && stage && frame && island) {
     );
 
     const STEP = 1.2;
-    const scrollLength = () => window.innerHeight * (1.2 + states.length * 0.85);
+    // Each extra frame of a state holds for this long before the next one fades in.
+    const FRAME = 0.6;
+    const lengthOf = (state: State) => STEP + (frames(state).length - 1) * FRAME;
+    const totalSteps = states.reduce((sum, state) => sum + lengthOf(state), 0) / STEP;
+    const scrollLength = () => window.innerHeight * (1.2 + totalSteps * 0.85);
     const tl = gsap.timeline({
       defaults: { ease: 'none' },
       scrollTrigger: {
@@ -116,8 +127,9 @@ if (hero && stage && frame && island) {
       .to('.hero-glow', { autoAlpha: 0, duration: 0.6 }, 0)
       .fromTo(stage, { y: startY }, { y: NAV_SPACE, duration: 1, ease: 'power2.inOut', immediateRender: false }, 0);
 
+    let at = 1;
     states.forEach((state, i) => {
-      const at = 1 + i * STEP;
+      const length = lengthOf(state);
       if (i > 0) {
         const previous = states[i - 1];
         const morphAt = at - 0.35;
@@ -129,15 +141,26 @@ if (hero && stage && frame && island) {
         );
         // On a phone the camera pulls back as the island grows.
         if (zoom) tl.to(frame, { '--s': () => zoomFor(state), duration: 0.5, ease: 'power2.inOut' }, morphAt);
-        const out = image(previous.id);
+        const last = frames(previous);
+        const out = image(last[last.length - 1]);
         if (out) tl.to(out, { opacity: 0, duration: 0.2 }, morphAt);
-        const into = image(state.id);
+        const into = image(frames(state)[0]);
         if (into) tl.fromTo(into, { opacity: 0 }, { opacity: 1, duration: 0.3 }, morphAt + 0.12);
       }
+      // Further frames crossfade in place, one after another, under the same caption.
+      frames(state).slice(1).forEach((id, k) => {
+        const swapAt = at + STEP - 0.35 + k * FRAME;
+        const out = image(frames(state)[k]);
+        const into = image(id);
+        if (out) tl.to(out, { opacity: 0, duration: 0.2 }, swapAt);
+        if (into) tl.fromTo(into, { opacity: 0 }, { opacity: 1, duration: 0.25 }, swapAt + 0.08);
+      });
       const text = caption(state.id);
-      if (!text) return;
-      tl.fromTo(text, { autoAlpha: 0, y: 16 }, { autoAlpha: 1, y: 0, duration: 0.3, ease: 'power2.out' }, at);
-      if (i < states.length - 1) tl.to(text, { autoAlpha: 0, y: -12, duration: 0.25 }, at + STEP - 0.4);
+      if (text) {
+        tl.fromTo(text, { autoAlpha: 0, y: 16 }, { autoAlpha: 1, y: 0, duration: 0.3, ease: 'power2.out' }, at);
+        if (i < states.length - 1) tl.to(text, { autoAlpha: 0, y: -12, duration: 0.25 }, at + length - 0.4);
+      }
+      at += length;
     });
     tl.to({}, { duration: 0.5 });
 

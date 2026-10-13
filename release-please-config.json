@@ -8,7 +8,12 @@
   "packages": {
     ".": {
       "package-name": "gitisle",
-      "extra-files": ["Resources/Info.plist"]
+      "extra-files": [
+        "Resources/Info.plist"
+      ],
+      "exclude-paths": [
+        "site"
+      ]
     }
   }
 }
