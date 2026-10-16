@@ -44,6 +44,10 @@ struct PRDetailsView: View {
     } onHeight: {
       contentHeight = $0
     }
+    // Descriptions and comments come from anyone who can open a PR, so a link in them opens
+    // only as a web page, never a file or another app's URL scheme.
+    .environment(
+      \.openURL, OpenURLAction { url in url.scheme == "https" ? .systemAction : .discarded })
   }
 
   private var heading: some View {
