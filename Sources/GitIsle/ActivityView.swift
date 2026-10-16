@@ -16,6 +16,7 @@ struct ActivityView: View {
     .environment(\.openPullRequest) { pr in
       withAnimation(Motion.snappy) { store.openDetails(pr) }
     }
+    .environment(\.stackLinks, store.stackLinks)
   }
 
   private var list: some View {
@@ -314,10 +315,45 @@ private struct StateChip: View {
   }
 }
 
+/// "· on #4340" for a PR built on another, or a restack hint once that one merged.
+private struct StackLabel: View {
+  let link: PRStacks.Link?
+
+  var body: some View {
+    if let parent = link?.parent {
+      Text(verbatim: "· on #\(parent.number)")
+    } else if let merged = link?.mergedParent {
+      Text("· restack: #\(merged.number) merged").foregroundStyle(Palette.attention)
+    }
+  }
+}
+
+/// The elbow joining a stacked PR to the one it sits on, one step in per level.
+private struct StackConnector: View {
+  let depth: Int
+
+  var body: some View {
+    GeometryReader { geometry in
+      let x = geometry.size.width - 8
+      Path { path in
+        path.move(to: CGPoint(x: x, y: -10))
+        path.addLine(to: CGPoint(x: x, y: geometry.size.height / 2 - 3))
+        path.addQuadCurve(
+          to: CGPoint(x: x + 5, y: geometry.size.height / 2),
+          control: CGPoint(x: x, y: geometry.size.height / 2))
+        path.addLine(to: CGPoint(x: geometry.size.width + 4, y: geometry.size.height / 2))
+      }
+      .stroke(.white.opacity(0.25), style: StrokeStyle(lineWidth: 1.2, lineCap: .round))
+    }
+    .frame(width: CGFloat(depth) * 14)
+  }
+}
+
 struct PRRow: View {
   let pr: PullRequest
   @State private var hovered = false
   @Environment(\.openPullRequest) private var open
+  @Environment(\.stackLinks) private var stacks
 
   var body: some View {
     Button {
@@ -329,12 +365,14 @@ struct PRRow: View {
       }
     } label: {
       HStack(spacing: 10) {
+        if let depth = stacks[pr.id]?.depth, depth > 0 { StackConnector(depth: min(depth, 3)) }
         GlyphView(glyph: pr.glyph, size: 15).foregroundStyle(pr.glyphColor)
           .frame(width: 18)
         VStack(alignment: .leading, spacing: 3) {
           Text(pr.title).font(.system(size: 12.5, weight: .medium)).lineLimit(1)
           HStack(spacing: 4) {
             Text(verbatim: "#\(pr.number)")
+            StackLabel(link: stacks[pr.id])
             Text("·")
             Text(pr.stateLabel.text).foregroundStyle(pr.stateLabel.color)
             Text("·")
@@ -457,6 +495,7 @@ private struct PRCard: View {
   let pr: PullRequest
   @State private var hovered = false
   @Environment(\.openPullRequest) private var open
+  @Environment(\.stackLinks) private var stacks
 
   var body: some View {
     Button {
@@ -473,6 +512,7 @@ private struct PRCard: View {
             .lineLimit(1)
           Spacer(minLength: 4)
           Text(verbatim: "#\(pr.number)").monospacedDigit()
+          StackLabel(link: stacks[pr.id])
         }
         .font(.system(size: 10.5)).foregroundStyle(.white.opacity(0.45))
         Text(pr.title).font(.system(size: 12, weight: .medium)).lineLimit(2)

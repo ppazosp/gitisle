@@ -10,7 +10,8 @@ public actor GitHubService {
     fragment PRFields on PullRequest {
       id number title url state isDraft createdAt updatedAt mergedAt mergeable mergeStateStatus
       reviewDecision
-      headRefOid autoMergeRequest { enabledAt } mergeQueueEntry { position enqueuedAt }
+      headRefOid headRefName baseRefName
+      autoMergeRequest { enabledAt } mergeQueueEntry { position enqueuedAt }
       repository { nameWithOwner owner { avatarUrl(size: 64) } } author { login }
       commits(last: 1) { nodes { commit { statusCheckRollup {
         state
@@ -315,7 +316,8 @@ public actor GitHubService {
       author: (row["author"] as? [String: Any])?["login"] as? String,
       ownerAvatar: avatar(row["repository"]),
       createdAt: (row["createdAt"] as? String).flatMap(Dates.parse),
-      previews: (commit?["deployments"] as? [String: Any]).map(previews))
+      previews: (commit?["deployments"] as? [String: Any]).map(previews),
+      headRefName: row["headRefName"] as? String, baseRefName: row["baseRefName"] as? String)
   }
 
   /// Previews from a commit's `deployments` connection.
