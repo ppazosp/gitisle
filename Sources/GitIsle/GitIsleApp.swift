@@ -12,7 +12,7 @@ import UserNotifications
     let demo =
       CommandLine.arguments.contains("--demo") || CommandLine.arguments.contains("--snapshot")
       || CommandLine.arguments.contains("--banner") || CommandLine.arguments.contains("--event")
-      || CommandLine.arguments.contains("--story")
+      || CommandLine.arguments.contains("--story") || CommandLine.arguments.contains("--share-card")
       || CommandLine.arguments.contains("--showcase") || CommandLine.arguments.contains("--tour")
     let model = IslandStore(demo: demo)
     _store = State(initialValue: model)
@@ -86,6 +86,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
       store.repositoryFilter = Set(arguments[index + 1].split(separator: ",").map(String.init))
     }
     if arguments.contains("--repo-picker"), store.isDemo { store.repositoryPickerOpen = true }
+    // `--share-card <id> <file>` writes an example PR's share card and quits.
+    if let index = arguments.firstIndex(of: "--share-card"), arguments.count > index + 2,
+      store.isDemo,
+      let pr = store.github?.pullRequests.first(where: { $0.id == arguments[index + 1] })
+    {
+      let url = URL(fileURLWithPath: arguments[index + 2])
+      Task {
+        guard let png = await store.shareCard(for: pr) else { exit(1) }
+        do {
+          try png.write(to: url)
+          print("Share card: \(url.path)")
+          exit(0)
+        } catch { exit(1) }
+      }
+      return
+    }
     // `--details <id>` opens an example PR's page, for example `--details demo2`.
     if let index = arguments.firstIndex(of: "--details"), arguments.count > index + 1, store.isDemo,
       let pr = store.github?.pullRequests.first(where: { $0.id == arguments[index + 1] })

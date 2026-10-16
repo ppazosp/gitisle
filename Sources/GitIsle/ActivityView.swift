@@ -17,6 +17,7 @@ struct ActivityView: View {
       withAnimation(Motion.snappy) { store.openDetails(pr) }
     }
     .environment(\.stackLinks, store.stackLinks)
+    .environment(store)
   }
 
   private var list: some View {
@@ -315,6 +316,24 @@ private struct StateChip: View {
   }
 }
 
+/// A PR's right-click menu: open or copy it, and for a merged PR, its share card.
+private struct PRContextMenu: View {
+  let pr: PullRequest
+  @Environment(IslandStore.self) private var store: IslandStore?
+
+  var body: some View {
+    Button("Open on GitHub") { NSWorkspace.shared.open(pr.url) }
+    Button("Copy link") {
+      NSPasteboard.general.clearContents()
+      NSPasteboard.general.setString(pr.url.absoluteString, forType: .string)
+    }
+    if pr.state == "MERGED", let store {
+      Divider()
+      ShareCardActions(store: store, pr: pr)
+    }
+  }
+}
+
 /// "· on #4340" for a PR built on another, or a restack hint once that one merged.
 private struct StackLabel: View {
   let link: PRStacks.Link?
@@ -402,6 +421,7 @@ struct PRRow: View {
     .buttonStyle(PressableStyle())
     .onHover { inside in withAnimation(.easeOut(duration: 0.12)) { hovered = inside } }
     .help("Show \(pr.repository) #\(pr.number). ⌘-click opens it on GitHub.")
+    .contextMenu { PRContextMenu(pr: pr) }
     .accessibilityLabel("\(pr.title), \(pr.repository) number \(pr.number), \(pr.stateLabel.text)")
   }
 }
@@ -536,6 +556,7 @@ private struct PRCard: View {
     .buttonStyle(PressableStyle())
     .onHover { inside in withAnimation(.easeOut(duration: 0.12)) { hovered = inside } }
     .help("Show \(pr.repository) #\(pr.number). ⌘-click opens it on GitHub.")
+    .contextMenu { PRContextMenu(pr: pr) }
     .accessibilityLabel("\(pr.title), \(pr.repository) number \(pr.number), \(pr.stateLabel.text)")
   }
 }
