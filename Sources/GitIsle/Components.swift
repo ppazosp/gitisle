@@ -200,6 +200,16 @@ enum Format {
     return value.formatted(.number.notation(.compactName).precision(.fractionLength(0...1)))
   }
 
+  /// A short duration such as "48s", "5m 1s", or "1h 12m".
+  static func duration(_ seconds: TimeInterval) -> String {
+    let total = Int(max(0, seconds).rounded())
+    switch total {
+    case ..<60: return "\(total)s"
+    case ..<3600: return total % 60 == 0 ? "\(total / 60)m" : "\(total / 60)m \(total % 60)s"
+    default: return "\(total / 3600)h \((total % 3600) / 60)m"
+    }
+  }
+
   /// A short age such as "now", "4m", "2h", or "3d".
   static func age(_ date: Date, now: Date = Date()) -> String {
     let seconds = max(0, now.timeIntervalSince(date))

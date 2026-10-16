@@ -141,9 +141,11 @@ final class IslandPanel: NSPanel {
       .mouseMoved, .leftMouseDown, .keyDown,
     ]) { [weak self] event in
       if event.type == .keyDown, event.keyCode == 53, self?.panel.isKeyWindow == true {
-        // Escape closes the repository picker first, then the island.
+        // Escape closes the repository picker or a PR's page first, then the island.
         if self?.store.repositoryPickerOpen == true {
           withAnimation(Motion.snappy) { self?.store.repositoryPickerOpen = false }
+        } else if self?.store.detailsID != nil {
+          withAnimation(Motion.snappy) { self?.store.closeDetails() }
         } else {
           self?.store.dismiss()
         }
