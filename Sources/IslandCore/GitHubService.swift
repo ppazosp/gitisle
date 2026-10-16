@@ -1,7 +1,12 @@
 import Foundation
 
 public actor GitHubService {
-  private static let fields = """
+  private static let fields = fields(previews: false)
+  /// Reads by ID also read preview deploys; searches don't, since they'd cost a point per page.
+  private static let fieldsWithPreviews = fields(previews: true)
+
+  private static func fields(previews: Bool) -> String {
+    """
     fragment PRFields on PullRequest {
       id number title url state isDraft createdAt updatedAt mergedAt mergeable mergeStateStatus
       reviewDecision
@@ -13,9 +18,13 @@ public actor GitHubService {
           checkRunCountsByState { state count }
           statusContextCountsByState { state count }
         }
-      } } } }
+      } \(previews ? deployments : "") } } }
     }
     """
+  }
+
+  private static let deployments =
+    "deployments(last: 10) { nodes { environment latestStatus { state environmentUrl } } }"
 
   private let transport: (@Sendable (Data) async throws -> Data)?
   /// The GraphQL budget GitHub reported with the last response, for pacing refreshes.
@@ -134,6 +143,13 @@ public actor GitHubService {
         if (pr.mergedAt ?? pr.updatedAt) >= monthStart { prs[pr.id] = pr }
       }
     }
+    // Searches don't read previews; keep those read for the same commit.
+    if let previous, previous.login == login {
+      let known = Dictionary(previous.pullRequests.map { ($0.id, $0) }) { first, _ in first }
+      for (id, pr) in prs where pr.previews == nil {
+        if let prior = known[id], prior.headOID == pr.headOID { prs[id]?.previews = prior.previews }
+      }
+    }
     return GitHubSnapshot(
       login: login, pullRequests: prs.values.sorted { $0.updatedAt > $1.updatedAt },
       selection: selection.fingerprint, isLimited: limited,
@@ -213,7 +229,7 @@ public actor GitHubService {
         query: """
           query($ids: [ID!]!) { viewer { login } rateLimit { remaining resetAt }
             nodes(ids: $ids) { ...PRFields } }
-          \(Self.fields)
+          \(Self.fieldsWithPreviews)
           """,
         variables: ["ids": batch], allowMissingNodes: true)
       guard let data = response["data"] as? [String: Any],
@@ -298,7 +314,19 @@ public actor GitHubService {
       updatedAt: updatedAt, mergedAt: (row["mergedAt"] as? String).flatMap(Dates.parse),
       author: (row["author"] as? [String: Any])?["login"] as? String,
       ownerAvatar: avatar(row["repository"]),
-      createdAt: (row["createdAt"] as? String).flatMap(Dates.parse))
+      createdAt: (row["createdAt"] as? String).flatMap(Dates.parse),
+      previews: (commit?["deployments"] as? [String: Any]).map(previews))
+  }
+
+  /// Previews from a commit's `deployments` connection.
+  static func previews(_ connection: [String: Any]) -> [PreviewDeploy] {
+    let nodes = connection["nodes"] as? [[String: Any]] ?? []
+    return PreviewDeploy.from(
+      nodes.compactMap { node in
+        guard let environment = node["environment"] as? String else { return nil }
+        let status = node["latestStatus"] as? [String: Any]
+        return (environment, status?["state"] as? String, status?["environmentUrl"] as? String)
+      })
   }
 
   /// Only GitHub's own avatar host is accepted, so a response cannot point the app elsewhere.
@@ -386,7 +414,9 @@ extension GitHubService {
             ... on User { login } ... on Team { name } ... on Bot { login } } } }
           latestReviews(first: 10) { nodes { author { login } state submittedAt } }
           comments(last: 5) { totalCount nodes { author { login } bodyText createdAt } }
-          commits(last: 1) { totalCount nodes { commit { statusCheckRollup { contexts(first: 100) {
+          commits(last: 1) { totalCount nodes { commit {
+            \(Self.deployments)
+            statusCheckRollup { contexts(first: 100) {
             nodes {
               __typename
               ... on CheckRun {
@@ -454,7 +484,8 @@ extension GitHubService {
       changedFiles: node["changedFiles"] as? Int ?? files.count, files: files,
       commitCount: commits?["totalCount"] as? Int ?? 0, requestedReviewers: requested,
       reviews: reviews, commentCount: commentsConnection?["totalCount"] as? Int ?? comments.count,
-      comments: comments, checks: checks, fetchedAt: now)
+      comments: comments, checks: checks,
+      previews: (commit?["deployments"] as? [String: Any]).map(previews) ?? [], fetchedAt: now)
   }
 
   static func decodeCheck(_ node: [String: Any]) -> Check? {
