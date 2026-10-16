@@ -143,6 +143,34 @@ struct GitHubServiceTests {
     #expect(result.pullRequests.first?.state == "MERGED")
   }
 
+  @Test func searchesKeepTheQueueChecksThatOnlyActiveRefreshesRead() async throws {
+    var queued = row("queued")
+    queued["mergeQueueEntry"] = [
+      "position": 1, "enqueuedAt": "2026-10-11T09:58:00Z", "state": "AWAITING_CHECKS",
+    ]
+    var prior = try GitHubService.decode(queued)
+    prior.queueChecks = CheckSummary(passed: 2, failed: 0, pending: 1)
+    var requeued = queued
+    requeued["mergeQueueEntry"] = ["position": 1, "enqueuedAt": "2026-10-11T10:30:00Z"]
+    let active = try JSONSerialization.data(withJSONObject: [
+      "data": ["viewer": ["login": "person"], "nodes": [row("plain")]]
+    ])
+    let fixture = try FixtureTransport([
+      page([queued]), page([]), page([]), page([requeued]), page([]), page([]), active,
+    ])
+    let service = GitHubService(transport: { try await fixture.send($0) })
+    let previous = GitHubSnapshot(login: "person", pullRequests: [prior])
+    let same = try await service.fetch(selection: RepositorySelection(text: ""), previous: previous)
+    #expect(same.pullRequests.first?.queueChecks == prior.queueChecks)
+    // Back in the queue later is a new entry, whose checks start over.
+    let again = try await service.fetch(
+      selection: RepositorySelection(text: ""), previous: previous)
+    #expect(again.pullRequests.first?.queueChecks == nil)
+    _ = try await service.pullRequests(ids: ["plain"], login: "person")
+    let sent = await fixture.sent
+    #expect(!sent[0].contains("headCommit") && sent[6].contains("headCommit"))
+  }
+
   @Test func creationTimeDecodes() throws {
     var opened = row("opened")
     opened["createdAt"] = "2026-10-13T09:00:00Z"
@@ -153,7 +181,20 @@ struct GitHubServiceTests {
   @Test func checkCountsAndAuthorDecodeFromTheRollup() throws {
     var node = row("checked")
     node["author"] = ["login": "person"]
-    node["mergeQueueEntry"] = ["position": 2, "enqueuedAt": "2026-10-11T09:58:00Z"]
+    node["autoMergeRequest"] = ["enabledAt": "2026-10-11T09:40:00Z"]
+    node["mergeQueueEntry"] = [
+      "position": 2, "enqueuedAt": "2026-10-11T09:58:00Z", "state": "AWAITING_CHECKS",
+      "headCommit": [
+        "statusCheckRollup": [
+          "state": "PENDING",
+          "contexts": [
+            "checkRunCountsByState": [
+              ["state": "SUCCESS", "count": 2], ["state": "QUEUED", "count": 3],
+            ]
+          ],
+        ]
+      ],
+    ]
     node["commits"] = [
       "nodes": [
         [
@@ -174,10 +215,17 @@ struct GitHubServiceTests {
     let pr = try GitHubService.decode(node)
     #expect(pr.author == "person")
     #expect(pr.queuePosition == 2)
+    // Merging starts when the PR entered the queue, not when auto-merge was turned on.
     #expect(pr.mergingSince == Dates.parse("2026-10-11T09:58:00Z"))
+    #expect(pr.queueState == "AWAITING_CHECKS")
+    #expect(pr.queueChecks == CheckSummary(passed: 2, failed: 0, pending: 3))
     #expect(pr.checks == "PENDING")
     #expect(pr.checkSummary == CheckSummary(passed: 4, failed: 1, pending: 1))
     #expect(try GitHubService.decode(row("plain")).checkSummary == nil)
+    #expect(try GitHubService.decode(row("plain")).queueChecks == nil)
+    var autoMerge = row("auto")
+    autoMerge["autoMergeRequest"] = ["enabledAt": "2026-10-11T09:40:00Z"]
+    #expect(try GitHubService.decode(autoMerge).mergingSince == nil)
   }
 
   @Test func repositoryAvatarsOnlyComeFromGitHubsAvatarHost() {

@@ -1,21 +1,37 @@
 import Foundation
 
 public actor GitHubService {
-  private static let fields = """
-    fragment PRFields on PullRequest {
-      id number title url state isDraft createdAt updatedAt mergedAt mergeable mergeStateStatus
-      reviewDecision
-      headRefOid autoMergeRequest { enabledAt } mergeQueueEntry { position enqueuedAt }
-      repository { nameWithOwner owner { avatarUrl(size: 64) } } author { login }
-      commits(last: 1) { nodes { commit { statusCheckRollup {
-        state
-        contexts(first: 0) {
-          checkRunCountsByState { state count }
-          statusContextCountsByState { state count }
-        }
-      } } } }
-    }
-    """
+  /// Merge queue checks add a connection per PR, doubling a search page's cost, so they are
+  /// read only with the active PRs, which include every queued PR.
+  private static func fields(queueChecks: Bool = false) -> String {
+    let queueCommit =
+      queueChecks
+      ? """
+      headCommit { statusCheckRollup {
+          state
+          contexts(first: 0) {
+            checkRunCountsByState { state count }
+            statusContextCountsByState { state count }
+          }
+        } }
+      """ : ""
+    return """
+      fragment PRFields on PullRequest {
+        id number title url state isDraft createdAt updatedAt mergedAt mergeable mergeStateStatus
+        reviewDecision
+        headRefOid autoMergeRequest { enabledAt }
+        mergeQueueEntry { position enqueuedAt state \(queueCommit) }
+        repository { nameWithOwner owner { avatarUrl(size: 64) } } author { login }
+        commits(last: 1) { nodes { commit { statusCheckRollup {
+          state
+          contexts(first: 0) {
+            checkRunCountsByState { state count }
+            statusContextCountsByState { state count }
+          }
+        } } } }
+      }
+      """
+  }
 
   private let transport: (@Sendable (Data) async throws -> Data)?
   /// The GraphQL budget GitHub reported with the last response, for pacing refreshes.
@@ -37,7 +53,7 @@ public actor GitHubService {
           pageInfo { hasNextPage endCursor }
         }
       }
-      \(Self.fields)
+      \(Self.fields())
       """
     // Merged history covers the longest activity window, 30 days. It rarely changes, so between
     // daily full sweeps only merges since the day before the last refresh are read.
@@ -111,7 +127,7 @@ public actor GitHubService {
         let ids = Array(missing[chunk..<min(chunk + 25, missing.count)]).map(\.id)
         let extra = try await request(
           query:
-            "query($ids: [ID!]!) { viewer { login } nodes(ids: $ids) { ...PRFields } }\n\(Self.fields)",
+            "query($ids: [ID!]!) { viewer { login } nodes(ids: $ids) { ...PRFields } }\n\(Self.fields())",
           variables: ["ids": ids])
         guard let extraData = extra["data"] as? [String: Any],
           (extraData["viewer"] as? [String: Any])?["login"] as? String == login,
@@ -133,6 +149,14 @@ public actor GitHubService {
       for pr in previous.pullRequests where pr.state != "OPEN" && prs[pr.id] == nil {
         if (pr.mergedAt ?? pr.updatedAt) >= monthStart { prs[pr.id] = pr }
       }
+    }
+    // Searches skip the queue's checks; keep the last ones while a PR stays in the same entry.
+    for old in previous?.pullRequests ?? [] where old.queueChecks != nil {
+      guard var pr = prs[old.id], pr.queueChecks == nil, pr.queuePosition != nil,
+        pr.mergingSince == old.mergingSince
+      else { continue }
+      pr.queueChecks = old.queueChecks
+      prs[pr.id] = pr
     }
     return GitHubSnapshot(
       login: login, pullRequests: prs.values.sorted { $0.updatedAt > $1.updatedAt },
@@ -213,7 +237,7 @@ public actor GitHubService {
         query: """
           query($ids: [ID!]!) { viewer { login } rateLimit { remaining resetAt }
             nodes(ids: $ids) { ...PRFields } }
-          \(Self.fields)
+          \(Self.fields(queueChecks: true))
           """,
         variables: ["ids": batch], allowMissingNodes: true)
       guard let data = response["data"] as? [String: Any],
@@ -272,6 +296,32 @@ public actor GitHubService {
     let commits = (row["commits"] as? [String: Any])?["nodes"] as? [[String: Any]]
     let commit = commits?.last?["commit"] as? [String: Any]
     let rollup = commit?["statusCheckRollup"] as? [String: Any]
+    let summary = checkSummary(rollup)
+    let queue = row["mergeQueueEntry"] as? [String: Any]
+    let autoMerge = row["autoMergeRequest"] as? [String: Any]
+    // In the queue, merging started when it entered; otherwise `MergeTiming` stamps it.
+    let mergingSince = (queue?["enqueuedAt"] as? String).flatMap(Dates.parse)
+    let queueSummary = checkSummary(
+      (queue?["headCommit"] as? [String: Any])?["statusCheckRollup"] as? [String: Any])
+    return PullRequest(
+      id: id, number: number, repository: repo, title: title, url: url, state: state,
+      isDraft: row["isDraft"] as? Bool ?? false, reviewDecision: row["reviewDecision"] as? String,
+      mergeable: row["mergeable"] as? String ?? "UNKNOWN",
+      mergeStateStatus: row["mergeStateStatus"] as? String ?? "UNKNOWN",
+      checks: rollup?["state"] as? String, checkSummary: summary,
+      headOID: row["headRefOid"] as? String ?? "",
+      autoMerge: autoMerge != nil,
+      queuePosition: queue?["position"] as? Int, mergingSince: mergingSince,
+      queueChecks: queueSummary,
+      queueState: queue?["state"] as? String,
+      updatedAt: updatedAt, mergedAt: (row["mergedAt"] as? String).flatMap(Dates.parse),
+      author: (row["author"] as? [String: Any])?["login"] as? String,
+      ownerAvatar: avatar(row["repository"]),
+      createdAt: (row["createdAt"] as? String).flatMap(Dates.parse))
+  }
+
+  /// Check counts by state from a status check rollup; nil when it has no checks.
+  static func checkSummary(_ rollup: [String: Any]?) -> CheckSummary? {
     let contexts = rollup?["contexts"] as? [String: Any]
     let counts = ["checkRunCountsByState", "statusContextCountsByState"].flatMap { key in
       (contexts?[key] as? [[String: Any]] ?? []).compactMap { entry -> (String, Int)? in
@@ -282,23 +332,7 @@ public actor GitHubService {
       }
     }
     let summary = CheckSummary(counts: counts)
-    let queue = row["mergeQueueEntry"] as? [String: Any]
-    let autoMerge = row["autoMergeRequest"] as? [String: Any]
-    let mergingSince = ((queue?["enqueuedAt"] ?? autoMerge?["enabledAt"]) as? String)
-      .flatMap(Dates.parse)
-    return PullRequest(
-      id: id, number: number, repository: repo, title: title, url: url, state: state,
-      isDraft: row["isDraft"] as? Bool ?? false, reviewDecision: row["reviewDecision"] as? String,
-      mergeable: row["mergeable"] as? String ?? "UNKNOWN",
-      mergeStateStatus: row["mergeStateStatus"] as? String ?? "UNKNOWN",
-      checks: rollup?["state"] as? String, checkSummary: summary.total > 0 ? summary : nil,
-      headOID: row["headRefOid"] as? String ?? "",
-      autoMerge: autoMerge != nil,
-      queuePosition: queue?["position"] as? Int, mergingSince: mergingSince,
-      updatedAt: updatedAt, mergedAt: (row["mergedAt"] as? String).flatMap(Dates.parse),
-      author: (row["author"] as? [String: Any])?["login"] as? String,
-      ownerAvatar: avatar(row["repository"]),
-      createdAt: (row["createdAt"] as? String).flatMap(Dates.parse))
+    return summary.total > 0 ? summary : nil
   }
 
   /// Only GitHub's own avatar host is accepted, so a response cannot point the app elsewhere.

@@ -216,11 +216,12 @@ struct SettingsView: View {
 
   /// Your own PRs as they head to merge, then what can go wrong or wait on you.
   /// One chip can cover several kinds: "New PR" is opening a PR, ready or draft, and marking a
-  /// draft ready for review.
+  /// draft ready for review; "Failed" is checks failing on the PR or in the merge queue.
   private static let announcements: [(kinds: [PRStatus], glyph: Glyph, label: String)] = [
     ([.opened, .draft, .readyForReview], .pullRequest, "New PR"),
     ([.ready], .checkFill, "Ready"), ([.queued], .mergeQueue, "Merging"),
-    ([.merged], .merge, "Merged"), ([.failed], .failFill, "Failed"), ([.review], .eye, "Review"),
+    ([.merged], .merge, "Merged"), ([.failed, .mergeFailed], .failFill, "Failed"),
+    ([.review], .eye, "Review"),
   ]
 
   private var island: some View {
