@@ -739,13 +739,14 @@ final class IslandStore {
 
   /// Every kind of announcement, in the order the showcase plays them.
   static let announcementKinds: [PRStatus] = [
-    .opened, .draft, .readyForReview, .ready, .queued, .merged, .failed, .review,
+    .opened, .draft, .readyForReview, .ready, .previewReady, .queued, .merged, .failed, .review,
   ]
 
   /// Example data only: an announcement of this kind about a fitting example PR.
   private func demoEvent(_ kind: PRStatus) -> IslandEvent? {
     let examples: [PRStatus: String] = [
       .opened: "demo4", .draft: "demo5", .readyForReview: "demo4", .ready: "demo4",
+      .previewReady: "demo4",
       .queued: "demo3", .merged: "demo6", .failed: "demo2", .review: "demo1",
     ]
     guard let id = examples[kind], let pr = github?.pullRequests.first(where: { $0.id == id })
@@ -754,6 +755,10 @@ final class IslandStore {
       id: "showcase-\(kind.rawValue)", title: "\(pr.repository) #\(pr.number) · \(kind.label)",
       detail: pr.title, url: pr.url, occurredAt: Date(), kind: kind, repository: pr.repository)
     if kind == .failed { event.note = demoDetails(id)?.failureNote }
+    if kind == .previewReady, let preview = pr.readyPreviews.first, let url = preview.url {
+      event.url = url
+      event.note = pr.readyPreviews.map(\.name).joined(separator: ", ")
+    }
     return event
   }
 
@@ -880,8 +885,13 @@ final class IslandStore {
   private func notify(_ event: IslandEvent) {
     guard settings.notificationsEnabled, shows(event.repository) else { return }
     let content = UNMutableNotificationContent()
-    content.title = event.note.map { "\(event.title): \($0)" } ?? event.title
-    content.body = event.detail
+    if event.kind == .failed, let note = event.note {
+      content.title = "\(event.title): \(note)"
+      content.body = event.detail
+    } else {
+      content.title = event.title
+      content.body = event.note.map { "\($0) · \(event.detail)" } ?? event.detail
+    }
     content.userInfo = ["url": event.url.absoluteString]
     if settings.notificationSound { content.sound = .default }
     UNUserNotificationCenter.current().add(
@@ -953,7 +963,7 @@ final class IslandStore {
           author: pr.author ?? "maya", body: "Good call, added in the last commit.",
           createdAt: now.addingTimeInterval(-3600)),
       ],
-      checks: checks, fetchedAt: now)
+      checks: checks, previews: pr.previews ?? [], fetchedAt: now)
   }
 
   private func loadDemo() {
@@ -975,12 +985,20 @@ final class IslandStore {
         url: link, checks: "PENDING", checkSummary: CheckSummary(passed: 3, failed: 0, pending: 2),
         autoMerge: true, queuePosition: 2, mergingSince: now.addingTimeInterval(-95),
         updatedAt: now.addingTimeInterval(-0.1 * hour),
-        author: "maya"),
+        author: "maya", previews: [PreviewDeploy(name: "orbit-api", state: .building)]),
       PullRequest(
         id: "demo4", number: 436, repository: "orbit/web", title: "Polish onboarding animations",
         url: link, reviewDecision: "REVIEW_REQUIRED", mergeStateStatus: "BLOCKED",
         checks: "PENDING", checkSummary: CheckSummary(passed: 2, failed: 0, pending: 3),
-        updatedAt: now.addingTimeInterval(-2 * hour), author: "maya"),
+        updatedAt: now.addingTimeInterval(-2 * hour), author: "maya",
+        previews: [
+          PreviewDeploy(
+            name: "orbit-web", state: .ready,
+            url: URL(string: "https://orbit-web-git-436.vercel.app")),
+          PreviewDeploy(
+            name: "orbit-docs", state: .ready,
+            url: URL(string: "https://orbit-docs-git-436.vercel.app")),
+        ]),
       PullRequest(
         id: "demo5", number: 437, repository: "orbit/api", title: "Sketch the usage dashboard",
         url: link, isDraft: true, checks: "SUCCESS",

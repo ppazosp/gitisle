@@ -219,7 +219,8 @@ struct SettingsView: View {
   /// draft ready for review.
   private static let announcements: [(kinds: [PRStatus], glyph: Glyph, label: String)] = [
     ([.opened, .draft, .readyForReview], .pullRequest, "New PR"),
-    ([.ready], .checkFill, "Ready"), ([.queued], .mergeQueue, "Merging"),
+    ([.ready], .checkFill, "Ready"), ([.previewReady], .linkExternal, "Preview"),
+    ([.queued], .mergeQueue, "Merging"),
     ([.merged], .merge, "Merged"), ([.failed], .failFill, "Failed"), ([.review], .eye, "Review"),
   ]
 

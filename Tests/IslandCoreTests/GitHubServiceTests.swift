@@ -122,6 +122,24 @@ struct GitHubServiceTests {
     }
   }
 
+  @Test func fullSearchesKeepPreviewsReadForTheSameCommit() async throws {
+    let fixture = try FixtureTransport([page([row("same"), row("pushed")]), page([]), page([])])
+    let service = GitHubService(transport: { try await fixture.send($0) })
+    let preview = PreviewDeploy(
+      name: "app", state: .ready, url: URL(string: "https://app.vercel.app"))
+    var same = try GitHubService.decode(row("same"))
+    same.previews = [preview]
+    var pushed = try GitHubService.decode(row("pushed"))
+    pushed.headOID = "older"
+    pushed.previews = [preview]
+    let result = try await service.fetch(
+      selection: RepositorySelection(text: ""),
+      previous: GitHubSnapshot(login: "person", pullRequests: [same, pushed]))
+    #expect(result.pullRequests.first { $0.id == "same" }?.previews == [preview])
+    // A new commit's previews haven't been read yet.
+    #expect(result.pullRequests.first { $0.id == "pushed" }?.previews == nil)
+  }
+
   @Test func accountSwitchDuringPaginationRejectsTheSnapshot() async throws {
     let fixture = try FixtureTransport([page([]), page([], login: "another-person")])
     let service = GitHubService(transport: { try await fixture.send($0) })

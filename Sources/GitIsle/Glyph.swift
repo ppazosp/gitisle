@@ -6,7 +6,7 @@ import SwiftUI
 enum Glyph: String, CaseIterable {
   case github, board, list, repo, chevronDown, pullRequest, draft, merge, mergeQueue, closed,
     checkFill,
-    failFill, eye, gear, sync, download,
+    failFill, eye, gear, sync, download, linkExternal,
     clock, openai, claude
 
   private var source: (viewBox: String, path: String) {
@@ -223,6 +223,17 @@ enum Glyph: String, CaseIterable {
           "a5.487 5.487 0 0 0-4.131 1.869l1.204 1.204A.25.25 0 0 1 4.896 6H1.25",
           "A.25.25 0 0 1 1 5.75V2.104a.25.25 0 0 1 .427-.177l1.38 1.38",
           "A7.002 7.002 0 0 1 14.95 7.16a.75.75 0 0 1-1.49.178A5.5 5.5 0 0 0 8 2.5Z",
+        ].joined()
+      )
+    case .linkExternal:
+      (
+        "0 0 16 16",
+        [
+          "M3.75 2h3.5a.75.75 0 0 1 0 1.5h-3.5a.25.25 0 0 0-.25.25v8.5c0 .138.112.25.25.25h8.5",
+          "a.25.25 0 0 0 .25-.25v-3.5a.75.75 0 0 1 1.5 0v3.5A1.75 1.75 0 0 1 12.25 14h-8.5",
+          "A1.75 1.75 0 0 1 2 12.25v-8.5C2 2.784 2.784 2 3.75 2Zm6.854-1h4.146a.25.25 0 0 1 .25.25",
+          "v4.146a.25.25 0 0 1-.427.177L13.03 4.03 9.28 7.78a.751.751 0 0 1-1.042-.018",
+          ".751.751 0 0 1-.018-1.042l3.75-3.75-1.543-1.543A.25.25 0 0 1 10.604 1Z",
         ].joined()
       )
     case .download:

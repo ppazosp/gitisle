@@ -350,6 +350,7 @@ struct PRRow: View {
             .padding(.horizontal, 6).padding(.vertical, 2)
             .background(Capsule().fill(Palette.merging.opacity(0.14)))
         }
+        if pr.state == "OPEN" { PreviewChip(pr: pr) }
         if pr.state == "OPEN" { CheckBadge(pr: pr) }
       }
       .padding(.vertical, 7).padding(.horizontal, 8)
@@ -362,7 +363,7 @@ struct PRRow: View {
     }
     .buttonStyle(PressableStyle())
     .onHover { inside in withAnimation(.easeOut(duration: 0.12)) { hovered = inside } }
-    .help("Open \(pr.repository) #\(pr.number) on GitHub")
+    .help("Show \(pr.repository) #\(pr.number). ⌘-click opens it on GitHub.")
     .accessibilityLabel("\(pr.title), \(pr.repository) number \(pr.number), \(pr.stateLabel.text)")
   }
 }
@@ -480,6 +481,7 @@ private struct PRCard: View {
         HStack(spacing: 6) {
           Text(pr.stateLabel.text).foregroundStyle(pr.stateLabel.color).lineLimit(1)
           Spacer(minLength: 4)
+          if pr.state == "OPEN" { PreviewChip(pr: pr) }
           if pr.state == "OPEN" { CheckBadge(pr: pr) }
         }
         .font(.system(size: 10.5, weight: .medium))
@@ -493,7 +495,7 @@ private struct PRCard: View {
     }
     .buttonStyle(PressableStyle())
     .onHover { inside in withAnimation(.easeOut(duration: 0.12)) { hovered = inside } }
-    .help("Open \(pr.repository) #\(pr.number) on GitHub")
+    .help("Show \(pr.repository) #\(pr.number). ⌘-click opens it on GitHub.")
     .accessibilityLabel("\(pr.title), \(pr.repository) number \(pr.number), \(pr.stateLabel.text)")
   }
 }
