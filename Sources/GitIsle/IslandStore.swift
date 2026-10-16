@@ -96,6 +96,54 @@ final class IslandStore {
     detailsID.flatMap { id in github?.pullRequests.first { $0.id == id } }
   }
 
+  /// A short confirmation in the footer, such as "Share card copied".
+  private(set) var footerNote: String?
+  @ObservationIgnored private var footerNoteTask: Task<Void, Never>?
+
+  private func flash(_ note: String) {
+    footerNote = note
+    footerNoteTask?.cancel()
+    footerNoteTask = Task { [weak self] in
+      do { try await Task.sleep(for: .seconds(2.5)) } catch { return }
+      self?.footerNote = nil
+    }
+  }
+
+  /// A merged PR's share card as a PNG, reading its page first if it hasn't been.
+  func shareCard(for pr: PullRequest) async -> Data? {
+    var details = pullRequestDetails[pr.id]
+    if details == nil {
+      details = isDemo ? demoDetails(pr.id) : try? await githubService.details(of: pr)
+      if let details { pullRequestDetails[pr.id] = details }
+    }
+    guard let details, let png = ShareCard(pr: pr, details: details).png() else {
+      flash("Couldn't make the share card")
+      return nil
+    }
+    return png
+  }
+
+  func copyShareCard(for pr: PullRequest) async {
+    guard let png = await shareCard(for: pr) else { return }
+    NSPasteboard.general.clearContents()
+    NSPasteboard.general.setData(png, forType: .png)
+    flash("Share card copied")
+  }
+
+  func saveShareCard(for pr: PullRequest) async {
+    guard let png = await shareCard(for: pr) else { return }
+    let panel = NSSavePanel()
+    panel.allowedContentTypes = [.png]
+    let name = pr.repository.split(separator: "/").last.map(String.init) ?? "pr"
+    panel.nameFieldStringValue = "\(name)-\(pr.number).png"
+    NSApp.activate()
+    guard panel.runModal() == .OK, let url = panel.url else { return }
+    do {
+      try png.write(to: url, options: .atomic)
+      flash("Share card saved")
+    } catch { flash("Couldn't save the share card") }
+  }
+
   func openDetails(_ pr: PullRequest) {
     repositoryPickerOpen = false
     detailsID = pr.id
