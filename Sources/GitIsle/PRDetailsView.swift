@@ -22,6 +22,7 @@ struct PRDetailsView: View {
       VStack(alignment: .leading, spacing: 18) {
         heading
         if let details {
+          PreviewsSection(details: details)
           ChecksSection(details: details)
           ReviewsSection(details: details)
           FilesSection(details: details)
@@ -222,6 +223,42 @@ private struct CheckLine: View {
       return "running \(Format.duration(Date().timeIntervalSince(started)))"
     }
     return check.duration.map(Format.duration)
+  }
+}
+
+private struct PreviewsSection: View {
+  let details: PullRequestDetails
+
+  var body: some View {
+    if !details.previews.isEmpty {
+      VStack(alignment: .leading, spacing: 7) {
+        DetailsHeader(title: "Previews")
+        ForEach(details.previews, id: \.name) { preview in
+          HStack(spacing: 8) {
+            GlyphView(glyph: .linkExternal, size: 12)
+              .foregroundStyle(preview.state == .failed ? Palette.failed : Palette.update)
+              .frame(width: 14)
+            Text(preview.name).font(.system(size: 12, weight: .medium))
+            Text(Self.label(preview.state)).font(.system(size: 11))
+              .foregroundStyle(preview.state == .failed ? Palette.failed : .white.opacity(0.45))
+            Spacer(minLength: 8)
+            if let url = preview.url {
+              Text(url.host() ?? "").font(.system(size: 10.5, design: .monospaced))
+                .foregroundStyle(.white.opacity(0.35)).lineLimit(1).truncationMode(.middle)
+              LinkButton(title: "Open", url: url)
+            }
+          }
+        }
+      }
+    }
+  }
+
+  static func label(_ state: PreviewDeploy.State) -> String {
+    switch state {
+    case .ready: "Ready"
+    case .building: "Building…"
+    case .failed: "Failed"
+    }
   }
 }
 

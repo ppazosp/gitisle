@@ -59,6 +59,8 @@ public struct PullRequestDetails: Equatable, Sendable {
   /// The newest comments, oldest first.
   public var comments: [Comment]
   public var checks: [Check]
+  /// Preview deploys of the head commit.
+  public var previews: [PreviewDeploy]
   public var fetchedAt: Date
 
   public init(
@@ -66,8 +68,10 @@ public struct PullRequestDetails: Equatable, Sendable {
     headRefName: String = "", createdAt: Date? = nil, additions: Int = 0, deletions: Int = 0,
     changedFiles: Int = 0, files: [FileChange] = [], commitCount: Int = 0,
     requestedReviewers: [String] = [], reviews: [Review] = [], commentCount: Int = 0,
-    comments: [Comment] = [], checks: [Check] = [], fetchedAt: Date = Date()
+    comments: [Comment] = [], checks: [Check] = [], previews: [PreviewDeploy] = [],
+    fetchedAt: Date = Date()
   ) {
+    self.previews = previews
     self.id = id
     self.body = body
     self.author = author

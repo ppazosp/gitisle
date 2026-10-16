@@ -145,6 +145,7 @@ extension PRStatus {
     case .draft: Palette.draft
     case .merged: Palette.merged
     case .queued: Palette.merging
+    case .previewReady: Palette.update
     default: .secondary
     }
   }
@@ -158,6 +159,7 @@ extension PRStatus {
     case .ready: .checkFill
     case .queued: .mergeQueue
     case .draft: .draft
+    case .previewReady: .linkExternal
     default: .pullRequest
     }
   }
@@ -181,10 +183,11 @@ extension PRStatus {
     case .failed: 1
     case .review: 2
     case .ready: 3
-    case .queued: 4
-    case .readyForReview: 5
-    case .opened, .draft: 6
-    default: 7
+    case .previewReady: 4
+    case .queued: 5
+    case .readyForReview: 6
+    case .opened, .draft: 7
+    default: 8
     }
   }
 }
@@ -308,6 +311,54 @@ struct CheckBadge: View {
       default: Circle().fill(Palette.merging).frame(width: 7, height: 7).frame(width: 13)
       }
     }
+  }
+}
+
+/// Opens a PR's preview deploy: a click for one, a menu to pick for several. A preview still
+/// building shows dimmed.
+struct PreviewChip: View {
+  let pr: PullRequest
+  @State private var hovered = false
+
+  var body: some View {
+    let ready = pr.readyPreviews
+    if ready.count == 1, let preview = ready.first, let url = preview.url {
+      Button {
+        NSWorkspace.shared.open(url)
+      } label: {
+        label("Preview", active: true)
+      }
+      .buttonStyle(.plain)
+      .onHover { hovered = $0 }
+      .help("Open the \(preview.name) preview")
+      .accessibilityLabel("Open the \(preview.name) preview")
+    } else if ready.count > 1 {
+      Menu {
+        ForEach(ready, id: \.name) { preview in
+          if let url = preview.url { Button(preview.name) { NSWorkspace.shared.open(url) } }
+        }
+      } label: {
+        label("\(ready.count) previews", active: true)
+      }
+      .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden).fixedSize()
+      .onHover { hovered = $0 }
+      .accessibilityLabel("Open a preview")
+    } else if pr.previews?.contains(where: { $0.state == .building }) == true {
+      label("Building", active: false)
+        .help("A preview is deploying")
+    }
+  }
+
+  private func label(_ text: String, active: Bool) -> some View {
+    HStack(spacing: 4) {
+      GlyphView(glyph: .linkExternal, size: 9)
+      Text(text)
+    }
+    .font(.system(size: 10, weight: .medium))
+    .foregroundStyle(Palette.update.opacity(active ? 1 : 0.55))
+    .padding(.horizontal, 6).padding(.vertical, 2)
+    .background(Capsule().fill(Palette.update.opacity(active ? (hovered ? 0.26 : 0.15) : 0.08)))
+    .contentShape(Capsule())
   }
 }
 

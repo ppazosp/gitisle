@@ -226,7 +226,7 @@ private struct EventBanner: View {
             Text(title).font(.system(size: 13, weight: .semibold))
             Text(reference).font(.system(size: 11)).foregroundStyle(.white.opacity(0.45))
           }
-          Text(event.detail).font(.system(size: 12)).foregroundStyle(.white.opacity(0.7))
+          Text(detail).font(.system(size: 12)).foregroundStyle(.white.opacity(0.7))
         }
         .lineLimit(1)
         Spacer(minLength: 4)
@@ -244,9 +244,16 @@ private struct EventBanner: View {
     .accessibilityHint("Opens the pull request on GitHub")
   }
 
-  /// "Checks failed: unit" when the failing checks are known.
+  /// "Checks failed: unit" when the failing checks are known; other notes, such as the projects
+  /// behind a preview, lead the second line instead.
   private var title: String {
-    event.note.map { "\(event.kind.eventTitle): \($0)" } ?? event.kind.eventTitle
+    guard event.kind == .failed, let note = event.note else { return event.kind.eventTitle }
+    return "\(event.kind.eventTitle): \(note)"
+  }
+
+  private var detail: String {
+    guard event.kind != .failed, let note = event.note else { return event.detail }
+    return "\(note) · \(event.detail)"
   }
 
   /// "owner/repo #12" from the stored "owner/repo #12 · Merged" title.
