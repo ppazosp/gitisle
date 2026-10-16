@@ -101,6 +101,11 @@ extension PRGroup {
 }
 
 extension PullRequest {
+  /// The checks that decide what happens next: the merge queue's while in it, else the PR's.
+  var liveChecks: CheckSummary? {
+    queuePosition == nil ? checkSummary : queueChecks ?? checkSummary
+  }
+
   var glyph: Glyph {
     switch group {
     case .merged: .merge
@@ -115,7 +120,8 @@ extension PullRequest {
   var stateLabel: (text: String, color: Color) {
     switch group {
     case .open where needsYou: (status.label, status.color)
-    case .merging: (queuePosition == nil ? "Auto-merge" : "Merging", Palette.merging)
+    case .merging: ("Merging", Palette.merging)
+    case .open where isWaitingToMerge: ("Auto-merge on", Palette.merging)
     case .open:
       [.checking, .unknown].contains(status)
         ? ("Open", Palette.open) : (status.label, Palette.open)
@@ -139,7 +145,7 @@ extension PullRequest {
 extension PRStatus {
   var color: Color {
     switch self {
-    case .failed, .conflicts, .changesRequested, .closed: Palette.failed
+    case .failed, .mergeFailed, .conflicts, .changesRequested, .closed: Palette.failed
     case .review, .waiting, .behind, .blocked: Palette.attention
     case .ready, .opened, .readyForReview: Palette.open
     case .draft: Palette.draft
@@ -154,7 +160,7 @@ extension PRStatus {
   var eventGlyph: Glyph {
     switch self {
     case .merged: .merge
-    case .failed: .failFill
+    case .failed, .mergeFailed: .failFill
     case .review: .eye
     case .ready: .checkFill
     case .queued: .mergeQueue
@@ -180,7 +186,7 @@ extension PRStatus {
   var bannerPriority: Int {
     switch self {
     case .merged: 0
-    case .failed: 1
+    case .failed, .mergeFailed: 1
     case .review: 2
     case .ready: 3
     case .previewReady: 4
@@ -291,7 +297,7 @@ struct CheckBadge: View {
   let pr: PullRequest
 
   var body: some View {
-    if let summary = pr.checkSummary {
+    if let summary = pr.liveChecks {
       HStack(spacing: 5) {
         if summary.failed > 0 {
           Text("\(summary.failed) failed").foregroundStyle(Palette.failed)
@@ -305,7 +311,9 @@ struct CheckBadge: View {
         }
       }
       .font(.system(size: 10.5, weight: .medium)).monospacedDigit()
-      .help("\(summary.passed) passed · \(summary.failed) failed · \(summary.pending) running")
+      .help(
+        (pr.queueChecks == nil ? "" : "Merge queue: ")
+          + "\(summary.passed) passed · \(summary.failed) failed · \(summary.pending) running")
     } else if let checks = pr.checks {
       switch checks {
       case "SUCCESS": GlyphView(glyph: .checkFill, size: 13).foregroundStyle(Palette.open)

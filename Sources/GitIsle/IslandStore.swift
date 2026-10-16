@@ -737,7 +737,8 @@ final class IslandStore {
   }
 
   /// Records a new snapshot: finds what changed, saves, and announces it.
-  private func apply(_ fresh: GitHubSnapshot) throws {
+  private func apply(_ fetched: GitHubSnapshot) throws {
+    let fresh = MergeTiming.stamped(fetched, previous: github)
     let known = Set(events.map(\.id))
     let changes = GitHubChanges.events(previous: github, current: fresh).filter {
       !known.contains($0.id)
@@ -906,7 +907,8 @@ final class IslandStore {
 
   /// Every kind of announcement, in the order the showcase plays them.
   static let announcementKinds: [PRStatus] = [
-    .opened, .draft, .readyForReview, .ready, .previewReady, .queued, .merged, .failed, .review,
+    .opened, .draft, .readyForReview, .ready, .previewReady, .queued, .merged, .mergeFailed,
+    .failed, .review,
   ]
 
   /// Example data only: an announcement of this kind about a fitting example PR.
@@ -914,7 +916,8 @@ final class IslandStore {
     let examples: [PRStatus: String] = [
       .opened: "demo4", .draft: "demo5", .readyForReview: "demo4", .ready: "demo4",
       .previewReady: "demo4",
-      .queued: "demo3", .merged: "demo6", .failed: "demo2", .review: "demo1",
+      .queued: "demo3", .merged: "demo6", .mergeFailed: "demo3", .failed: "demo2",
+      .review: "demo1",
     ]
     guard let id = examples[kind], let pr = github?.pullRequests.first(where: { $0.id == id })
     else { return nil }
@@ -962,6 +965,7 @@ final class IslandStore {
       pr.checks = "FAILURE"
       pr.checkSummary = CheckSummary(passed: 4, failed: 1, pending: 0)
     case .ready: pr.mergeStateStatus = "CLEAN"
+    case .mergeFailed: pr.mergeStateStatus = "BLOCKED"
     case .merged:
       pr.state = "MERGED"
       pr.mergedAt = Date()
@@ -1163,15 +1167,16 @@ final class IslandStore {
         updatedAt: now.addingTimeInterval(-1.2 * hour), author: "maya"),
       PullRequest(
         id: "demo3", number: 433, repository: "orbit/api", title: "Cache workspace metadata",
-        url: link, checks: "PENDING", checkSummary: CheckSummary(passed: 3, failed: 0, pending: 2),
+        url: link, checks: "SUCCESS", checkSummary: CheckSummary(passed: 5, failed: 0, pending: 0),
         autoMerge: true, queuePosition: 2, mergingSince: now.addingTimeInterval(-95),
+        queueChecks: CheckSummary(passed: 3, failed: 0, pending: 2), queueState: "AWAITING_CHECKS",
         updatedAt: now.addingTimeInterval(-0.1 * hour),
         author: "maya", previews: [PreviewDeploy(name: "orbit-api", state: .building)]),
       PullRequest(
         id: "demo4", number: 436, repository: "orbit/web", title: "Polish onboarding animations",
         url: link, reviewDecision: "REVIEW_REQUIRED", mergeStateStatus: "BLOCKED",
         checks: "PENDING", checkSummary: CheckSummary(passed: 2, failed: 0, pending: 3),
-        updatedAt: now.addingTimeInterval(-2 * hour), author: "maya",
+        autoMerge: true, updatedAt: now.addingTimeInterval(-2 * hour), author: "maya",
         previews: [
           PreviewDeploy(
             name: "orbit-web", state: .ready,

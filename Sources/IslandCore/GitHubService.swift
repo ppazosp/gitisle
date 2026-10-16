@@ -1,28 +1,42 @@
 import Foundation
 
 public actor GitHubService {
-  private static let fields = fields(previews: false)
-  /// Reads by ID also read preview deploys; searches don't, since they'd cost a point per page.
-  private static let fieldsWithPreviews = fields(previews: true)
+  /// Searches read neither preview deploys nor the merge queue's checks, since each would add
+  /// a point per page. Reads by ID read both: they cover the active PRs, which include every
+  /// queued PR.
+  private static let fields = fields(extras: false)
+  private static let activeFields = fields(extras: true)
 
-  private static func fields(previews: Bool) -> String {
-    """
-    fragment PRFields on PullRequest {
-      id number title url state isDraft createdAt updatedAt mergedAt mergeable mergeStateStatus
-      reviewDecision
-      headRefOid headRefName baseRefName additions deletions changedFiles
-      autoMergeRequest { enabledAt } mergeQueueEntry { position enqueuedAt }
-      repository { nameWithOwner owner { avatarUrl(size: 64) } }
-      author { login avatarUrl(size: 64) }
-      commits(last: 1) { totalCount nodes { commit { statusCheckRollup {
-        state
-        contexts(first: 0) {
-          checkRunCountsByState { state count }
-          statusContextCountsByState { state count }
-        }
-      } \(previews ? deployments : "") } } }
-    }
-    """
+  private static func fields(extras: Bool) -> String {
+    let queueCommit =
+      extras
+      ? """
+      headCommit { statusCheckRollup {
+          state
+          contexts(first: 0) {
+            checkRunCountsByState { state count }
+            statusContextCountsByState { state count }
+          }
+        } }
+      """ : ""
+    return """
+      fragment PRFields on PullRequest {
+        id number title url state isDraft createdAt updatedAt mergedAt mergeable mergeStateStatus
+        reviewDecision
+        headRefOid headRefName baseRefName additions deletions changedFiles
+        autoMergeRequest { enabledAt }
+        mergeQueueEntry { position enqueuedAt state \(queueCommit) }
+        repository { nameWithOwner owner { avatarUrl(size: 64) } }
+        author { login avatarUrl(size: 64) }
+        commits(last: 1) { totalCount nodes { commit { statusCheckRollup {
+          state
+          contexts(first: 0) {
+            checkRunCountsByState { state count }
+            statusContextCountsByState { state count }
+          }
+        } \(extras ? deployments : "") } } }
+      }
+      """
   }
 
   private static let deployments =
@@ -158,6 +172,14 @@ public actor GitHubService {
         if let prior = known[id], prior.headOID == pr.headOID { prs[id]?.previews = prior.previews }
       }
     }
+    // Nor the queue's checks; keep the last ones while a PR stays in the same entry.
+    for old in previous?.pullRequests ?? [] where old.queueChecks != nil {
+      guard var pr = prs[old.id], pr.queueChecks == nil, pr.queuePosition != nil,
+        pr.mergingSince == old.mergingSince
+      else { continue }
+      pr.queueChecks = old.queueChecks
+      prs[pr.id] = pr
+    }
     return GitHubSnapshot(
       login: login, pullRequests: prs.values.sorted { $0.updatedAt > $1.updatedAt },
       selection: selection.fingerprint, isLimited: limited,
@@ -237,7 +259,7 @@ public actor GitHubService {
         query: """
           query($ids: [ID!]!) { viewer { login } rateLimit { remaining resetAt }
             nodes(ids: $ids) { ...PRFields } }
-          \(Self.fieldsWithPreviews)
+          \(Self.activeFields)
           """,
         variables: ["ids": batch], allowMissingNodes: true)
       guard let data = response["data"] as? [String: Any],
@@ -296,29 +318,24 @@ public actor GitHubService {
     let commits = (row["commits"] as? [String: Any])?["nodes"] as? [[String: Any]]
     let commit = commits?.last?["commit"] as? [String: Any]
     let rollup = commit?["statusCheckRollup"] as? [String: Any]
-    let contexts = rollup?["contexts"] as? [String: Any]
-    let counts = ["checkRunCountsByState", "statusContextCountsByState"].flatMap { key in
-      (contexts?[key] as? [[String: Any]] ?? []).compactMap { entry -> (String, Int)? in
-        guard let state = entry["state"] as? String, let count = entry["count"] as? Int else {
-          return nil
-        }
-        return (state, count)
-      }
-    }
-    let summary = CheckSummary(counts: counts)
+    let summary = checkSummary(rollup)
     let queue = row["mergeQueueEntry"] as? [String: Any]
     let autoMerge = row["autoMergeRequest"] as? [String: Any]
-    let mergingSince = ((queue?["enqueuedAt"] ?? autoMerge?["enabledAt"]) as? String)
-      .flatMap(Dates.parse)
+    // In the queue, merging started when it entered; otherwise `MergeTiming` stamps it.
+    let mergingSince = (queue?["enqueuedAt"] as? String).flatMap(Dates.parse)
+    let queueSummary = checkSummary(
+      (queue?["headCommit"] as? [String: Any])?["statusCheckRollup"] as? [String: Any])
     return PullRequest(
       id: id, number: number, repository: repo, title: title, url: url, state: state,
       isDraft: row["isDraft"] as? Bool ?? false, reviewDecision: row["reviewDecision"] as? String,
       mergeable: row["mergeable"] as? String ?? "UNKNOWN",
       mergeStateStatus: row["mergeStateStatus"] as? String ?? "UNKNOWN",
-      checks: rollup?["state"] as? String, checkSummary: summary.total > 0 ? summary : nil,
+      checks: rollup?["state"] as? String, checkSummary: summary,
       headOID: row["headRefOid"] as? String ?? "",
       autoMerge: autoMerge != nil,
       queuePosition: queue?["position"] as? Int, mergingSince: mergingSince,
+      queueChecks: queueSummary,
+      queueState: queue?["state"] as? String,
       updatedAt: updatedAt, mergedAt: (row["mergedAt"] as? String).flatMap(Dates.parse),
       author: (row["author"] as? [String: Any])?["login"] as? String,
       ownerAvatar: avatar(row["repository"]),
@@ -329,6 +346,21 @@ public actor GitHubService {
       additions: row["additions"] as? Int, deletions: row["deletions"] as? Int,
       changedFiles: row["changedFiles"] as? Int,
       commitCount: (row["commits"] as? [String: Any])?["totalCount"] as? Int)
+  }
+
+  /// Check counts by state from a status check rollup; nil when it has no checks.
+  static func checkSummary(_ rollup: [String: Any]?) -> CheckSummary? {
+    let contexts = rollup?["contexts"] as? [String: Any]
+    let counts = ["checkRunCountsByState", "statusContextCountsByState"].flatMap { key in
+      (contexts?[key] as? [[String: Any]] ?? []).compactMap { entry -> (String, Int)? in
+        guard let state = entry["state"] as? String, let count = entry["count"] as? Int else {
+          return nil
+        }
+        return (state, count)
+      }
+    }
+    let summary = CheckSummary(counts: counts)
+    return summary.total > 0 ? summary : nil
   }
 
   /// Previews from a commit's `deployments` connection.

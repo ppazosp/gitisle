@@ -42,13 +42,15 @@ struct AppSettings: Codable, Equatable {
   var notificationSound = true
   /// Which changes announce themselves, by `PRStatus` raw value.
   var announcedKinds: Set<String> = [
-    "opened", "draft", "readyForReview", "ready", "previewReady", "queued", "merged", "failed",
+    "opened", "draft", "readyForReview", "ready", "previewReady", "queued", "merged",
+    "mergeFailed", "failed",
     "review",
   ]
   /// Every kind these settings have offered, so a kind added in a later version starts on
   /// once, while one switched off stays off.
   var offeredKinds: Set<String> = [
-    "opened", "draft", "readyForReview", "ready", "previewReady", "queued", "merged", "failed",
+    "opened", "draft", "readyForReview", "ready", "previewReady", "queued", "merged",
+    "mergeFailed", "failed",
     "review",
   ]
   /// Costs are recorded in US dollars; euros use `usdToEur`, which the person sets.
