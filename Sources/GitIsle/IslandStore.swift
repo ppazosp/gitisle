@@ -65,6 +65,8 @@ final class IslandStore {
   private(set) var repositories: [RepoSection] = []
   /// State columns for the board layout, after the repository filter.
   private(set) var sections: [PRSection] = []
+  /// Each open PR's place in its stack, by ID.
+  private(set) var stackLinks: [String: PRStacks.Link] = [:]
   /// Every repository with PRs in the snapshot, for the filter menu.
   private(set) var repositoryChoices: [(name: String, avatar: URL?)] = []
   /// The repositories the island is about: Activity, the live bar, banners, and notifications
@@ -261,6 +263,8 @@ final class IslandStore {
     let all = github?.pullRequests ?? []
     let open = all.filter { $0.state == "OPEN" }
     openPRs = open
+    let links = PRStacks.links(all)
+    if links != stackLinks { stackLinks = links }
     attention = open.filter(\.needsYou)
     // The live bar follows the repository filter.
     let mine = open.filter {
@@ -940,7 +944,8 @@ final class IslandStore {
         Measured on a cold launch: 1.4 s before, 0.6 s after. The cache is invalidated on every \
         push, and falls back to a full read when it's older than a day.
         """,
-      author: pr.author, baseRefName: "main", headRefName: "maya/\(pr.number)",
+      author: pr.author, baseRefName: pr.baseRefName ?? "main",
+      headRefName: pr.headRefName ?? "maya/\(pr.number)",
       createdAt: now.addingTimeInterval(-26 * 3600), additions: 342, deletions: 61,
       changedFiles: 9,
       files: [
@@ -1011,7 +1016,14 @@ final class IslandStore {
         updatedAt: now.addingTimeInterval(-3 * hour), mergedAt: now.addingTimeInterval(-3 * hour),
         author: "maya"),
     ]
-    setGitHub(GitHubSnapshot(login: "maya", pullRequests: prs))
+    // Each PR on its own branch; #431 is built on #436's.
+    let branched = prs.map { pr in
+      var pr = pr
+      pr.headRefName = "\(pr.author ?? "maya")/\(pr.number)"
+      pr.baseRefName = pr.id == "demo2" ? "maya/436" : "main"
+      return pr
+    }
+    setGitHub(GitHubSnapshot(login: "maya", pullRequests: branched))
     let calendar = Calendar.current
     let formatter = DateFormatter()
     formatter.dateFormat = "yyyy-MM-dd"

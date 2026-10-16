@@ -103,6 +103,10 @@ public struct PullRequest: Codable, Hashable, Identifiable, Sendable {
   /// Netlify, Railway, and others). Nil when they haven't been read: only active and changed
   /// PRs read them, and full searches keep what was read for the same commit.
   public var previews: [PreviewDeploy]?
+  /// The PR's branch, and the branch it merges into; nil in snapshots saved before they were
+  /// read.
+  public var headRefName: String?
+  public var baseRefName: String?
 
   public init(
     id: String, number: Int, repository: String, title: String, url: URL, state: String = "OPEN",
@@ -111,8 +115,10 @@ public struct PullRequest: Codable, Hashable, Identifiable, Sendable {
     checkSummary: CheckSummary? = nil, headOID: String = "", autoMerge: Bool = false,
     queuePosition: Int? = nil, mergingSince: Date? = nil, updatedAt: Date = Date(),
     mergedAt: Date? = nil, author: String? = nil, ownerAvatar: URL? = nil, createdAt: Date? = nil,
-    previews: [PreviewDeploy]? = nil
+    previews: [PreviewDeploy]? = nil, headRefName: String? = nil, baseRefName: String? = nil
   ) {
+    self.headRefName = headRefName
+    self.baseRefName = baseRefName
     self.createdAt = createdAt
     self.previews = previews
     self.id = id
@@ -301,6 +307,8 @@ public enum PRGrouping {
         buckets[pr.repository, default: []].append(pr)
       }
     }
+    // A stack reads bottom to top, together.
+    for (repository, prs) in buckets { buckets[repository] = PRStacks.ordered(prs) }
     // Repositories that need you come first, then by their most advanced open work.
     func rank(_ prs: [PullRequest]) -> Int {
       if prs.contains(where: \.needsYou) { return 0 }
