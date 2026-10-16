@@ -6,6 +6,8 @@ public enum PRStatus: String, Codable, Sendable {
     closed, unknown
   /// Only announced: one of your PRs opened ready for review, or a draft of yours marked ready.
   case opened, readyForReview
+  /// Only announced: one of your PRs left the merge queue without merging.
+  case mergeFailed
 
   public var label: String {
     switch self {
@@ -25,6 +27,7 @@ public enum PRStatus: String, Codable, Sendable {
     case .unknown: "Status unavailable"
     case .opened: "New PR"
     case .readyForReview: "Ready for review"
+    case .mergeFailed: "Merge failed"
     }
   }
 
@@ -90,8 +93,13 @@ public struct PullRequest: Codable, Hashable, Identifiable, Sendable {
   public var headOID: String
   public var autoMerge: Bool
   public var queuePosition: Int?
-  /// When the PR entered the merge queue, or when auto-merge was enabled.
+  /// When the PR started merging: when it entered the merge queue, or, without a queue, when
+  /// GitIsle first saw it set to merge with nothing left to wait for.
   public var mergingSince: Date?
+  /// The merge queue's own checks, run on the commit it would merge; nil outside the queue.
+  public var queueChecks: CheckSummary?
+  /// The merge queue entry's state: QUEUED, AWAITING_CHECKS, MERGEABLE, UNMERGEABLE, or LOCKED.
+  public var queueState: String?
   public var updatedAt: Date
   public var mergedAt: Date?
   /// When the PR was opened; nil in snapshots saved before it was read.
@@ -102,7 +110,8 @@ public struct PullRequest: Codable, Hashable, Identifiable, Sendable {
     isDraft: Bool = false, reviewDecision: String? = nil, reviewRequested: Bool = false,
     mergeable: String = "UNKNOWN", mergeStateStatus: String = "UNKNOWN", checks: String? = nil,
     checkSummary: CheckSummary? = nil, headOID: String = "", autoMerge: Bool = false,
-    queuePosition: Int? = nil, mergingSince: Date? = nil, updatedAt: Date = Date(),
+    queuePosition: Int? = nil, mergingSince: Date? = nil, queueChecks: CheckSummary? = nil,
+    queueState: String? = nil, updatedAt: Date = Date(),
     mergedAt: Date? = nil, author: String? = nil, ownerAvatar: URL? = nil, createdAt: Date? = nil
   ) {
     self.createdAt = createdAt
@@ -123,6 +132,8 @@ public struct PullRequest: Codable, Hashable, Identifiable, Sendable {
     self.autoMerge = autoMerge
     self.queuePosition = queuePosition
     self.mergingSince = mergingSince
+    self.queueChecks = queueChecks
+    self.queueState = queueState
     self.updatedAt = updatedAt
     self.mergedAt = mergedAt
     self.author = author
@@ -139,12 +150,16 @@ public struct PullRequest: Codable, Hashable, Identifiable, Sendable {
       || now.timeIntervalSince(updatedAt) < 15 * 60
   }
 
-  /// In the merge queue, or set to merge automatically without a blocking problem.
+  /// In the merge queue, or set to merge automatically with nothing left to wait for. Set to
+  /// merge while checks run or reviews are missing, a PR is still waiting, not merging.
   public var isMerging: Bool {
     guard state == "OPEN", !isDraft else { return false }
-    guard queuePosition != nil || autoMerge else { return false }
-    return ![.failed, .conflicts, .changesRequested].contains(status)
+    if queuePosition != nil { return ![.conflicts, .changesRequested].contains(status) }
+    return autoMerge && status == .ready
   }
+
+  /// Set to merge when ready, but still waiting for checks or reviews.
+  public var isWaitingToMerge: Bool { state == "OPEN" && autoMerge && !isMerging }
 
   /// The GitHub state this PR is in. Closed PRs are not shown.
   public var group: PRGroup? {
@@ -521,6 +536,26 @@ public struct IslandEvent: Codable, Identifiable, Sendable {
 
 }
 
+public enum MergeTiming {
+  /// Starts the merging clock for PRs set to merge without a merge queue, which GitHub doesn't
+  /// time: from when GitIsle first saw them merging, kept while they stay merging.
+  public static func stamped(_ current: GitHubSnapshot, previous: GitHubSnapshot?)
+    -> GitHubSnapshot
+  {
+    let prior = Dictionary(
+      (previous?.pullRequests ?? []).map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+    var next = current
+    for index in next.pullRequests.indices {
+      let pr = next.pullRequests[index]
+      guard pr.isMerging, pr.mergingSince == nil else { continue }
+      let before = prior[pr.id]
+      next.pullRequests[index].mergingSince =
+        before?.isMerging == true ? (before?.mergingSince ?? current.fetchedAt) : current.fetchedAt
+    }
+    return next
+  }
+}
+
 public enum GitHubChanges {
   public static func events(previous: GitHubSnapshot?, current: GitHubSnapshot) -> [IslandEvent] {
     guard let previous, previous.login == current.login, previous.selection == current.selection
@@ -556,18 +591,35 @@ public enum GitHubChanges {
       let failed = pr.status == .failed && (prior.status != .failed || prior.headOID != pr.headOID)
       let review = pr.reviewRequested && !prior.reviewRequested
       let merging = mine && pr.isMerging && !prior.isMerging
-      // Once per commit, and not while set to merge, since "Merging" and "Merged" follow.
+      // Left the merge queue without merging, as when its checks fail or a push removes it. An
+      // entry that had passed may only be waiting for GitHub to mark the PR merged.
+      let leftQueue =
+        mine && prior.queuePosition != nil && pr.queuePosition == nil && pr.state == "OPEN"
+        && !["MERGEABLE", "LOCKED"].contains(prior.queueState ?? "")
+      // Once per commit, and not while or right after merging: "Merged" or "Merge failed" says
+      // more.
       let ready =
-        mine && pr.status == .ready && !pr.isMerging
+        mine && pr.status == .ready && !pr.isMerging && !prior.isMerging
         && (prior.status != .ready || prior.headOID != pr.headOID)
       // Marking a draft ready can also make it ready to merge, so both can announce.
       let undrafted = mine && prior.isDraft && !pr.isDraft && pr.state == "OPEN"
       var events = undrafted ? [event(pr, .readyForReview, pr.headOID)] : []
+      if leftQueue {
+        // Once per time in the queue.
+        let entered = prior.mergingSince ?? prior.updatedAt
+        events.append(event(pr, .mergeFailed, entered.timeIntervalSince1970.description))
+      }
       guard merged || failed || review || merging || ready else { return events }
       let kind: PRStatus =
         merged ? .merged : failed ? .failed : review ? .review : merging ? .queued : .ready
+      // Each time a PR starts merging is its own occurrence, so merging it again after a
+      // failure announces again.
       let occurrence =
-        merged ? (pr.mergedAt ?? pr.updatedAt).timeIntervalSince1970.description : pr.headOID
+        merged
+        ? (pr.mergedAt ?? pr.updatedAt).timeIntervalSince1970.description
+        : kind == .queued
+          ? (pr.mergingSince ?? current.fetchedAt).timeIntervalSince1970.description
+          : pr.headOID
       events.append(event(pr, kind, occurrence))
       return events
     }
