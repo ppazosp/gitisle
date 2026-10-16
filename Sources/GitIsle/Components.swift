@@ -209,7 +209,9 @@ enum Format {
     switch total {
     case ..<60: return "\(total)s"
     case ..<3600: return total % 60 == 0 ? "\(total / 60)m" : "\(total / 60)m \(total % 60)s"
-    default: return "\(total / 3600)h \((total % 3600) / 60)m"
+    default:
+      let minutes = (total % 3600) / 60
+      return minutes == 0 ? "\(total / 3600)h" : "\(total / 3600)h \(minutes)m"
     }
   }
 

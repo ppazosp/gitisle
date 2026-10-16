@@ -103,6 +103,7 @@ To uninstall, quit GitIsle (right-click the island), then delete
 | Open the island | Hover the notch for a moment, or click it |
 | Open a live or announced PR | Click the top row or the banner |
 | See a PR's checks, errors, reviews, and files | Click it in Activity; ⌘-click opens GitHub |
+| Share a merged PR | Right-click it, or use Share on its page, to copy or save a card with its stats |
 | Follow a stack of PRs | Stacked PRs sit together, each "on #N"; a PR's page shows its stack |
 | Open a PR's preview deploy | Click its Preview chip (Vercel, Netlify, Railway, and other hosts that report to GitHub) |
 | Switch between list and board | Use the toggle at the top right |
