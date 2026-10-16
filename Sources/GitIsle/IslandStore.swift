@@ -25,6 +25,7 @@ final class IslandStore {
       if !expanded {
         showingSettings = false
         repositoryPickerOpen = false
+        detailsID = nil
       }
       // Expanding shows the full context, so a pending banner has done its job.
       if expanded, recentEvent != nil {
@@ -80,6 +81,53 @@ final class IslandStore {
   }
   /// The repository picker is open over Activity.
   var repositoryPickerOpen = false
+  /// The PR whose page replaces Activity, by ID.
+  private(set) var detailsID: String? {
+    didSet { if detailsID != oldValue { loadDetails() } }
+  }
+  /// Pages read so far, by PR ID; an open page keeps its own fresh.
+  private(set) var pullRequestDetails: [String: PullRequestDetails] = [:]
+  private(set) var detailsError: String?
+  @ObservationIgnored private var detailsTask: Task<Void, Never>?
+
+  var detailsPullRequest: PullRequest? {
+    detailsID.flatMap { id in github?.pullRequests.first { $0.id == id } }
+  }
+
+  func openDetails(_ pr: PullRequest) {
+    repositoryPickerOpen = false
+    detailsID = pr.id
+  }
+
+  func closeDetails() { detailsID = nil }
+
+  /// Reads the open page, then again every 10 seconds while the PR is active and every minute
+  /// otherwise, for about a point each.
+  private func loadDetails() {
+    detailsTask?.cancel()
+    detailsError = nil
+    guard let id = detailsID else { return }
+    if isDemo {
+      pullRequestDetails[id] = demoDetails(id)
+      return
+    }
+    detailsTask = Task { [weak self] in
+      while !Task.isCancelled {
+        guard let self, let pr = detailsPullRequest, pr.id == id else { return }
+        do {
+          let details = try await githubService.details(of: pr)
+          guard !Task.isCancelled else { return }
+          pullRequestDetails[id] = details
+          detailsError = nil
+        } catch {
+          if pullRequestDetails[id] == nil { detailsError = error.localizedDescription }
+        }
+        await pace()
+        let wait = pr.isActive() ? max(settings.activeRefreshSeconds, 10) : 60
+        do { try await Task.sleep(for: .seconds(wait)) } catch { return }
+      }
+    }
+  }
 
   private static func savedRepositoryFilter() -> Set<String> {
     let defaults = UserDefaults.standard
@@ -537,6 +585,22 @@ final class IslandStore {
     let announced = changes.filter {
       settings.announcedKinds.contains($0.kind.rawValue) && shows($0.repository)
     }
+    guard !announced.isEmpty else { return }
+    Task { await announce(announced) }
+  }
+
+  /// Names the checks behind a failure before announcing it, for about a point per PR, so
+  /// the banner reads "Checks failed: unit" rather than just "Checks failed".
+  private func announce(_ changes: [IslandEvent]) async {
+    var announced = changes
+    for index in announced.indices.filter({ announced[$0].kind == .failed }).prefix(3) {
+      guard
+        let pr = github?.pullRequests.first(where: { $0.url == announced[index].url }),
+        let details = try? await githubService.details(of: pr)
+      else { continue }
+      pullRequestDetails[pr.id] = details
+      announced[index].note = details.failureNote
+    }
     if settings.bannersEnabled,
       let latest = announced.min(by: { $0.kind.bannerPriority < $1.kind.bannerPriority })
     {
@@ -686,9 +750,11 @@ final class IslandStore {
     ]
     guard let id = examples[kind], let pr = github?.pullRequests.first(where: { $0.id == id })
     else { return nil }
-    return IslandEvent(
+    var event = IslandEvent(
       id: "showcase-\(kind.rawValue)", title: "\(pr.repository) #\(pr.number) · \(kind.label)",
       detail: pr.title, url: pr.url, occurredAt: Date(), kind: kind, repository: pr.repository)
+    if kind == .failed { event.note = demoDetails(id)?.failureNote }
+    return event
   }
 
   /// Example data only: shows one announcement's banner, to preview it.
@@ -814,12 +880,80 @@ final class IslandStore {
   private func notify(_ event: IslandEvent) {
     guard settings.notificationsEnabled, shows(event.repository) else { return }
     let content = UNMutableNotificationContent()
-    content.title = event.title
+    content.title = event.note.map { "\(event.title): \($0)" } ?? event.title
     content.body = event.detail
     content.userInfo = ["url": event.url.absoluteString]
     if settings.notificationSound { content.sound = .default }
     UNUserNotificationCenter.current().add(
       UNNotificationRequest(identifier: event.id, content: content, trigger: nil))
+  }
+
+  /// Example data only: a page for each example PR.
+  private func demoDetails(_ id: String) -> PullRequestDetails? {
+    guard let pr = github?.pullRequests.first(where: { $0.id == id }) else { return nil }
+    let now = Date()
+    let started = now.addingTimeInterval(-420)
+    func check(
+      _ name: String, _ outcome: Check.Outcome, seconds: TimeInterval = 180,
+      errors: [Check.Annotation] = []
+    ) -> Check {
+      Check(
+        name: name, workflow: "CI", outcome: outcome, startedAt: started,
+        completedAt: outcome == .running ? nil : started.addingTimeInterval(seconds),
+        url: pr.url, errors: errors)
+    }
+    var checks = [check("lint", .passed, seconds: 41), check("build", .passed, seconds: 212)]
+    switch id {
+    case "demo2":
+      checks.insert(
+        check(
+          "unit", .failed, seconds: 301,
+          errors: [
+            .init(
+              path: "Sources/Shortcuts/KeyMap.swift", line: 48,
+              message: "XCTAssertEqual failed: (\"⌘K\") is not equal to (\"⌘⇧K\")"),
+            .init(
+              path: "Sources/Shortcuts/Recorder.swift", line: 112,
+              message: "Fatal error: Unexpectedly found nil while unwrapping an Optional value"),
+          ]), at: 0)
+      checks.append(check("CI Success", .failed, seconds: 3))
+    case "demo3", "demo4":
+      checks += [check("unit", .running), check("e2e", .running)]
+    default:
+      checks += [check("unit", .passed, seconds: 287), check("e2e", .passed, seconds: 344)]
+    }
+    return PullRequestDetails(
+      id: id,
+      body: """
+        \(pr.title) so the island feels instant.
+
+        Measured on a cold launch: 1.4 s before, 0.6 s after. The cache is invalidated on every \
+        push, and falls back to a full read when it's older than a day.
+        """,
+      author: pr.author, baseRefName: "main", headRefName: "maya/\(pr.number)",
+      createdAt: now.addingTimeInterval(-26 * 3600), additions: 342, deletions: 61,
+      changedFiles: 9,
+      files: [
+        .init(path: "Sources/Core/Cache.swift", additions: 188, deletions: 12),
+        .init(path: "Sources/Core/Loader.swift", additions: 74, deletions: 31),
+        .init(path: "Tests/CoreTests/CacheTests.swift", additions: 61, deletions: 0),
+        .init(path: "Sources/App/Launch.swift", additions: 12, deletions: 9),
+        .init(path: "README.md", additions: 7, deletions: 9),
+      ],
+      commitCount: 6, requestedReviewers: id == "demo4" ? ["sam", "core"] : ["sam"],
+      reviews: [
+        .init(author: "lena", state: "APPROVED", submittedAt: now.addingTimeInterval(-5400))
+      ],
+      commentCount: 4,
+      comments: [
+        .init(
+          author: "lena", body: "Nice. Could the cache key include the locale?",
+          createdAt: now.addingTimeInterval(-7200)),
+        .init(
+          author: pr.author ?? "maya", body: "Good call, added in the last commit.",
+          createdAt: now.addingTimeInterval(-3600)),
+      ],
+      checks: checks, fetchedAt: now)
   }
 
   private func loadDemo() {

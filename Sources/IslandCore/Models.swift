@@ -505,6 +505,8 @@ public struct IslandEvent: Codable, Identifiable, Sendable {
   public var kind: PRStatus
   /// The PR's repository, as `owner/name`; nil in ledgers saved before it was recorded.
   public var repository: String?
+  /// More about the change when it's known, such as the checks that failed.
+  public var note: String?
 
   public init(
     id: String, title: String, detail: String, url: URL, occurredAt: Date, kind: PRStatus,

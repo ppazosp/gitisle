@@ -7,9 +7,14 @@ struct ActivityView: View {
   @Binding var contentHeight: CGFloat
 
   var body: some View {
-    switch store.activityLayout {
-    case .list: list
-    case .board: BoardView(store: store, contentHeight: $contentHeight)
+    Group {
+      switch store.activityLayout {
+      case .list: list
+      case .board: BoardView(store: store, contentHeight: $contentHeight)
+      }
+    }
+    .environment(\.openPullRequest) { pr in
+      withAnimation(Motion.snappy) { store.openDetails(pr) }
     }
   }
 
@@ -312,10 +317,16 @@ private struct StateChip: View {
 struct PRRow: View {
   let pr: PullRequest
   @State private var hovered = false
+  @Environment(\.openPullRequest) private var open
 
   var body: some View {
     Button {
-      NSWorkspace.shared.open(pr.url)
+      // ⌘-click opens GitHub, as a link would.
+      if NSEvent.modifierFlags.contains(.command) {
+        NSWorkspace.shared.open(pr.url)
+      } else {
+        open(pr)
+      }
     } label: {
       HStack(spacing: 10) {
         GlyphView(glyph: pr.glyph, size: 15).foregroundStyle(pr.glyphColor)
@@ -444,10 +455,15 @@ private struct BoardView: View {
 private struct PRCard: View {
   let pr: PullRequest
   @State private var hovered = false
+  @Environment(\.openPullRequest) private var open
 
   var body: some View {
     Button {
-      NSWorkspace.shared.open(pr.url)
+      if NSEvent.modifierFlags.contains(.command) {
+        NSWorkspace.shared.open(pr.url)
+      } else {
+        open(pr)
+      }
     } label: {
       VStack(alignment: .leading, spacing: 7) {
         HStack(spacing: 6) {

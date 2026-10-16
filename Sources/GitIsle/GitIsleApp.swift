@@ -86,6 +86,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
       store.repositoryFilter = Set(arguments[index + 1].split(separator: ",").map(String.init))
     }
     if arguments.contains("--repo-picker"), store.isDemo { store.repositoryPickerOpen = true }
+    // `--details <id>` opens an example PR's page, for example `--details demo2`.
+    if let index = arguments.firstIndex(of: "--details"), arguments.count > index + 1, store.isDemo,
+      let pr = store.github?.pullRequests.first(where: { $0.id == arguments[index + 1] })
+    {
+      store.openDetails(pr)
+    }
     if arguments.contains("--banner"),
       let pr = store.github?.pullRequests.first(where: {
         $0.state == "MERGED"

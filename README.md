@@ -101,6 +101,7 @@ To uninstall, quit GitIsle (right-click the island), then delete
 | --- | --- |
 | Open the island | Hover the notch for a moment, or click it |
 | Open a live or announced PR | Click the top row or the banner |
+| See a PR's checks, errors, reviews, and files | Click it in Activity; ⌘-click opens GitHub |
 | Switch between list and board | Use the toggle at the top right |
 | Filter | Use the state chips, the repository picker, and Today / 7 days / 30 days. Pick one or more repositories; the live bar, banners, and notifications follow the picker too |
 | Change settings | Click the gear, or right-click the island |

@@ -90,7 +90,7 @@ struct IslandView: View {
       let chrome = ExpandedIsland.chromeHeight(metrics, store: store)
       let board =
         store.tab == .activity && store.activityLayout == .board && !store.showingSettings
-        && !store.showingOnboarding
+        && !store.showingOnboarding && store.detailsPullRequest == nil
       let width = board ? metrics.boardWidth(columns: store.sections.count) : metrics.expandedWidth
       return CGSize(
         width: width + 2 * metrics.ear,
@@ -223,7 +223,7 @@ private struct EventBanner: View {
           .background(Circle().fill(event.kind.color.opacity(0.18)))
         VStack(alignment: .leading, spacing: 2) {
           HStack(spacing: 6) {
-            Text(event.kind.eventTitle).font(.system(size: 13, weight: .semibold))
+            Text(title).font(.system(size: 13, weight: .semibold))
             Text(reference).font(.system(size: 11)).foregroundStyle(.white.opacity(0.45))
           }
           Text(event.detail).font(.system(size: 12)).foregroundStyle(.white.opacity(0.7))
@@ -240,8 +240,13 @@ private struct EventBanner: View {
       .contentShape(Rectangle())
     }
     .buttonStyle(.plain)
-    .accessibilityLabel("\(event.kind.eventTitle): \(event.detail)")
+    .accessibilityLabel("\(title): \(event.detail)")
     .accessibilityHint("Opens the pull request on GitHub")
+  }
+
+  /// "Checks failed: unit" when the failing checks are known.
+  private var title: String {
+    event.note.map { "\(event.kind.eventTitle): \($0)" } ?? event.kind.eventTitle
   }
 
   /// "owner/repo #12" from the stored "owner/repo #12 · Merged" title.
@@ -276,6 +281,7 @@ private struct ExpandedIsland: View {
   /// State filters belong to Activity, in both layouts.
   static func showsFilterBar(_ store: IslandStore) -> Bool {
     store.tab == .activity && !store.showingSettings && !store.showingOnboarding
+      && store.detailsPullRequest == nil
   }
 
   static func topInset(_ metrics: IslandMetrics) -> CGFloat {
@@ -299,6 +305,8 @@ private struct ExpandedIsland: View {
           OnboardingView(store: store, contentHeight: $contentHeight)
         } else if store.showingSettings {
           SettingsView(store: store, contentHeight: $contentHeight)
+        } else if store.tab == .activity, let pr = store.detailsPullRequest {
+          PRDetailsView(store: store, pr: pr, contentHeight: $contentHeight)
         } else {
           switch store.tab {
           case .activity: ActivityView(store: store, contentHeight: $contentHeight)
@@ -308,7 +316,9 @@ private struct ExpandedIsland: View {
       }
       .id(
         store.showingOnboarding
-          ? "onboarding" : store.showingSettings ? "settings" : store.tab.rawValue
+          ? "onboarding"
+          : store.showingSettings
+            ? "settings" : store.detailsPullRequest.map { "pr-\($0.id)" } ?? store.tab.rawValue
       )
       .transition(.opacity.animation(.easeOut(duration: 0.12)))
       .frame(maxHeight: .infinity, alignment: .top)
@@ -369,6 +379,19 @@ private struct ExpandedIsland: View {
         Spacer()
       }
       .padding(.horizontal, 22)
+      .frame(height: Self.headerHeight)
+    } else if store.tab == .activity, let pr = store.detailsPullRequest {
+      HStack(spacing: 10) {
+        FooterButton(glyph: nil, systemImage: "chevron.left", label: "Back") {
+          withAnimation(Motion.snappy) { store.closeDetails() }
+        }
+        (Text(verbatim: "\(pr.repository) ").foregroundStyle(.white.opacity(0.5))
+          + Text(verbatim: "#\(pr.number)"))
+          .font(.system(size: 14, weight: .semibold)).lineLimit(1)
+        Spacer()
+        LinkButton(title: "Open on GitHub", url: pr.url)
+      }
+      .padding(.leading, 22).padding(.trailing, 28)
       .frame(height: Self.headerHeight)
     } else {
       tabsHeader
