@@ -77,6 +77,13 @@ struct PRDetailsView: View {
       }
       .frame(maxHeight: .infinity, alignment: .top)
     }
+    // Back from a file, the page returns to its columns' height; they don't measure again.
+    .onChange(of: store.openFilePath) { _, path in
+      if path == nil, let tallest = columnHeights.max(), tallest > 0 {
+        bodyHeight = tallest
+        report()
+      }
+    }
   }
 
   @State private var columnHeights: [CGFloat] = [0, 0]
@@ -86,7 +93,7 @@ struct PRDetailsView: View {
   private func measured(_ height: CGFloat, column: Int? = nil) {
     if let column {
       columnHeights[column] = height
-      bodyHeight = columnHeights.max() ?? height
+      if store.openFilePath == nil { bodyHeight = columnHeights.max() ?? height }
     } else {
       bodyHeight = height
     }
@@ -107,7 +114,7 @@ struct PRDetailsView: View {
       }
       HStack(spacing: 14) {
         if let details, !details.headRefName.isEmpty {
-          Meta(glyph: .branch) {
+          Meta(glyph: .branch, shrinks: true) {
             Text(verbatim: "\(details.headRefName) → \(details.baseRefName)")
               .font(.system(size: 11, design: .monospaced)).lineLimit(1)
               .truncationMode(.middle)
@@ -125,7 +132,7 @@ struct PRDetailsView: View {
             .help("Commits")
           Meta(glyph: .comment) { Text("\(details.commentCount)") }.help("Comments")
           Spacer(minLength: 8)
-          Reviewers(details: details)
+          Reviewers(details: details).fixedSize()
         }
       }
       .font(.system(size: 11.5)).foregroundStyle(.white.opacity(0.5))
@@ -138,6 +145,8 @@ struct PRDetailsView: View {
 private struct Meta<Value: View>: View {
   var glyph: Glyph?
   var systemImage: String?
+  /// Whether the value may shorten when the line runs out of room, as a long branch name does.
+  var shrinks = false
   @ViewBuilder let value: Value
 
   var body: some View {
@@ -149,7 +158,7 @@ private struct Meta<Value: View>: View {
       }
       value
     }
-    .fixedSize()
+    .fixedSize(horizontal: !shrinks, vertical: false)
   }
 }
 
