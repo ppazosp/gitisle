@@ -402,12 +402,15 @@ struct PRRow: View {
         if pile == nil, let depth = stacks[pr.id]?.depth, depth > 0 {
           StackConnector(depth: min(depth, 3))
         }
-        GlyphView(glyph: pr.glyph, size: 15).foregroundStyle(pr.glyphColor)
-          .frame(width: 18)
+        if let pile {
+          StackIcon(pile: pile).frame(width: 18)
+        } else {
+          GlyphView(glyph: pr.glyph, size: 15).foregroundStyle(pr.glyphColor)
+            .frame(width: 18)
+        }
         VStack(alignment: .leading, spacing: 3) {
           Text(pr.title).font(.system(size: 12.5, weight: .medium)).lineLimit(1)
           HStack(alignment: .firstTextBaseline, spacing: 4) {
-            if let pile { StackCount(pile: pile) }
             Text(verbatim: "#\(pr.number)")
             if pile == nil { StackLabel(link: stacks[pr.id]) }
             Text("·")
@@ -664,6 +667,26 @@ private struct ListStack: View {
           .allowsHitTesting(unfolded || top)
       }
     }
+  }
+}
+
+/// A folded stack's icon in the list: a stack coloured by its worst PR, with a badge counting
+/// its PRs.
+private struct StackIcon: View {
+  let pile: [PullRequest]
+
+  var body: some View {
+    Image(systemName: "square.stack.3d.up.fill").font(.system(size: 14, weight: .medium))
+      .foregroundStyle(StackCount.color(pile))
+      .overlay(alignment: .bottomTrailing) {
+        Text("\(pile.count)").font(.system(size: 8.5, weight: .bold)).monospacedDigit()
+          .foregroundStyle(.black)
+          .frame(minWidth: 12, minHeight: 12)
+          .background(Circle().fill(.white.opacity(0.85)))
+          .background(Circle().fill(.black).padding(-1.5))
+          .offset(x: 6, y: 5)
+      }
+      .help("A stack of \(pile.count) PRs. Click to open it.")
   }
 }
 
