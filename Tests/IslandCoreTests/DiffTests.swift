@@ -42,8 +42,7 @@ struct DiffTests {
     #expect(File.kind("DELETED") == .removed && File.kind("RENAMED") == .renamed)
     #expect(File.kind("CHANGED") == .modified && File.kind(nil) == .modified)
     let file = File(path: "apps/web/lib/sandbox/exec.ts", additions: 1, deletions: 0)
-    #expect(file.name == "exec.ts" && file.folder == "sandbox/")
-    #expect(File(path: "README.md", additions: 1, deletions: 0).folder == "")
+    #expect(file.name == "exec.ts")
   }
 
   @Test func patchesComeFromOneRESTPagePerHundredFiles() async throws {

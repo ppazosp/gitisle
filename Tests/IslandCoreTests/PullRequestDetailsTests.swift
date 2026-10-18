@@ -115,7 +115,6 @@ struct PullRequestDetailsTests {
     #expect(details.additions == 120 && details.deletions == 8 && details.changedFiles == 2)
     #expect(details.files.map(\.path) == ["Sources/Cache.swift", "Sources/New.swift"])
     #expect(details.files.map(\.kind) == [.modified, .added])
-    #expect(details.files.map(\.folder) == ["Sources/", "Sources/"])
     // Avatars come only from GitHub's avatar host.
     #expect(details.requestedReviewers == [.init(name: "maya"), .init(name: "core")])
     #expect(details.reviews.map(\.author) == ["sam", "chatgpt-codex-connector"])

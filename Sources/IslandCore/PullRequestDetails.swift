@@ -32,12 +32,6 @@ public struct PullRequestDetails: Equatable, Sendable {
 
     /// The file's name, after its folder.
     public var name: String { path.split(separator: "/").last.map(String.init) ?? path }
-
-    /// The folder the file is in, such as "sandbox/"; empty at the repository root.
-    public var folder: String {
-      let parts = path.split(separator: "/")
-      return parts.count > 1 ? "\(parts[parts.count - 2])/" : ""
-    }
   }
 
   /// Someone asked to review, or who has: a person, a team, or a bot.
