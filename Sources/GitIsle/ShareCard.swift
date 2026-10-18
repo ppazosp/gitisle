@@ -2,7 +2,7 @@ import AppKit
 import IslandCore
 import SwiftUI
 
-/// An image of a merged PR to post: whose repository, who wrote it, and how much it changed.
+/// An image of a PR to post: whose repository, who wrote it, its state, and how much it changed.
 /// Rendered from SwiftUI at twice its 1200 × 630 size, the shape link previews use.
 struct ShareCard: View {
   let pr: PullRequest
@@ -39,13 +39,14 @@ struct ShareCard: View {
           Text(verbatim: "#\(pr.number)").font(.system(size: 30, weight: .medium))
             .foregroundStyle(.white.opacity(0.4))
           Spacer()
+          let tag = stateTag
           HStack(spacing: 8) {
-            GlyphView(glyph: .merge, size: 20)
-            Text("Merged")
+            GlyphView(glyph: tag.glyph, size: 20)
+            Text(tag.label)
           }
           .font(.system(size: 22, weight: .semibold)).foregroundStyle(.white)
           .padding(.horizontal, 18).padding(.vertical, 9)
-          .background(Capsule().fill(Palette.merged))
+          .background(Capsule().fill(tag.color))
         }
         Spacer(minLength: 24)
         Text(pr.title).font(.system(size: 58, weight: .bold)).tracking(-1.4)
@@ -54,9 +55,8 @@ struct ShareCard: View {
           let author = details.author ?? pr.author ?? ""
           picture(authorImage, size: 40, circular: true, fallback: author)
           Text(author).font(.system(size: 26, weight: .medium))
-          if let open = openFor {
-            Text("· merged after \(open)").font(.system(size: 24))
-              .foregroundStyle(.white.opacity(0.5))
+          if let timing {
+            Text("· \(timing)").font(.system(size: 24)).foregroundStyle(.white.opacity(0.5))
           }
         }
         .padding(.top, 22)
@@ -130,14 +130,27 @@ struct ShareCard: View {
       endPoint: .trailing)
   }
 
-  /// "3h 12m", from opening to merging.
-  private var openFor: String? {
-    guard let created = details.createdAt ?? pr.createdAt, let merged = pr.mergedAt else {
-      return nil
+  /// The PR's state as GitHub colours it: merged, merging, open, draft, or closed.
+  private var stateTag: (glyph: Glyph, label: String, color: Color) {
+    switch pr.group {
+    case .merged: (.merge, "Merged", Palette.merged)
+    case .merging: (.mergeQueue, "Merging", Palette.merging)
+    case .draft: (.draft, "Draft", Palette.draft)
+    case .open: (.pullRequest, "Open", Palette.open)
+    case nil: (.closed, "Closed", Palette.failed)
     }
-    let seconds = merged.timeIntervalSince(created)
-    return seconds < 86_400 * 2
-      ? Format.duration(seconds) : "\(Int(seconds / 86_400)) days"
+  }
+
+  /// "merged after 3h 12m", from opening to merging, or "opened 2h ago" for one still open.
+  private var timing: String? {
+    guard let created = details.createdAt ?? pr.createdAt else { return nil }
+    if let merged = pr.mergedAt {
+      let seconds = merged.timeIntervalSince(created)
+      return "merged after "
+        + (seconds < 86_400 * 2 ? Format.duration(seconds) : "\(Int(seconds / 86_400)) days")
+    }
+    let age = Format.age(created)
+    return age == "now" ? "opened just now" : "opened \(age) ago"
   }
 
   /// The card as a PNG, at twice its size.
@@ -163,7 +176,7 @@ private struct Stat: View {
   }
 }
 
-/// "Copy card" and "Save card…" for a merged PR, in a menu or a context menu.
+/// "Copy card" and "Save card…" for a PR, in a menu or a context menu.
 struct ShareCardActions: View {
   let store: IslandStore
   let pr: PullRequest

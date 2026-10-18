@@ -62,17 +62,8 @@ struct PRDetailsView: View {
               measured($0)
             }
         } else {
-          HStack(spacing: 8) {
-            ProgressView().controlSize(.small)
-            Text("Loading the pull request…").font(.system(size: 12))
-              .foregroundStyle(.white.opacity(0.5))
-          }
-          .frame(maxWidth: .infinity).padding(.vertical, 24)
-          .onGeometryChange(for: CGFloat.self) {
-            $0.size.height
-          } action: {
-            measured($0)
-          }
+          // The columns' shape from what the list already knows, so loading doesn't jump.
+          LoadingColumns(pr: pr) { measured($0) }
         }
       }
       .frame(maxHeight: .infinity, alignment: .top)
@@ -102,42 +93,54 @@ struct PRDetailsView: View {
 
   private func report() { contentHeight = headingHeight + 1 + bodyHeight }
 
+  /// Drawn from the list's copy of the PR first, then its page once read, so it doesn't jump.
   private var heading: some View {
-    VStack(alignment: .leading, spacing: 8) {
+    let head = details?.headRefName ?? pr.headRefName ?? ""
+    let base = details?.baseRefName ?? pr.baseRefName ?? ""
+    let additions = details?.additions ?? pr.additions
+    let deletions = details?.deletions ?? pr.deletions
+    let commits = details?.commitCount ?? pr.commitCount
+    return VStack(alignment: .leading, spacing: 8) {
       HStack(alignment: .center, spacing: 10) {
         RepoAvatar(
-          url: details?.authorAvatar, size: 22, circular: true, name: details?.author ?? pr.author
+          url: details?.authorAvatar ?? pr.authorAvatar, size: 22, circular: true,
+          name: details?.author ?? pr.author
         )
         .help(details?.author ?? pr.author ?? "")
         Text(pr.title).font(.system(size: 15, weight: .semibold)).lineLimit(2)
+          .fixedSize(horizontal: false, vertical: true)
           .textSelection(.enabled)
       }
       HStack(spacing: 14) {
-        if let details, !details.headRefName.isEmpty {
+        if !head.isEmpty {
           Meta(glyph: .branch, shrinks: true) {
-            Text(verbatim: "\(details.headRefName) → \(details.baseRefName)")
+            Text(verbatim: "\(head) → \(base)")
               .font(.system(size: 11, design: .monospaced)).lineLimit(1)
               .truncationMode(.middle)
           }
-          .help("\(details.headRefName) into \(details.baseRefName)")
+          .help("\(head) into \(base)")
         }
-        if let created = details?.createdAt {
+        if let created = details?.createdAt ?? pr.createdAt {
           Meta(glyph: .clock) { Text(Format.age(created)) }.help("Opened")
         }
-        if let details {
-          (Text("+\(details.additions)").foregroundStyle(Palette.open)
-            + Text(" −\(details.deletions)").foregroundStyle(Palette.failed))
-            .font(.system(size: 11, design: .monospaced))
-          Meta(glyph: .commit) { Text("\(details.commitCount)") }
-            .help("Commits")
-          Meta(glyph: .comment) { Text("\(details.commentCount)") }.help("Comments")
-          Spacer(minLength: 8)
-          Reviewers(details: details).fixedSize()
+        if let additions, let deletions {
+          (Text("+\(additions)").foregroundStyle(Palette.open)
+            + Text(" −\(deletions)").foregroundStyle(Palette.failed))
+            .font(.system(size: 11, design: .monospaced)).fixedSize()
         }
+        if let commits { Meta(glyph: .commit) { Text("\(commits)") }.help("Commits") }
+        if let details {
+          Meta(glyph: .comment) { Text("\(details.commentCount)") }.help("Comments")
+        }
+        Spacer(minLength: 8)
+        if let details { Reviewers(details: details).fixedSize() }
       }
+      // As tall as the reviewers' faces, so the line doesn't grow when they load.
+      .frame(minHeight: 20)
       .font(.system(size: 11.5)).foregroundStyle(.white.opacity(0.5))
       StackStrip(store: store, pr: pr)
     }
+    .frame(maxWidth: .infinity, alignment: .leading)
   }
 }
 
@@ -644,5 +647,83 @@ private struct DiffLines: View {
     case .removed: Palette.failed.opacity(0.12)
     case .context: .white.opacity(0.02)
     }
+  }
+}
+
+/// The two columns while the page loads: their headers with what the list already knows, and
+/// faint rows where files and checks will be.
+private struct LoadingColumns: View {
+  let pr: PullRequest
+  let onHeight: (CGFloat) -> Void
+
+  var body: some View {
+    let files = min(pr.changedFiles ?? 4, 12)
+    let checks = min(pr.checkSummary?.total ?? 4, 12)
+    GeometryReader { proxy in
+      HStack(alignment: .top, spacing: 0) {
+        VStack(spacing: 0) {
+          ColumnHeader(systemImage: "doc", title: "Files") {
+            if let count = pr.changedFiles { Text("\(count)").monospacedDigit() }
+          }
+          ForEach(0..<files, id: \.self) { PlaceholderRow(index: $0) }
+        }
+        .padding(.leading, 28).padding(.trailing, 18)
+        .frame(width: proxy.size.width * 0.57)
+        Rectangle().fill(Palette.hairline).frame(width: 1)
+        VStack(spacing: 0) {
+          ColumnHeader(systemImage: "checkmark.circle", title: "Checks") {
+            if let summary = pr.checkSummary {
+              HStack(spacing: 8) {
+                if summary.failed > 0 {
+                  HStack(spacing: 4) {
+                    GlyphView(glyph: .failFill, size: 12).foregroundStyle(Palette.failed)
+                    Text("\(summary.failed)")
+                  }
+                }
+                if summary.pending > 0 {
+                  HStack(spacing: 4) {
+                    RunningRing(size: 11)
+                    Text("\(summary.pending)")
+                  }
+                }
+                if summary.passed > 0 {
+                  HStack(spacing: 4) {
+                    GlyphView(glyph: .checkFill, size: 12).foregroundStyle(Palette.open)
+                    Text("\(summary.passed)")
+                  }
+                }
+              }
+              .monospacedDigit()
+            }
+          }
+          ForEach(0..<checks, id: \.self) { PlaceholderRow(index: $0 + 3) }
+        }
+        .padding(.leading, 18).padding(.trailing, 28)
+      }
+    }
+    .onAppear {
+      onHeight(
+        PRDetailsView.columnHeaderHeight + CGFloat(max(files, checks)) * PRDetailsView.rowHeight
+          + 10)
+    }
+  }
+}
+
+/// A faint row standing in for a file or check that hasn't loaded.
+private struct PlaceholderRow: View {
+  let index: Int
+
+  var body: some View {
+    let widths: [CGFloat] = [0.62, 0.45, 0.7, 0.52, 0.38, 0.58, 0.66, 0.42]
+    GeometryReader { proxy in
+      HStack(spacing: 9) {
+        RoundedRectangle(cornerRadius: 3.5).fill(.white.opacity(0.07)).frame(width: 14, height: 14)
+        RoundedRectangle(cornerRadius: 3).fill(.white.opacity(0.07))
+          .frame(width: proxy.size.width * widths[index % widths.count], height: 9)
+        Spacer(minLength: 0)
+      }
+      .frame(maxHeight: .infinity)
+    }
+    .frame(height: PRDetailsView.rowHeight)
   }
 }

@@ -327,7 +327,7 @@ private struct PRContextMenu: View {
       NSPasteboard.general.clearContents()
       NSPasteboard.general.setString(pr.url.absoluteString, forType: .string)
     }
-    if pr.state == "MERGED", let store {
+    if let store {
       Divider()
       ShareCardActions(store: store, pr: pr)
     }

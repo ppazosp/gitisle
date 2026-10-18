@@ -107,6 +107,13 @@ public struct PullRequest: Codable, Hashable, Identifiable, Sendable {
   /// read.
   public var headRefName: String?
   public var baseRefName: String?
+  /// The author's picture, and the PR's size: enough for its page to draw before the rest
+  /// loads. Nil in snapshots saved before they were read.
+  public var authorAvatar: URL?
+  public var additions: Int?
+  public var deletions: Int?
+  public var changedFiles: Int?
+  public var commitCount: Int?
 
   public init(
     id: String, number: Int, repository: String, title: String, url: URL, state: String = "OPEN",
@@ -115,8 +122,15 @@ public struct PullRequest: Codable, Hashable, Identifiable, Sendable {
     checkSummary: CheckSummary? = nil, headOID: String = "", autoMerge: Bool = false,
     queuePosition: Int? = nil, mergingSince: Date? = nil, updatedAt: Date = Date(),
     mergedAt: Date? = nil, author: String? = nil, ownerAvatar: URL? = nil, createdAt: Date? = nil,
-    previews: [PreviewDeploy]? = nil, headRefName: String? = nil, baseRefName: String? = nil
+    previews: [PreviewDeploy]? = nil, headRefName: String? = nil, baseRefName: String? = nil,
+    authorAvatar: URL? = nil, additions: Int? = nil, deletions: Int? = nil,
+    changedFiles: Int? = nil, commitCount: Int? = nil
   ) {
+    self.authorAvatar = authorAvatar
+    self.additions = additions
+    self.deletions = deletions
+    self.changedFiles = changedFiles
+    self.commitCount = commitCount
     self.headRefName = headRefName
     self.baseRefName = baseRefName
     self.createdAt = createdAt

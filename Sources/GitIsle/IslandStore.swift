@@ -126,7 +126,7 @@ final class IslandStore {
     }
   }
 
-  /// A merged PR's share card as a PNG, reading its page first if it hasn't been.
+  /// A PR's share card as a PNG, reading its page first if it hasn't been.
   func shareCard(for pr: PullRequest) async -> Data? {
     var details = pullRequestDetails[pr.id]
     if details == nil {
@@ -152,6 +152,20 @@ final class IslandStore {
   private static func image(_ url: URL?) async -> NSImage? {
     guard let url, let (data, _) = try? await URLSession.shared.data(from: url) else { return nil }
     return NSImage(data: data)
+  }
+
+  /// The share card as a PNG file in a temporary folder, named after the PR, for the share
+  /// menu.
+  func shareCardFile(for pr: PullRequest) async -> URL? {
+    guard let png = await shareCard(for: pr) else { return nil }
+    let folder = FileManager.default.temporaryDirectory.appending(path: "GitIsle share cards")
+    let name = pr.repository.split(separator: "/").last.map(String.init) ?? "pr"
+    let file = folder.appending(path: "\(name)-\(pr.number).png")
+    do {
+      try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+      try png.write(to: file, options: .atomic)
+      return file
+    } catch { return nil }
   }
 
   func copyShareCard(for pr: PullRequest) async {
@@ -1167,6 +1181,8 @@ final class IslandStore {
       var pr = pr
       pr.headRefName = "\(pr.author ?? "maya")/\(pr.number)"
       pr.baseRefName = pr.id == "demo2" ? "maya/436" : "main"
+      // The same size as their example pages.
+      (pr.additions, pr.deletions, pr.changedFiles, pr.commitCount) = (342, 61, 9, 6)
       return pr
     }
     setGitHub(GitHubSnapshot(login: "maya", pullRequests: branched))

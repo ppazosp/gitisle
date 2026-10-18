@@ -56,7 +56,12 @@ struct PullRequestDetailsTests {
       ],
       "latestReviews": [
         "nodes": [
-          ["author": ["login": "sam"], "state": "APPROVED", "submittedAt": "2026-10-13T11:00:00Z"]
+          ["author": ["login": "sam"], "state": "APPROVED", "submittedAt": "2026-10-13T11:00:00Z"],
+          // Review bots comment on most PRs; they aren't reviewers.
+          [
+            "author": ["__typename": "Bot", "login": "chatgpt-codex-connector"],
+            "state": "COMMENTED", "submittedAt": "2026-10-13T11:05:00Z",
+          ],
         ]
       ],
       "comments": ["totalCount": 7],

@@ -718,7 +718,7 @@ struct FooterButton: View {
   }
 }
 
-/// Opens the system share menu for a PR: its link, and its share card once it's merged.
+/// Opens the system share menu for a PR's share card and link.
 private struct ShareButton: View {
   let store: IslandStore
   let pr: PullRequest
@@ -733,11 +733,8 @@ private struct ShareButton: View {
 
   private func share() async {
     var items: [Any] = [pr.url]
-    if pr.state == "MERGED", let png = await store.shareCard(for: pr),
-      let image = NSImage(data: png)
-    {
-      items.insert(image, at: 0)
-    }
+    // The share menu ignores an image next to a link, but takes an image file.
+    if let file = await store.shareCardFile(for: pr) { items.insert(file, at: 0) }
     guard let view = anchor.view else { return }
     NSSharingServicePicker(items: items).show(
       relativeTo: view.bounds, of: view, preferredEdge: .minY)

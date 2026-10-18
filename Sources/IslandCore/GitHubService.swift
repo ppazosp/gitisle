@@ -10,10 +10,11 @@ public actor GitHubService {
     fragment PRFields on PullRequest {
       id number title url state isDraft createdAt updatedAt mergedAt mergeable mergeStateStatus
       reviewDecision
-      headRefOid headRefName baseRefName
+      headRefOid headRefName baseRefName additions deletions changedFiles
       autoMergeRequest { enabledAt } mergeQueueEntry { position enqueuedAt }
-      repository { nameWithOwner owner { avatarUrl(size: 64) } } author { login }
-      commits(last: 1) { nodes { commit { statusCheckRollup {
+      repository { nameWithOwner owner { avatarUrl(size: 64) } }
+      author { login avatarUrl(size: 64) }
+      commits(last: 1) { totalCount nodes { commit { statusCheckRollup {
         state
         contexts(first: 0) {
           checkRunCountsByState { state count }
@@ -323,7 +324,11 @@ public actor GitHubService {
       ownerAvatar: avatar(row["repository"]),
       createdAt: (row["createdAt"] as? String).flatMap(Dates.parse),
       previews: (commit?["deployments"] as? [String: Any]).map(previews),
-      headRefName: row["headRefName"] as? String, baseRefName: row["baseRefName"] as? String)
+      headRefName: row["headRefName"] as? String, baseRefName: row["baseRefName"] as? String,
+      authorAvatar: personAvatar((row["author"] as? [String: Any])?["avatarUrl"]),
+      additions: row["additions"] as? Int, deletions: row["deletions"] as? Int,
+      changedFiles: row["changedFiles"] as? Int,
+      commitCount: (row["commits"] as? [String: Any])?["totalCount"] as? Int)
   }
 
   /// Previews from a commit's `deployments` connection.
@@ -420,9 +425,9 @@ extension GitHubService {
           additions deletions changedFiles
           files(first: 100) { nodes { path additions deletions changeType } }
           reviewRequests(first: 10) { nodes { requestedReviewer {
-            ... on User { login avatarUrl(size: 64) } ... on Team { name avatarUrl(size: 64) }
-            ... on Bot { login avatarUrl(size: 64) } } } }
-          latestReviews(first: 10) { nodes { author { login avatarUrl(size: 64) } state submittedAt } }
+            ... on User { login avatarUrl(size: 64) } ... on Team { name avatarUrl(size: 64) } } } }
+          latestReviews(first: 10) { nodes {
+            author { __typename login avatarUrl(size: 64) } state submittedAt } }
           comments { totalCount }
           commits(last: 1) { totalCount nodes { commit {
             \(Self.deployments)
@@ -470,8 +475,11 @@ extension GitHubService {
       guard let name = (reviewer?["login"] ?? reviewer?["name"]) as? String else { return nil }
       return .init(name: name, avatar: face(reviewer))
     }
+    // Review bots, such as Codex's, comment on most PRs; reviewers are people.
     let reviews = nodes(node["latestReviews"]).compactMap { review -> PullRequestDetails.Review? in
-      guard let author = login(review["author"]), let state = review["state"] as? String else {
+      guard let author = login(review["author"]), let state = review["state"] as? String,
+        (review["author"] as? [String: Any])?["__typename"] as? String != "Bot"
+      else {
         return nil
       }
       return .init(

@@ -161,6 +161,21 @@ struct GitHubServiceTests {
     #expect(result.pullRequests.first?.state == "MERGED")
   }
 
+  @Test func theListCarriesWhatAPRPageDrawsFirst() throws {
+    var sized = row("sized")
+    sized["additions"] = 120
+    sized["deletions"] = 8
+    sized["changedFiles"] = 3
+    sized["author"] = [
+      "login": "person", "avatarUrl": "https://avatars.githubusercontent.com/u/1?v=4",
+    ]
+    sized["commits"] = ["totalCount": 4, "nodes": []]
+    let pr = try GitHubService.decode(sized)
+    #expect(pr.additions == 120 && pr.deletions == 8 && pr.changedFiles == 3)
+    #expect(pr.commitCount == 4 && pr.authorAvatar?.host() == "avatars.githubusercontent.com")
+    #expect(try GitHubService.decode(row("legacy")).additions == nil)
+  }
+
   @Test func creationTimeDecodes() throws {
     var opened = row("opened")
     opened["createdAt"] = "2026-10-13T09:00:00Z"
