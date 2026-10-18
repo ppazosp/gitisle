@@ -48,10 +48,10 @@ struct PRDetailsView: View {
           }
         } else if let error = store.detailsError {
           Text(error).font(.system(size: 11.5)).foregroundStyle(Palette.attention)
-            .textSelection(.enabled).padding(.horizontal, 28).padding(.vertical, 16)
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .multilineTextAlignment(.center).textSelection(.enabled).padding(.horizontal, 28)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
-          // The columns' shape from what the list already knows, so loading doesn't jump.
+          // The columns' headers from what the list already knows, so loading doesn't jump.
           LoadingColumns(pr: pr)
             .transition(.opacity)
         }
@@ -629,7 +629,9 @@ private struct FileDiffView: View {
         ProgressView().controlSize(.small)
         Text("Loading the changes…").font(.system(size: 12)).foregroundStyle(.white.opacity(0.5))
       }
-      .frame(maxWidth: .infinity).padding(.vertical, 20)
+      // In the middle of the diff's space, not at its top.
+      .frame(maxWidth: .infinity)
+      .containerRelativeFrame(.vertical)
     }
   }
 }
@@ -774,20 +776,18 @@ private enum DiffStyle {
 }
 
 /// The two columns while the page loads: their headers with what the list already knows, and
-/// faint rows where files and checks will be.
+/// a spinner in the middle of each.
 private struct LoadingColumns: View {
   let pr: PullRequest
 
   var body: some View {
-    let files = min(pr.changedFiles ?? 4, 12)
-    let checks = min(pr.checkSummary?.total ?? 4, 12)
     GeometryReader { proxy in
       HStack(alignment: .top, spacing: 0) {
         VStack(spacing: 0) {
           ColumnHeader(systemImage: "doc", title: "Files") {
             if let count = pr.changedFiles { Text("\(count)").monospacedDigit() }
           }
-          ForEach(0..<files, id: \.self) { PlaceholderRow(index: $0) }
+          Spinner()
         }
         .padding(.leading, 28).padding(.trailing, 18)
         .frame(width: proxy.size.width * 0.57)
@@ -818,7 +818,7 @@ private struct LoadingColumns: View {
               .monospacedDigit()
             }
           }
-          ForEach(0..<checks, id: \.self) { PlaceholderRow(index: $0 + 3) }
+          Spinner()
         }
         .padding(.leading, 18).padding(.trailing, 28)
       }
@@ -826,22 +826,10 @@ private struct LoadingColumns: View {
   }
 }
 
-/// A faint row standing in for a file or check that hasn't loaded.
-private struct PlaceholderRow: View {
-  let index: Int
-
+/// A small spinner in the middle of a column's space while it loads.
+private struct Spinner: View {
   var body: some View {
-    let widths: [CGFloat] = [0.62, 0.45, 0.7, 0.52, 0.38, 0.58, 0.66, 0.42]
-    GeometryReader { proxy in
-      HStack(spacing: 9) {
-        RoundedRectangle(cornerRadius: 3.5).fill(.white.opacity(0.07)).frame(width: 14, height: 14)
-        RoundedRectangle(cornerRadius: 3).fill(.white.opacity(0.07))
-          .frame(width: proxy.size.width * widths[index % widths.count], height: 9)
-        Spacer(minLength: 0)
-      }
-      .frame(maxHeight: .infinity)
-    }
-    .frame(height: PRDetailsView.rowHeight)
+    ProgressView().controlSize(.small).frame(maxWidth: .infinity, maxHeight: .infinity)
   }
 }
 
