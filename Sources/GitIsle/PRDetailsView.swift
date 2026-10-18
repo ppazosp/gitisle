@@ -605,6 +605,12 @@ private struct FileDiffView: View {
   let store: IslandStore
   let file: PullRequestDetails.FileChange
   let onHeight: (CGFloat) -> Void
+  /// One column or side by side; the choice stays for the next file.
+  @AppStorage("diffLayout") private var layout: DiffLayout = .unified
+
+  enum DiffLayout: String {
+    case unified, split
+  }
 
   var body: some View {
     VStack(spacing: 0) {
@@ -628,6 +634,16 @@ private struct FileDiffView: View {
         (Text("+\(file.additions)").foregroundStyle(Palette.open)
           + Text(" −\(file.deletions)").foregroundStyle(Palette.failed))
           .font(.system(size: 11, design: .monospaced)).fixedSize()
+        HStack(spacing: 2) {
+          LayoutButton(systemImage: "rectangle", label: "One column", on: layout == .unified) {
+            layout = .unified
+          }
+          LayoutButton(
+            systemImage: "rectangle.split.2x1", label: "Side by side", on: layout == .split
+          ) {
+            layout = .split
+          }
+        }
       }
       .font(.system(size: 12))
       .frame(height: PRDetailsView.columnHeaderHeight)
@@ -652,7 +668,7 @@ private struct FileDiffView: View {
           .font(.system(size: 11.5)).foregroundStyle(.white.opacity(0.45))
           .frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 8)
       } else {
-        DiffLines(lines: Diff.lines(patch))
+        DiffLines(lines: Diff.lines(patch), split: layout == .split)
       }
     } else if let error = store.patchError {
       Text(error).font(.system(size: 11.5)).foregroundStyle(Palette.attention)
@@ -667,26 +683,37 @@ private struct FileDiffView: View {
   }
 }
 
+/// One file's diff, as one column of old and new lines, or side by side with the old file on
+/// the left and the new on the right. Inside a changed line, the words that changed stand out.
 private struct DiffLines: View {
   let lines: [Diff.Line]
+  let split: Bool
 
   var body: some View {
+    let marks = Diff.highlights(lines)
     LazyVStack(alignment: .leading, spacing: 0) {
-      ForEach(Array(lines.enumerated()), id: \.offset) { _, line in
-        HStack(alignment: .firstTextBaseline, spacing: 0) {
-          Text(line.kind == .hunk ? "" : "\((line.newNumber ?? line.oldNumber) ?? 0)")
-            .foregroundStyle(.white.opacity(0.3)).frame(width: 40, alignment: .trailing)
-            .padding(.trailing, 12)
-          Text(sign(line.kind)).foregroundStyle(signColor(line.kind)).frame(width: 14)
-          // Code wraps; a hunk's header is only context, so it keeps to one line.
-          Text(line.text.isEmpty ? " " : line.text).foregroundStyle(textColor(line.kind))
-            .lineLimit(line.kind == .hunk ? 1 : nil)
-            .fixedSize(horizontal: false, vertical: line.kind != .hunk)
-            .frame(maxWidth: .infinity, alignment: .leading)
+      if split {
+        ForEach(Array(Diff.split(lines).enumerated()), id: \.offset) { _, row in
+          if let hunk = row.hunk {
+            HunkRow(line: lines[hunk])
+          } else {
+            HStack(alignment: .top, spacing: 0) {
+              half(row.left, number: \.oldNumber, marks: marks)
+              Rectangle().fill(Palette.hairline).frame(width: 1)
+              half(row.right, number: \.newNumber, marks: marks)
+            }
+            .fixedSize(horizontal: false, vertical: true)
+          }
         }
-        .font(.system(size: 11, design: .monospaced))
-        .padding(.vertical, 2).padding(.trailing, 10)
-        .background(background(line.kind))
+      } else {
+        ForEach(Array(lines.enumerated()), id: \.offset) { index, line in
+          if line.kind == .hunk {
+            HunkRow(line: line)
+          } else {
+            CodeLine(
+              line: line, number: line.newNumber ?? line.oldNumber, segments: marks[index])
+          }
+        }
       }
     }
     .textSelection(.enabled)
@@ -695,7 +722,71 @@ private struct DiffLines: View {
       RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(Palette.hairline))
   }
 
-  private func sign(_ kind: Diff.Line.Kind) -> String {
+  /// One side of a side-by-side row; empty where the other side has no counterpart.
+  @ViewBuilder private func half(
+    _ index: Int?, number: KeyPath<Diff.Line, Int?>, marks: [Int: [Diff.Segment]]
+  ) -> some View {
+    if let index {
+      let line = lines[index]
+      CodeLine(line: line, number: line[keyPath: number], segments: marks[index])
+        .frame(maxHeight: .infinity, alignment: .top)
+        .background(DiffStyle.background(line.kind))
+    } else {
+      Color.white.opacity(0.025).frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+  }
+}
+
+/// "@@ -52,9 +52,21 @@ func name(" across the diff's width: only context, so one line.
+private struct HunkRow: View {
+  let line: Diff.Line
+
+  var body: some View {
+    Text(line.text).foregroundStyle(.white.opacity(0.45)).lineLimit(1)
+      .font(.system(size: 11, design: .monospaced))
+      .padding(.leading, 66).padding(.vertical, 2).padding(.trailing, 10)
+      .frame(maxWidth: .infinity, alignment: .leading)
+      .background(DiffStyle.background(.hunk))
+  }
+}
+
+/// A line of code with its number and sign. Code wraps rather than scrolling sideways.
+private struct CodeLine: View {
+  let line: Diff.Line
+  let number: Int?
+  let segments: [Diff.Segment]?
+
+  var body: some View {
+    HStack(alignment: .firstTextBaseline, spacing: 0) {
+      Text(number.map(String.init) ?? "")
+        .foregroundStyle(.white.opacity(0.3)).frame(width: 40, alignment: .trailing)
+        .padding(.trailing, 12)
+      Text(DiffStyle.sign(line.kind)).foregroundStyle(DiffStyle.signColor(line.kind))
+        .frame(width: 14)
+      Text(code).foregroundStyle(DiffStyle.textColor(line.kind))
+        .fixedSize(horizontal: false, vertical: true)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+    .font(.system(size: 11, design: .monospaced))
+    .padding(.vertical, 2).padding(.trailing, 10)
+    .background(DiffStyle.background(line.kind))
+  }
+
+  /// The line, with the words that changed on a stronger tint.
+  private var code: AttributedString {
+    guard let segments else { return AttributedString(line.text.isEmpty ? " " : line.text) }
+    var result = AttributedString()
+    for segment in segments {
+      var piece = AttributedString(segment.text)
+      if segment.changed { piece.backgroundColor = DiffStyle.mark(line.kind) }
+      result += piece
+    }
+    return result
+  }
+}
+
+private enum DiffStyle {
+  static func sign(_ kind: Diff.Line.Kind) -> String {
     switch kind {
     case .added: "+"
     case .removed: "−"
@@ -703,11 +794,11 @@ private struct DiffLines: View {
     }
   }
 
-  private func signColor(_ kind: Diff.Line.Kind) -> Color {
+  static func signColor(_ kind: Diff.Line.Kind) -> Color {
     kind == .added ? Palette.open : kind == .removed ? Palette.failed : .clear
   }
 
-  private func textColor(_ kind: Diff.Line.Kind) -> Color {
+  static func textColor(_ kind: Diff.Line.Kind) -> Color {
     switch kind {
     case .hunk: .white.opacity(0.45)
     case .added: Color(red: 0.75, green: 0.95, blue: 0.78)
@@ -716,13 +807,18 @@ private struct DiffLines: View {
     }
   }
 
-  private func background(_ kind: Diff.Line.Kind) -> Color {
+  static func background(_ kind: Diff.Line.Kind) -> Color {
     switch kind {
     case .hunk: Palette.update.opacity(0.08)
     case .added: Palette.open.opacity(0.12)
     case .removed: Palette.failed.opacity(0.12)
     case .context: .white.opacity(0.02)
     }
+  }
+
+  /// Behind the words that changed inside a changed line.
+  static func mark(_ kind: Diff.Line.Kind) -> Color {
+    kind == .added ? Palette.open.opacity(0.4) : Palette.failed.opacity(0.42)
   }
 }
 
@@ -825,5 +921,25 @@ private struct Arriving: ViewModifier {
           shown = true
         }
       }
+  }
+}
+
+/// A plain icon choosing how a diff is laid out, bright when chosen.
+private struct LayoutButton: View {
+  let systemImage: String
+  let label: String
+  let on: Bool
+  let action: () -> Void
+  @State private var hovered = false
+
+  var body: some View {
+    Button(action: action) {
+      Image(systemName: systemImage).font(.system(size: 11, weight: .medium))
+        .foregroundStyle(.white.opacity(on ? 0.9 : hovered ? 0.6 : 0.35))
+        .frame(width: 22, height: 20).contentShape(Rectangle())
+    }
+    .buttonStyle(.plain)
+    .onHover { hovered = $0 }
+    .help(label)
   }
 }

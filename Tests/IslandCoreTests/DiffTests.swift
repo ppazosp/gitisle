@@ -114,3 +114,43 @@ struct FileTreeTests {
       describe(rows) == ["▾ apps/omnia/", "  ▸ app/chat/", "  ▾ lib/sandbox/", "    wake.ts"])
   }
 }
+
+struct DiffViewsTests {
+  private let lines = Diff.lines(
+    """
+    @@ -1,4 +1,4 @@
+     let a = 1
+    -let total = price * count
+    -log(total)
+    +let total = price * quantity
+     done()
+    +extra()
+    """)
+
+  @Test func splitPairsEachRemovedLineWithTheAddedLineAfterIt() {
+    let rows = Diff.split(lines)
+    #expect(rows.count == 6)
+    #expect(rows[0].hunk == 0)
+    #expect(rows[1].left == 1 && rows[1].right == 1)
+    // "price * count" sits opposite "price * quantity"; "log(total)" has no new line.
+    #expect(rows[2].left == 2 && rows[2].right == 4)
+    #expect(rows[3].left == 3 && rows[3].right == nil)
+    #expect(rows[4].left == 5 && rows[4].right == 5)
+    #expect(rows[5].left == nil && rows[5].right == 6)
+  }
+
+  @Test func onlyTheWordsThatChangedAreMarked() {
+    let marks = Diff.highlights(lines)
+    #expect(marks[2]?.filter(\.changed).map(\.text) == ["count"])
+    #expect(marks[4]?.filter(\.changed).map(\.text) == ["quantity"])
+    #expect(marks[2]?.map(\.text).joined() == "let total = price * count")
+    // Unpaired lines, and lines with almost nothing in common, stay wholly changed.
+    #expect(marks[3] == nil && marks[6] == nil)
+    #expect(Diff.words("alpha beta", "gamma delta") == nil)
+    // Shared spaces and brackets don't make two lines similar.
+    #expect(
+      Diff.words("return try await loader.read(id)", "if let cached = await cache.x(id), !y {")
+        == nil)
+    #expect(Diff.words("entries[id]", "guard let entry = entries[id] else { return nil }") != nil)
+  }
+}
