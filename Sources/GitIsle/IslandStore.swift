@@ -23,7 +23,6 @@ final class IslandStore {
   var expanded = false {
     didSet {
       if !expanded {
-        pinned = false
         showingSettings = false
         repositoryPickerOpen = false
         detailsID = nil
@@ -54,9 +53,6 @@ final class IslandStore {
   }
   var usageDays = 1
   var hovered = false
-  /// Hovering opens the island to peek; a click inside keeps it open until a click outside,
-  /// Escape, or its collapse button closes it.
-  private(set) var pinned = false
   var persistenceError: String?
   var isDemo: Bool
 
@@ -839,18 +835,14 @@ final class IslandStore {
     // While something is live or announced, a click opens that PR, so expanding needs a
     // longer, deliberate hover; otherwise it would replace the island under the click.
     let busy = presentation == .live || presentation == .banner
-    // Leaving waits a moment, so overshooting the edge doesn't close the island.
     let delay =
-      inside ? (busy ? max(settings.hoverDelay + 0.6, 0.8) : settings.hoverDelay) : 0.4
+      inside ? (busy ? max(settings.hoverDelay + 0.6, 0.8) : settings.hoverDelay) : 0.15
     hoverTask = Task { [weak self] in
       guard let self else { return }
       do { try await Task.sleep(for: .seconds(delay)) } catch { return }
       // A menu opened from the island draws outside it, so leaving for the menu keeps it open.
       // Setup opens the island by itself, so it stays until finished or skipped.
-      // Once a click keeps it open, leaving doesn't close it.
-      if !Task.isCancelled, inside || (!menuOpen && !showingOnboarding && !pinned) {
-        expanded = inside
-      }
+      if !Task.isCancelled, inside || (!menuOpen && !showingOnboarding) { expanded = inside }
     }
   }
 
@@ -886,13 +878,6 @@ final class IslandStore {
   func dismiss() {
     hoverTask?.cancel()
     expanded = false
-  }
-
-  /// A click inside the open island keeps it open.
-  func pin() {
-    guard expanded, !pinned else { return }
-    hoverTask?.cancel()
-    pinned = true
   }
 
   func showEvent(_ event: IslandEvent, extra: Int = 0) {

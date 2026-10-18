@@ -111,7 +111,6 @@ final class IslandPanel: NSPanel {
   private var metrics = IslandMetrics(notchWidth: 0, notchHeight: 0, hasNotch: false)
   private var mouseMonitor: Any?
   private var localMouseMonitor: Any?
-  private var clickMonitor: Any?
   private var timer: Timer?
   private var observers: [NSObjectProtocol] = []
   private var mouseWasInside = false
@@ -158,19 +157,7 @@ final class IslandPanel: NSPanel {
         return nil
       }
       self?.trackPointer()
-      // After the click's own action, so a click that opens the island also keeps it open.
-      if event.type == .leftMouseDown, event.window === self?.panel {
-        DispatchQueue.main.async { self?.store.pin() }
-      }
       return event
-    }
-    // Clicks elsewhere reach other apps, past the island; one closes an island kept open.
-    clickMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) {
-      [weak self] _ in
-      Task { @MainActor in
-        guard let self, self.store.pinned, self.store.expanded, !self.store.menuOpen else { return }
-        withAnimation(Motion.morph) { self.store.dismiss() }
-      }
     }
     // Menus (chart style, display picker) open outside the island.
     observers.append(
