@@ -184,7 +184,9 @@ private struct Reviewers: View {
         GlyphView(glyph: .eye, size: 13)
         HStack(spacing: -5) {
           ForEach(Array(people.prefix(5).enumerated()), id: \.offset) { _, person in
+            // On white, as GitHub shows them: bots' logos are often dark and see-through.
             RepoAvatar(url: person.avatar, size: 18, circular: true, name: person.name)
+              .background(Circle().fill(person.avatar == nil ? .clear : .white))
               .background(Circle().fill(.black).padding(-1.5))
               .overlay(alignment: .bottomTrailing) {
                 Circle().fill(person.color).frame(width: 7, height: 7)

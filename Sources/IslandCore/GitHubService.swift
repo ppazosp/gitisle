@@ -425,9 +425,9 @@ extension GitHubService {
           additions deletions changedFiles
           files(first: 100) { nodes { path additions deletions changeType } }
           reviewRequests(first: 10) { nodes { requestedReviewer {
-            ... on User { login avatarUrl(size: 64) } ... on Team { name avatarUrl(size: 64) } } } }
-          latestReviews(first: 10) { nodes {
-            author { __typename login avatarUrl(size: 64) } state submittedAt } }
+            ... on User { login avatarUrl(size: 64) } ... on Team { name avatarUrl(size: 64) }
+            ... on Bot { login avatarUrl(size: 64) } } } }
+          latestReviews(first: 10) { nodes { author { login avatarUrl(size: 64) } state submittedAt } }
           comments { totalCount }
           commits(last: 1) { totalCount nodes { commit {
             \(Self.deployments)
@@ -475,11 +475,8 @@ extension GitHubService {
       guard let name = (reviewer?["login"] ?? reviewer?["name"]) as? String else { return nil }
       return .init(name: name, avatar: face(reviewer))
     }
-    // Review bots, such as Codex's, comment on most PRs; reviewers are people.
     let reviews = nodes(node["latestReviews"]).compactMap { review -> PullRequestDetails.Review? in
-      guard let author = login(review["author"]), let state = review["state"] as? String,
-        (review["author"] as? [String: Any])?["__typename"] as? String != "Bot"
-      else {
+      guard let author = login(review["author"]), let state = review["state"] as? String else {
         return nil
       }
       return .init(

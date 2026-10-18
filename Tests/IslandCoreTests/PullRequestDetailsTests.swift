@@ -57,7 +57,7 @@ struct PullRequestDetailsTests {
       "latestReviews": [
         "nodes": [
           ["author": ["login": "sam"], "state": "APPROVED", "submittedAt": "2026-10-13T11:00:00Z"],
-          // Review bots comment on most PRs; they aren't reviewers.
+          // Review bots, such as Codex's, count as reviewers too.
           [
             "author": ["__typename": "Bot", "login": "chatgpt-codex-connector"],
             "state": "COMMENTED", "submittedAt": "2026-10-13T11:05:00Z",
@@ -118,7 +118,7 @@ struct PullRequestDetailsTests {
     #expect(details.files.map(\.folder) == ["Sources/", "Sources/"])
     // Avatars come only from GitHub's avatar host.
     #expect(details.requestedReviewers == [.init(name: "maya"), .init(name: "core")])
-    #expect(details.reviews.map(\.state) == ["APPROVED"])
+    #expect(details.reviews.map(\.author) == ["sam", "chatgpt-codex-connector"])
     #expect(details.commentCount == 7)
     #expect(details.commitCount == 3)
     #expect(details.checks.count == 5)
