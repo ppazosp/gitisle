@@ -1,0 +1,11 @@
+{
+  "name": "gitisle-0.2",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "npx --yes hyperframes@0.8.172 preview",
+    "check": "npx --yes hyperframes@0.8.172 check",
+    "render": "npx --yes hyperframes@0.8.172 render",
+    "publish": "npx --yes hyperframes@0.8.172 publish"
+  }
+}

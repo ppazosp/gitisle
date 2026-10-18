@@ -1,0 +1,588 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=1920, height=1080" />
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+    <style>
+      @font-face {
+        font-family: 'Geist';
+        src: url('assets/geist.woff2') format('woff2');
+        font-weight: 100 900;
+      }
+      @font-face {
+        font-family: 'Geist Mono';
+        src: url('assets/geist-mono.woff2') format('woff2');
+        font-weight: 100 900;
+      }
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        width: 1920px;
+        height: 1080px;
+        overflow: hidden;
+        background: #000;
+      }
+      #root {
+        position: relative;
+        width: 1920px;
+        height: 1080px;
+        overflow: hidden;
+        background: #000;
+        font-family: 'Geist', sans-serif;
+        color: #fff;
+        -webkit-font-smoothing: antialiased;
+      }
+      .layer {
+        position: absolute;
+        inset: 0;
+      }
+
+      /* ---------- The screen: one camera over wallpaper, menu bar, and the real island ---------- */
+      .world {
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 1920px;
+        height: 1080px;
+      }
+      .wallpaper {
+        position: absolute;
+        inset: -700px -900px;
+        background:
+          radial-gradient(1000px 420px at 1860px 960px, rgba(255, 255, 255, 0.05), transparent 70%),
+          #0c0c10;
+      }
+      .glow {
+        position: absolute;
+        width: 1520px;
+        height: 1120px;
+        border-radius: 50%;
+      }
+      .glow-green {
+        left: -300px;
+        top: 350px;
+        background: radial-gradient(closest-side, rgba(63, 185, 80, 0.26), transparent);
+      }
+      .glow-purple {
+        left: 820px;
+        top: 300px;
+        background: radial-gradient(closest-side, rgba(163, 113, 247, 0.3), transparent);
+      }
+      .pulse {
+        position: absolute;
+        left: 260px;
+        top: -260px;
+        width: 1400px;
+        height: 900px;
+        border-radius: 50%;
+        background: radial-gradient(closest-side, rgba(255, 255, 255, 0.1), transparent);
+        opacity: 0;
+      }
+      .menubar {
+        position: absolute;
+        left: 0;
+        right: 0;
+        top: 0;
+        height: 41px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 0 26px;
+        font-size: 16.5px;
+        color: rgba(255, 255, 255, 0.82);
+      }
+      .menubar div {
+        display: flex;
+        gap: 24px;
+      }
+      .menubar b {
+        font-weight: 600;
+      }
+      .island-video {
+        position: absolute;
+        left: 261px;
+        top: 0;
+        width: 1397px;
+        height: 889px;
+      }
+
+      /* ---------- The hook ---------- */
+      .hook-line {
+        position: absolute;
+        left: 0;
+        right: 0;
+        top: 470px;
+        text-align: center;
+        font-size: 112px;
+        font-weight: 600;
+        letter-spacing: -0.045em;
+        line-height: 1;
+      }
+      .hook-line .red {
+        color: #f85149;
+      }
+      .hook-line .dim {
+        color: #8b8b92;
+      }
+
+      /* ---------- Captions ---------- */
+      .cap {
+        position: absolute;
+        left: 0;
+        right: 0;
+        text-align: center;
+      }
+      .cap h2 {
+        font-size: 66px;
+        font-weight: 600;
+        letter-spacing: -0.04em;
+        line-height: 1.05;
+      }
+      .cap p {
+        margin-top: 16px;
+        font-size: 28px;
+        letter-spacing: -0.01em;
+        color: #8b8b92;
+      }
+      .cap.center {
+        top: 440px;
+      }
+      .cap.bottom {
+        top: 800px;
+      }
+      .brand {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        gap: 26px;
+      }
+      .brand h2 {
+        font-size: 132px;
+        letter-spacing: -0.055em;
+      }
+      .pill {
+        display: block;
+        background: #a371f7;
+        color: #fff;
+        font-weight: 600;
+        border-radius: 999px;
+        letter-spacing: -0.02em;
+      }
+      .brand .pill {
+        font-size: 52px;
+        padding: 8px 26px 12px;
+      }
+      .flash {
+        position: absolute;
+        inset: 0;
+        background: #fff;
+        opacity: 0;
+      }
+
+      /* ---------- Share ---------- */
+      .share-dim {
+        position: absolute;
+        inset: 0;
+        background: radial-gradient(60% 60% at 50% 42%, rgba(63, 185, 80, 0.16), #000 75%);
+      }
+      .share-stage {
+        position: absolute;
+        left: 0;
+        right: 0;
+        top: 110px;
+        height: 610px;
+        perspective: 1700px;
+      }
+      .share-card {
+        position: absolute;
+        left: 50%;
+        top: 0;
+        width: 1160px;
+        height: 609px;
+        margin-left: -580px;
+        border-radius: 30px;
+        overflow: hidden;
+        box-shadow:
+          0 0 0 1px rgba(255, 255, 255, 0.12),
+          0 50px 120px rgba(0, 0, 0, 0.85);
+      }
+      .share-card img {
+        display: block;
+        width: 100%;
+        height: 100%;
+      }
+      .shine {
+        position: absolute;
+        top: 0;
+        bottom: 0;
+        left: 0;
+        width: 40%;
+        background: linear-gradient(100deg, transparent 0%, rgba(255, 255, 255, 0.18) 50%, transparent 100%);
+      }
+
+      /* ---------- Call to action ---------- */
+      .cta-glow {
+        position: absolute;
+        inset: 0;
+        background: radial-gradient(45% 45% at 50% 40%, rgba(163, 113, 247, 0.16), transparent 70%);
+      }
+      .cta-logo {
+        position: absolute;
+        left: 50%;
+        top: 150px;
+        width: 168px;
+        height: 168px;
+        margin-left: -84px;
+      }
+      .cta-name {
+        position: absolute;
+        left: 0;
+        right: 0;
+        top: 350px;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        gap: 30px;
+      }
+      .cta-title {
+        font-size: 168px;
+        font-weight: 600;
+        letter-spacing: -0.06em;
+        line-height: 1;
+      }
+      .cta-name .pill {
+        font-size: 62px;
+        padding: 10px 30px 14px;
+      }
+      .cta-cmd {
+        position: absolute;
+        left: 50%;
+        top: 590px;
+        width: 1220px;
+        height: 90px;
+        margin-left: -610px;
+        border-radius: 45px;
+        border: 1px solid rgba(255, 255, 255, 0.18);
+        background: rgba(255, 255, 255, 0.05);
+        display: flex;
+        align-items: center;
+        padding: 0 44px;
+        font-family: 'Geist Mono', monospace;
+        font-size: 32px;
+        white-space: nowrap;
+      }
+      .cta-cmd .prompt {
+        color: rgba(255, 255, 255, 0.4);
+        margin-right: 20px;
+      }
+      .ch {
+        display: none;
+      }
+      .caret {
+        display: inline-block;
+        width: 3px;
+        height: 38px;
+        margin-left: 4px;
+        background: #fff;
+      }
+      .cta-site {
+        position: absolute;
+        left: 0;
+        right: 0;
+        top: 730px;
+        text-align: center;
+        font-size: 44px;
+        font-weight: 600;
+        letter-spacing: -0.02em;
+      }
+      .cta-sub {
+        position: absolute;
+        left: 0;
+        right: 0;
+        top: 800px;
+        text-align: center;
+        font-size: 30px;
+        color: #8b8b92;
+      }
+      .fade {
+        position: absolute;
+        inset: 0;
+        background: #000;
+      }
+    </style>
+  </head>
+  <body>
+    <div
+      id="root"
+      data-composition-id="main"
+      data-start="0"
+      data-duration="45.71"
+      data-width="1920"
+      data-height="1080"
+    >
+      <!-- Music: Mixkit "Techno Fest Feel" (track 125), 126 BPM. Its drop (45.34 s) lands on
+           the PR page opening at 13.33 s, so the video starts 32.01 s into the track. -->
+      <audio
+        id="music"
+        class="clip"
+        src="audio/mixkit-techno-fest-feel-125.mp3"
+        data-start="0"
+        data-duration="45.71"
+        data-media-start="32.01"
+        data-volume="0.9"
+        data-fade-in="0.05"
+        data-fade-out="2.6"
+        data-track-index="9"
+      ></audio>
+
+      <!-- The screen, with the real app recorded by `--tour pages`, in three cuts -->
+      <div class="layer" id="screen">
+        <div class="world" id="world">
+          <div class="wallpaper" data-layout-allow-overflow></div>
+          <div class="glow glow-green" id="glow-green" data-layout-allow-overflow></div>
+          <div class="glow glow-purple" id="glow-purple" data-layout-allow-overflow></div>
+          <div class="pulse" id="pulse" data-layout-allow-overflow></div>
+          <div class="menubar" data-layout-allow-overflow data-layout-allow-occlusion>
+            <div><b>Code</b><span>File</span><span>Edit</span><span>View</span></div>
+            <div><span>Sun 18 Oct</span><span>10:41</span></div>
+          </div>
+          <video
+            id="tour-a"
+            class="island-video clip"
+            src="assets/island-tour.webm"
+            muted
+            playsinline
+            data-start="5.714"
+            data-duration="5.566"
+            data-media-start="0.03"
+            data-track-index="3"
+          ></video>
+          <video
+            id="tour-b"
+            class="island-video clip"
+            src="assets/island-tour.webm"
+            muted
+            playsinline
+            data-start="11.28"
+            data-duration="19.1"
+            data-media-start="6.5"
+            data-track-index="4"
+          ></video>
+          <video
+            id="tour-c"
+            class="island-video clip"
+            src="assets/island-tour.webm"
+            muted
+            playsinline
+            data-start="30.38"
+            data-duration="3.91"
+            data-media-start="26.6"
+            data-track-index="5"
+          ></video>
+        </div>
+
+        <div class="cap center" id="c-brand">
+          <div class="brand"><h2>GitIsle</h2><span class="pill">0.2</span></div>
+          <p>Open any PR, right in the notch.</p>
+        </div>
+        <div class="cap center" id="c-preview">
+          <h2>Previews, the second they're ready.</h2>
+        </div>
+        <div class="cap center" id="c-queue">
+          <h2>The merge queue, live.</h2>
+          <p>Its checks and a timer, in the notch.</p>
+        </div>
+        <div class="cap bottom" id="c-page">
+          <h2>Every PR has a page.</h2>
+          <p>Its files as a tree. Every check, and why it failed.</p>
+        </div>
+        <div class="cap bottom" id="c-diff"><h2>Read the diff without leaving.</h2></div>
+        <div class="cap bottom" id="c-split"><h2>Unified, or side by side.</h2></div>
+        <div class="cap bottom" id="c-stack">
+          <h2>Stacks fold into a pile.</h2>
+          <p>Click to fan them out.</p>
+        </div>
+        <div class="cap center" id="c-failed"><h2>Know when a merge fails.</h2></div>
+        <div class="flash" id="flash"></div>
+      </div>
+
+      <!-- The hook: one line per beat, over the build -->
+      <div id="hook" class="layer clip" data-start="0" data-duration="5.714" data-track-index="1">
+        <div class="hook-line" id="h1"><span class="red">Checks failed.</span></div>
+        <div class="hook-line" id="h2">Which one?</div>
+        <div class="hook-line" id="h3">Why?</div>
+        <div class="hook-line" id="h4">Open GitHub.</div>
+        <div class="hook-line" id="h5">Find the PR.</div>
+        <div class="hook-line" id="h6">Open the files.</div>
+        <div class="hook-line" id="h7"><span class="dim">Scroll.</span></div>
+        <div class="hook-line" id="h8">Or look up.</div>
+      </div>
+
+      <!-- Share card -->
+      <div id="share" class="layer clip" data-start="34.29" data-duration="3.81" data-track-index="6">
+        <div class="share-dim" id="share-dim"></div>
+        <div class="share-stage">
+          <div class="share-card" id="share-card">
+            <img src="assets/share-card.jpg" alt="" />
+            <div class="shine" id="shine"></div>
+          </div>
+        </div>
+        <div class="cap bottom" id="c-share">
+          <h2>Share what you shipped.</h2>
+          <p>Every PR has a card to post.</p>
+        </div>
+      </div>
+
+      <!-- Call to action -->
+      <div id="cta" class="layer clip" data-start="38.1" data-duration="7.61" data-track-index="7">
+        <div class="cta-glow" id="cta-glow"></div>
+        <img class="cta-logo" id="cta-logo" src="assets/logo.png" alt="" />
+        <div class="cta-name" id="cta-name">
+          <div class="cta-title">GitIsle</div>
+          <span class="pill">0.2</span>
+        </div>
+        <div class="cta-cmd" id="cta-cmd">
+          <span class="prompt">$</span><span id="cmd-text"></span><span class="caret"></span>
+        </div>
+        <div class="cta-site" id="cta-site">gitisle.ppazosp.dev</div>
+        <div class="cta-sub" id="cta-sub">Free and open source for macOS.</div>
+        <div class="fade" id="fade"></div>
+      </div>
+    </div>
+
+    <script>
+      const tl = gsap.timeline({ paused: true });
+      window.__timelines['main'] = tl;
+
+      // 126 BPM, bar 0 at the first frame.
+      const BEAT = 60 / 126;
+      const bar = (n) => n * 4 * BEAT;
+      const DROP = bar(7); // 13.33 s: the PR page opens.
+
+      /* ---------- The hook: one line per beat ---------- */
+      const lines = ['#h1', '#h2', '#h3', '#h4', '#h5', '#h6', '#h7', '#h8'];
+      const lineAt = [0, 2, 4, 6, 7, 8, 9, 10].map((b) => b * BEAT);
+      lines.forEach((id, i) => {
+        tl.fromTo(
+          id,
+          { opacity: 0, y: 46, scale: 1.04, filter: 'blur(12px)' },
+          { opacity: 1, y: 0, scale: 1, filter: 'blur(0px)', duration: 0.3, ease: 'expo.out' },
+          lineAt[i],
+        );
+        const next = lineAt[i + 1];
+        if (next !== undefined) {
+          tl.to(id, { opacity: 0, y: -40, filter: 'blur(10px)', duration: 0.16, ease: 'power2.in' }, next - 0.1);
+        }
+      });
+      // "Why?" lands with a nudge; "Or look up." rises toward the notch as the screen arrives.
+      tl.fromTo('#h3', { x: 0 }, { x: 16, duration: 0.05, ease: 'none' }, lineAt[2]);
+      tl.to('#h3', { x: 0, duration: 0.3, ease: 'elastic.out(1, 0.3)' }, lineAt[2] + 0.05);
+      tl.to('#h8', { y: -400, opacity: 0, filter: 'blur(14px)', duration: 0.6, ease: 'power3.in' }, bar(3) - 0.6);
+
+      /* ---------- The camera over the real island ---------- */
+      const camera = (scale, time, duration, ease = 'power3.inOut', y = 0) =>
+        tl.to('#world', { scale, y, duration, ease }, time);
+      tl.set('#world', { transformOrigin: '960px 0px', scale: 2.8, y: 0 }, 0);
+      tl.fromTo('#screen', { opacity: 0 }, { opacity: 1, duration: 0.35, ease: 'power2.out' }, bar(3));
+      tl.fromTo('#world', { filter: 'blur(14px)' }, { filter: 'blur(0px)', duration: 0.6, ease: 'expo.out' }, bar(3));
+      camera(2.3, bar(3), 0.9, 'expo.out');
+      // A slow drift while the live bar and the preview play.
+      camera(2.05, bar(3) + 0.9, 4.5, 'none');
+      // Pull back as the island opens on the list (11.48 s).
+      camera(1.0, 11.15, 1.05);
+
+      // The drop: the page opens. A punch and a flash.
+      tl.fromTo('#flash', { opacity: 0.32 }, { opacity: 0, duration: 0.45, ease: 'power2.out', immediateRender: false }, DROP);
+      tl.fromTo('#world', { scale: 1.05 }, { scale: 1.0, duration: 0.6, ease: 'expo.out', immediateRender: false }, DROP);
+      camera(1.03, DROP + 0.6, 2.6, 'none');
+      // Into the diff (16.73 s), then side by side (18.93 s).
+      camera(1.17, 16.55, 1.1, 'power3.inOut', -50);
+      camera(1.22, 17.65, 3.5, 'none', -60);
+      camera(1.0, 21.25, 0.9);
+      // The board (24.18 s); the stack fans out (25.93 s) and folds (28.48 s).
+      camera(0.95, 23.95, 0.8);
+      camera(1.02, 24.75, 4.8, 'none');
+      // Back to the notch for the failed merge (30.78 s).
+      camera(2.0, 29.85, 1.0);
+      camera(1.85, 30.85, 3.0, 'none');
+
+      // The wallpaper never sits still.
+      tl.fromTo('#glow-green', { x: -80, y: 30 }, { x: 120, y: -40, duration: 34, ease: 'none' }, 0);
+      tl.fromTo('#glow-purple', { x: 90, y: -20 }, { x: -110, y: 50, duration: 34, ease: 'none' }, 0);
+      // After the drop, the light pulses on every bar.
+      for (let n = 7; n < 18; n++) {
+        tl.fromTo('#pulse', { opacity: 0.9 }, { opacity: 0, duration: 1.5, ease: 'power2.out', immediateRender: false }, bar(n));
+      }
+
+      /* ---------- Captions, on the bars ---------- */
+      const caps = ['#c-brand', '#c-preview', '#c-queue', '#c-page', '#c-diff', '#c-split', '#c-stack', '#c-failed'];
+      const show = (id, time, from = { y: 30, scale: 1 }) =>
+        tl.fromTo(
+          id,
+          { opacity: 0, filter: 'blur(12px)', ...from },
+          { opacity: 1, y: 0, scale: 1, filter: 'blur(0px)', duration: 0.5, ease: 'expo.out' },
+          time,
+        );
+      const hide = (id, time) =>
+        tl.to(id, { opacity: 0, y: -20, filter: 'blur(8px)', duration: 0.22, ease: 'power2.in' }, time);
+
+      show('#c-brand', bar(3) + 0.25, { y: 30, scale: 0.94 });
+      tl.fromTo('#c-brand .pill', { scale: 0.2, opacity: 0 }, { scale: 1, opacity: 1, duration: 0.5, ease: 'back.out(2.2)' }, bar(3) + 0.6);
+      tl.fromTo('#c-brand p', { opacity: 0, y: 14 }, { opacity: 1, y: 0, duration: 0.5, ease: 'expo.out' }, bar(3) + 0.85);
+      hide('#c-brand', bar(4) - 0.25);
+      show('#c-preview', bar(4));
+      hide('#c-preview', bar(5) - 0.2);
+      show('#c-queue', bar(5));
+      hide('#c-queue', 11.05);
+      show('#c-page', DROP + 0.05, { y: 0, scale: 1.12 });
+      hide('#c-page', 16.45);
+      show('#c-diff', bar(9));
+      hide('#c-diff', bar(10) - 0.15);
+      show('#c-split', bar(10));
+      hide('#c-split', 21.2);
+      show('#c-stack', bar(13));
+      tl.fromTo('#c-stack p', { opacity: 0, y: 14 }, { opacity: 1, y: 0, duration: 0.5, ease: 'expo.out' }, bar(14));
+      hide('#c-stack', 29.7);
+      show('#c-failed', 30.78);
+      hide('#c-failed', bar(18) - 0.3);
+
+      /* ---------- Share: the screen zooms through to the card ---------- */
+      tl.to('#world', { scale: 2.6, filter: 'blur(16px)', duration: 0.4, ease: 'power3.in' }, bar(18) - 0.35);
+      tl.fromTo('#share-dim', { opacity: 0 }, { opacity: 1, duration: 0.3, ease: 'power2.out' }, bar(18));
+      tl.fromTo(
+        '#share-card',
+        { y: 260, rotationX: 28, rotationY: -10, scale: 0.86, opacity: 0 },
+        { y: 0, rotationX: 0, rotationY: 0, scale: 1, opacity: 1, duration: 1.0, ease: 'expo.out' },
+        bar(18),
+      );
+      tl.to('#share-card', { rotationY: 5, rotationX: -3, duration: 2.8, ease: 'none' }, bar(18) + 1.0);
+      tl.fromTo('#shine', { xPercent: -120 }, { xPercent: 300, duration: 1.0, ease: 'power2.inOut' }, bar(19));
+      tl.fromTo('#c-share', { opacity: 0, y: 30, filter: 'blur(12px)' }, { opacity: 1, y: 0, filter: 'blur(0px)', duration: 0.5, ease: 'expo.out' }, bar(18) + 0.5);
+
+      /* ---------- Call to action ---------- */
+      const C0 = bar(20); // 38.10 s
+      tl.fromTo('#cta-glow', { opacity: 0 }, { opacity: 1, duration: 1.2, ease: 'power2.out' }, C0);
+      tl.fromTo('#cta-logo', { opacity: 0, y: 36, scale: 0.7 }, { opacity: 1, y: 0, scale: 1, duration: 0.8, ease: 'back.out(1.7)' }, C0);
+      tl.fromTo('#cta-name', { opacity: 0, y: 40, scale: 0.94, filter: 'blur(16px)' }, { opacity: 1, y: 0, scale: 1, filter: 'blur(0px)', duration: 0.8, ease: 'expo.out' }, C0 + 2 * BEAT);
+      tl.fromTo('#cta-cmd', { opacity: 0, y: 24 }, { opacity: 1, y: 0, duration: 0.6, ease: 'expo.out' }, bar(21));
+      // The install line types itself, a character every 30 ms.
+      const command = 'curl -fsSL https://gitisle.ppazosp.dev/install.sh | bash';
+      const text = document.getElementById('cmd-text');
+      [...command].forEach((c, i) => {
+        const span = document.createElement('span');
+        span.className = 'ch';
+        span.textContent = c === ' ' ? ' ' : c;
+        text.appendChild(span);
+        tl.set(span, { display: 'inline' }, bar(21) + 0.3 + i * 0.03);
+      });
+      tl.fromTo('#cta-site', { opacity: 0, y: 20 }, { opacity: 1, y: 0, duration: 0.6, ease: 'expo.out' }, bar(22) + 0.3);
+      tl.fromTo('#cta-sub', { opacity: 0, y: 16 }, { opacity: 1, y: 0, duration: 0.6, ease: 'expo.out' }, bar(22) + 0.8);
+      tl.fromTo('#fade', { opacity: 0 }, { opacity: 1, duration: 1.1, ease: 'power2.inOut' }, 44.6);
+    </script>
+  </body>
+</html>
