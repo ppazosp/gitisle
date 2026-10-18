@@ -100,6 +100,7 @@ private struct RepositoryCard: View {
   let toggle: () -> Void
   @State private var hovered = false
   @State private var showsAllMerged = false
+  @Environment(IslandStore.self) private var store
 
   /// Merged PRs are history; a few are enough next to open work until asked for more.
   private var visible: [PullRequest] {
@@ -165,9 +166,24 @@ private struct RepositoryCard: View {
       // over the header while the section opens or closes.
       VStack(spacing: 0) {
         let visible = self.visible
-        ForEach(visible) { pr in
-          PRRow(pr: pr).transition(.opacity)
+        // A stack folds into one row, its top PR; a click unfolds it.
+        ForEach(PRStacks.piles(visible, links: store.stackLinks), id: \.first?.id) { pile in
+          if pile.count > 1, let bottom = pile.first {
+            if store.unfoldedStacks.contains(bottom.id) {
+              FoldStack(pile: pile) {
+                withAnimation(Motion.snappy) { store.toggleStack(bottom.id) }
+              }
+              ForEach(pile) { PRRow(pr: $0) }
+            } else if let top = pile.last {
+              PRRow(pr: top, pile: pile) {
+                withAnimation(Motion.snappy) { store.toggleStack(bottom.id) }
+              }
+            }
+          } else if let pr = pile.first {
+            PRRow(pr: pr)
+          }
         }
+        .transition(.opacity)
         if visible.count < section.pullRequests.count {
           ShowMoreButton(hidden: section.pullRequests.count - visible.count) {
             withAnimation(Motion.snappy) { showsAllMerged = true }
@@ -370,6 +386,10 @@ private struct StackConnector: View {
 
 struct PRRow: View {
   let pr: PullRequest
+  /// On a folded stack: the PRs it holds, counted in place of "on #436".
+  var pile: [PullRequest]?
+  /// What a click does instead of opening the PR, such as unfolding its stack.
+  var tap: (() -> Void)?
   @State private var hovered = false
   @Environment(\.openPullRequest) private var open
   @Environment(\.stackLinks) private var stacks
@@ -379,19 +399,24 @@ struct PRRow: View {
       // ⌘-click opens GitHub, as a link would.
       if NSEvent.modifierFlags.contains(.command) {
         NSWorkspace.shared.open(pr.url)
+      } else if let tap {
+        tap()
       } else {
         open(pr)
       }
     } label: {
       HStack(spacing: 10) {
-        if let depth = stacks[pr.id]?.depth, depth > 0 { StackConnector(depth: min(depth, 3)) }
+        if pile == nil, let depth = stacks[pr.id]?.depth, depth > 0 {
+          StackConnector(depth: min(depth, 3))
+        }
         GlyphView(glyph: pr.glyph, size: 15).foregroundStyle(pr.glyphColor)
           .frame(width: 18)
         VStack(alignment: .leading, spacing: 3) {
           Text(pr.title).font(.system(size: 12.5, weight: .medium)).lineLimit(1)
-          HStack(spacing: 4) {
+          HStack(alignment: .firstTextBaseline, spacing: 4) {
+            if let pile { StackCount(pile: pile) }
             Text(verbatim: "#\(pr.number)")
-            StackLabel(link: stacks[pr.id])
+            if pile == nil { StackLabel(link: stacks[pr.id]) }
             Text("·")
             Text(pr.stateLabel.text).foregroundStyle(pr.stateLabel.color)
             Text("·")
@@ -432,8 +457,6 @@ private struct BoardView: View {
   @Binding var contentHeight: CGFloat
   @State private var heights: [PRGroup: CGFloat] = [:]
   @State private var expanded: Set<PRGroup> = []
-  /// Stacks fanned out from their pile, by the ID of their bottom PR.
-  @State private var fanned: Set<String> = []
 
   var body: some View {
     Group {
@@ -505,10 +528,8 @@ private struct BoardView: View {
       let limit = shortened(section) ? 8 : piles.count
       ForEach(piles.prefix(limit), id: \.first?.id) { pile in
         if pile.count > 1, let bottom = pile.first {
-          StackPile(pile: pile, fanned: fanned.contains(bottom.id)) {
-            withAnimation(Motion.snappy) {
-              if fanned.remove(bottom.id) == nil { fanned.insert(bottom.id) }
-            }
+          StackPile(pile: pile, fanned: store.unfoldedStacks.contains(bottom.id)) {
+            withAnimation(Motion.snappy) { store.toggleStack(bottom.id) }
           }
           .transition(.opacity)
         } else if let pr = pile.first {
@@ -585,46 +606,66 @@ private struct PRCard: View {
   }
 }
 
-/// A stack's PRs in one board column. Folded, it's a pile showing the PR on top; a click fans
-/// it out, bottom PR first, and a click on its header folds it again.
+/// A stack's PRs in one board column, as a pile with its top PR in front and the cards below
+/// peeking out. A click fans the cards out from under it, top PR first; a click on the count
+/// above them folds them back. The cards stay the same views throughout, so they slide
+/// rather than swap.
 private struct StackPile: View {
   let pile: [PullRequest]
   let fanned: Bool
   let toggle: () -> Void
 
   var body: some View {
-    if fanned {
-      VStack(alignment: .leading, spacing: 6) {
-        Button(action: toggle) {
-          HStack(spacing: 5) {
-            StackCount(pile: pile)
-            Image(systemName: "chevron.up").font(.system(size: 8, weight: .bold))
-              .foregroundStyle(.white.opacity(0.4))
-            Spacer(minLength: 0)
-          }
-          .padding(.horizontal, 4).contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .help("Fold the stack")
-        ForEach(pile) { PRCard(pr: $0) }
+    let cards = Array(pile.reversed())
+    VStack(alignment: .leading, spacing: fanned ? 6 : 0) {
+      if fanned {
+        FoldStack(pile: pile, action: toggle).transition(.opacity)
       }
-    } else if let top = pile.last {
-      // Cards peeking out below the top one make it read as a pile.
-      PRCard(pr: top, pile: pile, tap: toggle)
-        // Cards are see-through; a solid back keeps the ones below from showing through it.
-        .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(.black))
-        .background(alignment: .bottom) {
-          ZStack(alignment: .bottom) {
-            // Solid, so the cards below don't show through each other.
-            RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Color(white: 0.045))
-              .padding(.horizontal, 10).offset(y: 9)
-            RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Color(white: 0.07))
-              .padding(.horizontal, 5).offset(y: 4.5)
-          }
+      ForEach(Array(cards.enumerated()), id: \.element.id) { index, pr in
+        if index == 0 {
+          PRCard(pr: pr, pile: fanned ? nil : pile, tap: fanned ? nil : toggle)
+            // Cards are see-through; a solid back keeps the ones below from showing through.
+            .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(.black))
+            .zIndex(Double(cards.count))
+        } else {
+          let peeking = index <= 2
+          PRCard(pr: pr)
+            // Folded, only the card's bottom edge shows, solid and a step narrower per card.
+            .overlay {
+              RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(Color(white: index == 1 ? 0.07 : 0.045))
+                .opacity(fanned ? 0 : 1)
+            }
+            .frame(height: fanned ? nil : (peeking ? 4.5 : 0), alignment: .bottom)
+            .clipped()
+            .padding(.horizontal, fanned ? 0 : CGFloat(index) * 5)
+            .opacity(fanned || peeking ? 1 : 0)
+            .allowsHitTesting(fanned)
+            .zIndex(Double(cards.count - index))
         }
-        .padding(.bottom, 9)
-        .help("A stack of \(pile.count) PRs. Click to see them all.")
+      }
     }
+    .help(fanned ? "" : "A stack of \(pile.count) PRs. Click to see them all.")
+  }
+}
+
+/// Above an unfolded stack: its count and a chevron that folds it again.
+private struct FoldStack: View {
+  let pile: [PullRequest]
+  let action: () -> Void
+
+  var body: some View {
+    Button(action: action) {
+      HStack(spacing: 5) {
+        StackCount(pile: pile)
+        Image(systemName: "chevron.up").font(.system(size: 8, weight: .bold))
+          .foregroundStyle(.white.opacity(0.4))
+        Spacer(minLength: 0)
+      }
+      .padding(.horizontal, 8).padding(.vertical, 3).contentShape(Rectangle())
+    }
+    .buttonStyle(.plain)
+    .help("Fold the stack")
   }
 }
 

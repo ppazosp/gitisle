@@ -332,6 +332,14 @@ final class IslandStore {
       if !isDemo { UserDefaults.standard.set(activityLayout.rawValue, forKey: "activityLayout") }
     }
   }
+  /// Stacks unfolded in the list and on the board, by the ID of their bottom PR; every stack
+  /// starts folded.
+  private(set) var unfoldedStacks: Set<String> = []
+
+  func toggleStack(_ bottom: String) {
+    if unfoldedStacks.remove(bottom) == nil { unfoldedStacks.insert(bottom) }
+  }
+
   /// Repositories collapsed in the activity list, remembered across launches.
   private(set) var collapsedRepositories: Set<String> =
     Set(UserDefaults.standard.stringArray(forKey: "collapsedRepositories") ?? [])
