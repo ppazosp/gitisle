@@ -372,6 +372,127 @@ public actor GitHubService {
   }
 }
 
+extension GitHubService {
+  /// What the PR page shows, for about one point: description, reviews, files, the latest
+  /// comments, and every check with its errors. Read when the page opens and while it stays open.
+  public func details(of pr: PullRequest) async throws -> PullRequestDetails {
+    let query = """
+      query($id: ID!) {
+        rateLimit { remaining resetAt }
+        node(id: $id) { ... on PullRequest {
+          id body author { login } baseRefName headRefName createdAt additions deletions changedFiles
+          files(first: 100) { nodes { path additions deletions } }
+          reviewRequests(first: 10) { nodes { requestedReviewer {
+            ... on User { login } ... on Team { name } ... on Bot { login } } } }
+          latestReviews(first: 10) { nodes { author { login } state submittedAt } }
+          comments(last: 5) { totalCount nodes { author { login } bodyText createdAt } }
+          commits(last: 1) { totalCount nodes { commit { statusCheckRollup { contexts(first: 100) {
+            nodes {
+              __typename
+              ... on CheckRun {
+                name status conclusion detailsUrl startedAt completedAt
+                annotations(first: 10) { nodes { annotationLevel path message location { start { line } } } }
+                checkSuite { workflowRun { workflow { name } } }
+              }
+              ... on StatusContext { context state targetUrl description }
+            }
+          } } } } }
+        } }
+      }
+      """
+    let response = try await request(query: query, variables: ["id": pr.id])
+    guard let node = (response["data"] as? [String: Any])?["node"] as? [String: Any] else {
+      throw ProcessFailure.failed("GitHub could not find this pull request.")
+    }
+    return try Self.decodeDetails(node)
+  }
+
+  static func decodeDetails(_ node: [String: Any], now: Date = Date()) throws -> PullRequestDetails
+  {
+    guard let id = node["id"] as? String else {
+      throw ProcessFailure.failed("GitHub returned an incomplete pull request.")
+    }
+    func nodes(_ value: Any?) -> [[String: Any]] {
+      (value as? [String: Any])?["nodes"] as? [[String: Any]] ?? []
+    }
+    func login(_ value: Any?) -> String? { (value as? [String: Any])?["login"] as? String }
+    let files = nodes(node["files"]).compactMap { file -> PullRequestDetails.FileChange? in
+      guard let path = file["path"] as? String else { return nil }
+      return .init(
+        path: path, additions: file["additions"] as? Int ?? 0,
+        deletions: file["deletions"] as? Int ?? 0)
+    }
+    let requested = nodes(node["reviewRequests"]).compactMap { request -> String? in
+      let reviewer = request["requestedReviewer"] as? [String: Any]
+      return (reviewer?["login"] ?? reviewer?["name"]) as? String
+    }
+    let reviews = nodes(node["latestReviews"]).compactMap { review -> PullRequestDetails.Review? in
+      guard let author = login(review["author"]), let state = review["state"] as? String else {
+        return nil
+      }
+      return .init(
+        author: author, state: state,
+        submittedAt: (review["submittedAt"] as? String).flatMap(Dates.parse))
+    }
+    let commentsConnection = node["comments"] as? [String: Any]
+    let comments = nodes(commentsConnection).compactMap { comment -> PullRequestDetails.Comment? in
+      guard let created = (comment["createdAt"] as? String).flatMap(Dates.parse) else { return nil }
+      return .init(
+        author: login(comment["author"]) ?? "ghost", body: comment["bodyText"] as? String ?? "",
+        createdAt: created)
+    }
+    let commits = node["commits"] as? [String: Any]
+    let commit = nodes(commits).last?["commit"] as? [String: Any]
+    let contexts = ((commit?["statusCheckRollup"] as? [String: Any])?["contexts"])
+    let checks = nodes(contexts).compactMap(Self.decodeCheck)
+    return PullRequestDetails(
+      id: id, body: node["body"] as? String ?? "", author: login(node["author"]),
+      baseRefName: node["baseRefName"] as? String ?? "",
+      headRefName: node["headRefName"] as? String ?? "",
+      createdAt: (node["createdAt"] as? String).flatMap(Dates.parse),
+      additions: node["additions"] as? Int ?? 0, deletions: node["deletions"] as? Int ?? 0,
+      changedFiles: node["changedFiles"] as? Int ?? files.count, files: files,
+      commitCount: commits?["totalCount"] as? Int ?? 0, requestedReviewers: requested,
+      reviews: reviews, commentCount: commentsConnection?["totalCount"] as? Int ?? comments.count,
+      comments: comments, checks: checks, fetchedAt: now)
+  }
+
+  static func decodeCheck(_ node: [String: Any]) -> Check? {
+    func link(_ value: Any?) -> URL? {
+      guard let text = value as? String, let url = URL(string: text), url.scheme == "https"
+      else { return nil }
+      return url
+    }
+    if node["__typename"] as? String == "StatusContext" {
+      guard let context = node["context"] as? String else { return nil }
+      return Check(
+        name: context, outcome: Check.outcome(state: node["state"] as? String),
+        url: link(node["targetUrl"]), summary: node["description"] as? String)
+    }
+    guard let name = node["name"] as? String else { return nil }
+    let annotations = ((node["annotations"] as? [String: Any])?["nodes"] as? [[String: Any]] ?? [])
+      .map { annotation in
+        (
+          level: annotation["annotationLevel"] as? String ?? "",
+          path: annotation["path"] as? String ?? "",
+          line: ((annotation["location"] as? [String: Any])?["start"] as? [String: Any])?["line"]
+            as? Int,
+          message: annotation["message"] as? String ?? ""
+        )
+      }
+    let workflow =
+      (((node["checkSuite"] as? [String: Any])?["workflowRun"] as? [String: Any])?["workflow"]
+      as? [String: Any])?["name"] as? String
+    return Check(
+      name: name, workflow: workflow,
+      outcome: Check.outcome(
+        status: node["status"] as? String, conclusion: node["conclusion"] as? String),
+      startedAt: (node["startedAt"] as? String).flatMap(Dates.parse),
+      completedAt: (node["completedAt"] as? String).flatMap(Dates.parse),
+      url: link(node["detailsUrl"]), errors: Check.errors(annotations))
+  }
+}
+
 public enum Dates {
   public static func parse(_ value: String) -> Date? {
     (try? Date.ISO8601FormatStyle(includingFractionalSeconds: true).parse(value))
