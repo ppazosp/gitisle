@@ -92,11 +92,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
       let pr = store.github?.pullRequests.first(where: { $0.id == arguments[index + 1] })
     {
       let url = URL(fileURLWithPath: arguments[index + 2])
-      if let style = arguments.firstIndex(of: "--backdrop"), arguments.count > style + 1,
-        let backdrop = ShareCard.Backdrop(rawValue: arguments[style + 1])
-      {
-        IslandStore.shareBackdrop = backdrop
-      }
       Task {
         guard let png = await store.shareCard(for: pr) else { exit(1) }
         do {

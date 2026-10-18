@@ -141,17 +141,13 @@ final class IslandStore {
     async let repoImage = Self.image(pr.ownerAvatar)
     async let authorImage = Self.image(details.authorAvatar)
     let card = ShareCard(
-      pr: pr, details: details, repoImage: await repoImage, authorImage: await authorImage,
-      backdrop: Self.shareBackdrop)
+      pr: pr, details: details, repoImage: await repoImage, authorImage: await authorImage)
     guard let png = card.png() else {
       flash("Couldn't make the share card")
       return nil
     }
     return png
   }
-
-  /// Example data only: the share card's background, chosen with `--backdrop`.
-  static var shareBackdrop: ShareCard.Backdrop = .aurora
 
   private static func image(_ url: URL?) async -> NSImage? {
     guard let url, let (data, _) = try? await URLSession.shared.data(from: url) else { return nil }

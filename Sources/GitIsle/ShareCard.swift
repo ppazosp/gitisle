@@ -11,12 +11,16 @@ struct ShareCard: View {
   /// renderer can't wait for them.
   var repoImage: NSImage?
   var authorImage: NSImage?
-  var backdrop: Backdrop = .aurora
 
   static let size = CGSize(width: 1200, height: 630)
+  /// The palm tree without the icon's backing, which the app bundle carries; builds run
+  /// outside the bundle use the app icon.
+  @MainActor static let logo =
+    Bundle.main.image(forResource: "Logo") ?? NSApp.applicationIconImage ?? NSImage()
 
-  enum Backdrop: String, CaseIterable {
-    case aurora, merged, grid, diff, contributions, avatar
+  /// "5,159": the card is posted for anyone to read, so it doesn't follow this Mac's locale.
+  static func count(_ value: Int) -> String {
+    value.formatted(.number.locale(Locale(identifier: "en_US")))
   }
 
   var body: some View {
@@ -39,9 +43,9 @@ struct ShareCard: View {
             GlyphView(glyph: .merge, size: 20)
             Text("Merged")
           }
-          .font(.system(size: 22, weight: .semibold)).foregroundStyle(Palette.merged)
-          .padding(.horizontal, 16).padding(.vertical, 8)
-          .background(Capsule().fill(Palette.merged.opacity(0.18)))
+          .font(.system(size: 22, weight: .semibold)).foregroundStyle(.white)
+          .padding(.horizontal, 18).padding(.vertical, 9)
+          .background(Capsule().fill(Palette.merged))
         }
         Spacer(minLength: 24)
         Text(pr.title).font(.system(size: 58, weight: .bold)).tracking(-1.4)
@@ -59,16 +63,19 @@ struct ShareCard: View {
         Spacer(minLength: 24)
         HStack(alignment: .lastTextBaseline, spacing: 56) {
           Stat(
-            value: "+\(details.additions.formatted())", label: "lines added", color: Palette.open)
+            value: "+\(Self.count(details.additions))", label: "lines added", color: Palette.open)
           Stat(
-            value: "−\(details.deletions.formatted())", label: "lines removed",
+            value: "−\(Self.count(details.deletions))", label: "lines removed",
             color: Palette.failed
           )
           Stat(
-            value: details.changedFiles.formatted(),
+            value: Self.count(details.changedFiles),
             label: details.changedFiles == 1 ? "file touched" : "files touched")
           Spacer(minLength: 0)
-          Text("gitisle.ppazosp.dev").font(.system(size: 17)).foregroundStyle(.white.opacity(0.3))
+          // GitIsle signs the card once, with its logo.
+          Image(nsImage: Self.logo).resizable().interpolation(.high)
+            .aspectRatio(contentMode: .fit).frame(width: 112, height: 112)
+            .padding(.vertical, -26)
         }
       }
       .padding(64)
@@ -95,101 +102,32 @@ struct ShareCard: View {
     }
   }
 
+  /// Contribution-graph tiles in GitHub's greens, a pattern of its own for each PR, fading in
+  /// behind the words.
   @ViewBuilder private var background: some View {
-    switch backdrop {
-    case .aurora:
-      RadialGradient(
-        colors: [Palette.open.opacity(0.22), .clear], center: .bottomLeading, startRadius: 0,
-        endRadius: 620)
-      RadialGradient(
-        colors: [Palette.merged.opacity(0.3), .clear], center: .bottomTrailing, startRadius: 0,
-        endRadius: 660)
-    case .merged:
-      LinearGradient(
-        colors: [
-          Color(red: 0.24, green: 0.12, blue: 0.45), Color(red: 0.06, green: 0.03, blue: 0.12),
-        ],
-        startPoint: .topTrailing, endPoint: .bottomLeading)
-      RadialGradient(
-        colors: [Palette.merged.opacity(0.45), .clear], center: .topTrailing, startRadius: 0,
-        endRadius: 700)
-    case .grid:
-      Canvas { context, size in
-        for x in stride(from: 0, through: size.width, by: 32) {
-          for y in stride(from: 0, through: size.height, by: 32) {
-            context.fill(
-              Path(ellipseIn: CGRect(x: x - 1.5, y: y - 1.5, width: 3, height: 3)),
-              with: .color(.white.opacity(0.13)))
-          }
-        }
+    Canvas { context, size in
+      var seed: UInt64 = 0xA076_1D64_78BD_642F &+ UInt64(pr.number)
+      func next() -> Double {
+        seed = seed &* 6_364_136_223_846_793_005 &+ 1_442_695_040_888_963_407
+        return Double(seed >> 33) / Double(UInt64(1) << 31)
       }
-      RadialGradient(
-        colors: [Palette.merged.opacity(0.35), .clear], center: .top, startRadius: 0,
-        endRadius: 600)
-      LinearGradient(colors: [.clear, .black.opacity(0.85)], startPoint: .top, endPoint: .bottom)
-    case .diff:
-      // Faint diff lines across the card, added and removed in the PR's own proportion.
-      Canvas { context, size in
-        let share =
-          Double(details.additions) / Double(max(1, details.additions + details.deletions))
-        var y: CGFloat = 0
-        var seed: UInt64 = 0x9E37_79B9_7F4A_7C15 &+ UInt64(pr.number)
-        func next() -> Double {
-          seed = seed &* 6_364_136_223_846_793_005 &+ 1_442_695_040_888_963_407
-          return Double(seed >> 33) / Double(UInt64(1) << 31)
-        }
-        while y < size.height {
-          let roll = next()
-          let color: Color =
-            roll < share * 0.7 ? Palette.open : roll < 0.7 ? Palette.failed : .white
-          let opacity = color == .white ? 0.06 : 0.24
-          let indent = CGFloat(Int(next() * 4)) * 34
-          let width = CGFloat(160 + next() * 620)
+      let cell: CGFloat = 26
+      for column in 0..<Int(size.width / cell) + 1 {
+        for row in 0..<Int(size.height / cell) + 1 {
+          let level = next()
+          let opacity = level < 0.45 ? 0.05 : level < 0.7 ? 0.14 : level < 0.88 ? 0.26 : 0.42
           context.fill(
             Path(
               roundedRect: CGRect(
-                x: size.width - width - indent - 40, y: y, width: width, height: 12),
-              cornerRadius: 6), with: .color(color.opacity(opacity)))
-          y += 26
+                x: CGFloat(column) * cell, y: CGFloat(row) * cell, width: cell - 5,
+                height: cell - 5), cornerRadius: 4),
+            with: .color(Palette.open.opacity(opacity)))
         }
       }
-      LinearGradient(
-        colors: [.black, .black.opacity(0.75), .black.opacity(0.2)], startPoint: .leading,
-        endPoint: .trailing)
-    case .contributions:
-      Canvas { context, size in
-        var seed: UInt64 = 0xA076_1D64_78BD_642F &+ UInt64(pr.number)
-        func next() -> Double {
-          seed = seed &* 6_364_136_223_846_793_005 &+ 1_442_695_040_888_963_407
-          return Double(seed >> 33) / Double(UInt64(1) << 31)
-        }
-        let cell: CGFloat = 26
-        for column in 0..<Int(size.width / cell) + 1 {
-          for row in 0..<Int(size.height / cell) + 1 {
-            let level = next()
-            let opacity = level < 0.45 ? 0.05 : level < 0.7 ? 0.14 : level < 0.88 ? 0.26 : 0.42
-            context.fill(
-              Path(
-                roundedRect: CGRect(
-                  x: CGFloat(column) * cell, y: CGFloat(row) * cell, width: cell - 5,
-                  height: cell - 5), cornerRadius: 4),
-              with: .color(Palette.open.opacity(opacity)))
-          }
-        }
-      }
-      LinearGradient(
-        colors: [.black.opacity(0.92), .black.opacity(0.55)], startPoint: .leading,
-        endPoint: .trailing)
-    case .avatar:
-      // The repository's own picture, blown up and blurred, so each project gets its colours.
-      if let image = repoImage ?? NSApp.applicationIconImage {
-        Image(nsImage: image).resizable().aspectRatio(contentMode: .fill)
-          .frame(width: Self.size.width * 1.3, height: Self.size.height * 1.3)
-          .blur(radius: 90).saturation(1.4).opacity(0.75)
-      }
-      LinearGradient(
-        colors: [.black.opacity(0.35), .black.opacity(0.8)], startPoint: .top, endPoint: .bottom)
     }
+    LinearGradient(
+      colors: [.black.opacity(0.92), .black.opacity(0.55)], startPoint: .leading,
+      endPoint: .trailing)
   }
 
   /// "3h 12m", from opening to merging.
