@@ -2,6 +2,22 @@
 
 Notable changes to GitIsle. Releases follow [semantic versioning](https://semver.org).
 
+## [0.2.0](https://github.com/ppazosp/gitisle/compare/v0.1.7...v0.2.0) (2026-10-18)
+
+
+### Features
+
+* a page for each PR, with the checks that failed and why ([#35](https://github.com/ppazosp/gitisle/issues/35)) ([446c9b6](https://github.com/ppazosp/gitisle/commit/446c9b600cc7ccd6fbb6453cfa6de6c09a08fac8))
+* a PR's page shows its files beside its checks, and opens a file to its diff ([#40](https://github.com/ppazosp/gitisle/issues/40)) ([275884e](https://github.com/ppazosp/gitisle/commit/275884eab2d27ef10ab99cf8a818306ef40dcbd7))
+* copy or save a share card for a merged PR ([#38](https://github.com/ppazosp/gitisle/issues/38)) ([4debb57](https://github.com/ppazosp/gitisle/commit/4debb571617d7d0c0779ba6e3bc9bfcedc0e62a3))
+* open a PR's preview deploy from the island, and hear when it's ready ([#36](https://github.com/ppazosp/gitisle/issues/36)) ([2b4949e](https://github.com/ppazosp/gitisle/commit/2b4949e546c28b3502ae638b1667259937e1c957))
+* PRs built on each other show as a stack ([#37](https://github.com/ppazosp/gitisle/issues/37)) ([5d1a7a5](https://github.com/ppazosp/gitisle/commit/5d1a7a54e075ae80b3762c33da752636b415dc50))
+
+
+### Bug Fixes
+
+* merging follows the merge queue, with its checks, a real start time, and failures ([#39](https://github.com/ppazosp/gitisle/issues/39)) ([fb0d55d](https://github.com/ppazosp/gitisle/commit/fb0d55d441b7e1c79dd983db2b04503611902c1b))
+
 ## [0.1.7](https://github.com/ppazosp/gitisle/compare/v0.1.6...v0.1.7) (2026-10-13)
 
 
