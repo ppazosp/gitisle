@@ -38,7 +38,8 @@ struct ActivityTests {
 
     #expect(draft.group == .draft)
     #expect(queued.group == .merging)
-    #expect(autoMerge.group == .merging)
+    // Set to merge while checks run: still waiting, not merging yet.
+    #expect(autoMerge.group == .open && autoMerge.isWaitingToMerge)
     #expect(review.group == .open && review.needsYou)
     #expect(waiting.group == .open && !waiting.needsYou)
     #expect(merged.group == .merged)
@@ -169,6 +170,76 @@ struct ActivityTests {
     #expect(events.map(\.kind) == [.queued])
     #expect(events.first?.title.hasSuffix("Merging") == true)
     #expect(GitHubChanges.events(previous: current, current: current).isEmpty)
+  }
+
+  @Test func autoMergeOnlyStartsMergingOnceNothingIsLeftToWaitFor() {
+    var checking = pr("mine")
+    checking.autoMerge = true
+    checking.checks = "PENDING"
+    checking.mergeStateStatus = "BLOCKED"
+    var passed = checking
+    passed.checks = "SUCCESS"
+    passed.mergeStateStatus = "CLEAN"
+    // Choosing "merge when ready" while CI runs is quiet; merging announces once CI passes.
+    #expect(events(pr("mine"), checking).isEmpty)
+    #expect(events(checking, passed).map(\.kind) == [.queued])
+  }
+
+  @Test func mergingAgainAfterAFailedMergeAnnouncesAgain() {
+    let open = ready()
+    var first = open
+    first.queuePosition = 1
+    first.mergingSince = now
+    var second = open
+    second.queuePosition = 1
+    second.mergingSince = now.addingTimeInterval(600)
+    let one = events(open, first)
+    let two = events(open, second)
+    #expect(one.map(\.kind) == [.queued] && two.map(\.kind) == [.queued])
+    #expect(one.first?.id != two.first?.id)
+  }
+
+  @Test func leavingTheMergeQueueWithoutMergingAnnouncesAFailedMerge() {
+    var queued = ready()
+    queued.queuePosition = 1
+    queued.mergingSince = now
+    queued.queueState = "UNMERGEABLE"
+    queued.queueChecks = CheckSummary(passed: 3, failed: 1, pending: 0)
+    let found = events(queued, ready())
+    #expect(found.map(\.kind) == [.mergeFailed])
+    #expect(found.first?.title.hasSuffix("Merge failed") == true)
+
+    var merged = ready()
+    merged.state = "MERGED"
+    #expect(events(queued, merged).map(\.kind) == [.merged])
+    // An entry that passed may only be waiting for GitHub to mark the PR merged.
+    var passing = queued
+    passing.queueState = "MERGEABLE"
+    #expect(events(passing, ready()).isEmpty)
+    var theirs = queued
+    theirs.author = "someone-else"
+    var theirsAfter = ready()
+    theirsAfter.author = "someone-else"
+    #expect(events(theirs, theirsAfter).isEmpty)
+  }
+
+  @Test func autoMergeWithoutAQueueTimesFromWhenItStartedMerging() {
+    var waiting = ready()
+    waiting.autoMerge = true
+    waiting.checks = "PENDING"
+    var merging = ready()
+    merging.autoMerge = true
+    let first = GitHubSnapshot(login: "person", pullRequests: [waiting], fetchedAt: now)
+    let second = MergeTiming.stamped(
+      GitHubSnapshot(login: "person", pullRequests: [merging], fetchedAt: now + 60),
+      previous: first)
+    #expect(second.pullRequests.first?.mergingSince == now + 60)
+    // Later refreshes keep the start, and waiting PRs have none.
+    let third = MergeTiming.stamped(
+      GitHubSnapshot(login: "person", pullRequests: [merging], fetchedAt: now + 120),
+      previous: second)
+    #expect(third.pullRequests.first?.mergingSince == now + 60)
+    #expect(MergeTiming.stamped(first, previous: nil).pullRequests.first?.mergingSince == nil)
   }
 
   @Test func watchedPRsFromOthersDoNotAnnounceMerging() {

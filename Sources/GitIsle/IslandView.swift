@@ -190,12 +190,20 @@ private struct CompactBar: View {
   }
 
   @ViewBuilder private var trailing: some View {
-    if let first = store.merging.first, let since = first.mergingSince {
-      // How long the PR has been merging; the system updates the timer without polling.
-      Text(since, style: .timer)
-        .foregroundStyle(Palette.merging)
-        .multilineTextAlignment(.trailing)
-        .fixedSize()
+    if let first = store.merging.first {
+      HStack(spacing: 6) {
+        // The merge queue's checks, as the ring shows the PR's own while they run.
+        if let queue = first.queueChecks { CheckRing(summary: queue, size: 14, lineWidth: 2.2) }
+        if let since = first.mergingSince {
+          // How long the PR has been merging; the system updates the timer without polling.
+          Text(since, style: .timer)
+            .foregroundStyle(Palette.merging)
+            .multilineTextAlignment(.trailing)
+            .fixedSize()
+        } else if let queue = first.queueChecks {
+          Text(verbatim: "\(queue.passed)/\(queue.total)").foregroundStyle(.white.opacity(0.6))
+        }
+      }
     } else if store.merging.isEmpty, let summary = store.checking.first?.checkSummary {
       Text(verbatim: "\(summary.passed)/\(summary.total)")
         .foregroundStyle(.white.opacity(0.6))
