@@ -264,7 +264,16 @@ final class IslandStore {
     detailsError = nil
     guard let id = detailsID else { return }
     if isDemo {
-      pullRequestDetails[id] = demoDetails(id)
+      // A tour shows the page loading, as it does against GitHub.
+      guard touring else {
+        pullRequestDetails[id] = demoDetails(id)
+        return
+      }
+      detailsTask = Task { [weak self] in
+        try? await Task.sleep(for: .seconds(0.9))
+        guard let self, !Task.isCancelled, detailsID == id else { return }
+        withAnimation(Motion.morph) { pullRequestDetails[id] = demoDetails(id) }
+      }
       return
     }
     detailsTask = Task { [weak self] in
@@ -1038,6 +1047,53 @@ final class IslandStore {
           if let failed { try await step(1.6) { self?.showEvent(failed) } }
           try await step(3.2) { self?.recentEvent = nil }
         } catch {}
+        self?.touring = false
+      })
+  }
+
+  /// Example data only: the tour of a PR's page (`--tour pages`), for recording a product
+  /// video. A preview lands, a PR opens with its diff side by side, a stack fans out on the
+  /// board, and a merge fails. Runs once, about 30 seconds.
+  func runPagesTour() {
+    guard isDemo else { return }
+    let preview = demoEvent(.previewReady)
+    let stacked = github?.pullRequests.first { $0.id == "demo2" }
+    // The tour shows the diff side by side; the layout is the viewer's own setting.
+    let defaults = UserDefaults.standard
+    let layout = defaults.string(forKey: "diffLayout")
+    defaults.set("unified", forKey: "diffLayout")
+    touring = true
+    loops.append(
+      Task { [weak self] in
+        @MainActor func step(_ seconds: Double, _ change: () -> Void) async throws {
+          try await Task.sleep(for: .seconds(seconds))
+          withAnimation(Motion.morph, change)
+        }
+        do {
+          // The live bar with the merge queue's checks, then a preview landing.
+          if let preview { try await step(2.0) { self?.showEvent(preview) } }
+          try await step(3.6) { self?.recentEvent = nil }
+          // Open the list, then a PR's page, a file, and the diff side by side.
+          try await step(1.2) {
+            self?.tab = .activity
+            self?.activityLayout = .list
+            self?.expanded = true
+          }
+          if let stacked { try await step(1.8) { self?.openDetails(stacked) } }
+          try await step(3.4) { self?.openFile("Sources/Core/Cache.swift") }
+          try await step(2.2) { defaults.set("split", forKey: "diffLayout") }
+          try await step(2.6) { self?.closeFile() }
+          try await step(1.2) { self?.closeDetails() }
+          // The board, where #431 and #436 fold into one pile; fan it out and back.
+          try await step(1.2) { self?.activityLayout = .board }
+          try await step(1.8) { self?.toggleStack("demo4") }
+          try await step(2.4) { self?.toggleStack("demo4") }
+          try await step(1.6) { self?.expanded = false }
+          // #433 leaves the merge queue without merging.
+          try await step(1.6) { self?.previewStory(.mergeFailed) }
+          try await step(4.4) { self?.recentEvent = nil }
+        } catch {}
+        defaults.set(layout, forKey: "diffLayout")
         self?.touring = false
       })
   }

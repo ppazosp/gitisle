@@ -137,7 +137,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
       store.previewEvent(kind)
     }
     if arguments.contains("--showcase") { store.runShowcase() }
-    if arguments.contains("--tour") { store.runTour() }
+    // `--tour` plays every state of the island; `--tour pages` plays a PR's page.
+    if let index = arguments.firstIndex(of: "--tour") {
+      if arguments.count > index + 1, arguments[index + 1] == "pages" {
+        store.runPagesTour()
+      } else {
+        store.runTour()
+      }
+    }
     island = IslandPanelController(store: store)
     settingsObserver = NotificationCenter.default.addObserver(
       forName: .islandSettingsChanged, object: nil, queue: .main
