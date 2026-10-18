@@ -474,9 +474,17 @@ private struct ExpandedIsland: View {
         .disabled(store.updater.installing)
         .transition(.scale(scale: 0.6).combined(with: .opacity))
       }
+      // Once a click keeps the island open, this closes it; so do Escape and a click outside.
+      if store.pinned {
+        FooterButton(glyph: nil, systemImage: "chevron.up", label: "Close GitIsle") {
+          withAnimation(Motion.morph) { store.dismiss() }
+        }
+        .transition(.scale(scale: 0.6).combined(with: .opacity))
+      }
     }
     .padding(.horizontal, 18)
     .animation(Motion.snappy, value: store.updater.available)
+    .animation(Motion.snappy, value: store.pinned)
   }
 
   private var refreshing: Bool { store.githubRefreshing || store.usageRefreshing }
