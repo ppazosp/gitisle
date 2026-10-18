@@ -338,8 +338,19 @@ private struct FilesColumn: View {
         Text("\(details.changedFiles)").monospacedDigit()
       }
     } rows: {
-      ForEach(details.files, id: \.path) { file in
-        FileRow(file: file) { withAnimation(Motion.snappy) { store.openFile(file.path) } }
+      ForEach(
+        Array(FileTree.rows(details.files, folded: store.foldedFolders).enumerated()), id: \.offset
+      ) { _, row in
+        switch row.kind {
+        case .folder(let name, let path, let folded):
+          FolderRow(name: name, folded: folded, depth: row.depth) {
+            withAnimation(Motion.snappy) { store.toggleFolder(path) }
+          }
+        case .file(let file):
+          FileRow(file: file, depth: row.depth) {
+            withAnimation(Motion.snappy) { store.openFile(file.path) }
+          }
+        }
       }
       if details.changedFiles > details.files.count {
         // The page reads up to 100 files; GitHub lists the rest.
@@ -364,19 +375,52 @@ private struct FilesColumn: View {
   }
 }
 
-private struct FileRow: View {
-  let file: PullRequestDetails.FileChange
+/// How far each level of the file tree steps in.
+private let treeIndent: CGFloat = 14
+
+/// A folder in the file tree; click it to fold or unfold what's inside.
+private struct FolderRow: View {
+  let name: String
+  let folded: Bool
+  let depth: Int
   let action: () -> Void
   @State private var hovered = false
 
   var body: some View {
     Button(action: action) {
-      HStack(spacing: 9) {
+      HStack(spacing: 6) {
+        Image(systemName: "chevron.right").font(.system(size: 8.5, weight: .bold))
+          .foregroundStyle(.white.opacity(hovered ? 0.7 : 0.4))
+          .rotationEffect(.degrees(folded ? 0 : 90)).frame(width: 10)
+        Image(systemName: "folder").font(.system(size: 11.5))
+          .foregroundStyle(.white.opacity(0.45))
+        Text(name).font(.system(size: 12)).foregroundStyle(.white.opacity(0.62))
+          .lineLimit(1).truncationMode(.middle)
+        Spacer(minLength: 0)
+      }
+      .padding(.leading, CGFloat(depth) * treeIndent)
+      .frame(height: PRDetailsView.rowHeight)
+      .contentShape(Rectangle())
+    }
+    .buttonStyle(.plain)
+    .onHover { hovered = $0 }
+    .help(name)
+  }
+}
+
+private struct FileRow: View {
+  let file: PullRequestDetails.FileChange
+  let depth: Int
+  let action: () -> Void
+  @State private var hovered = false
+
+  var body: some View {
+    Button(action: action) {
+      HStack(spacing: 8) {
         Image(systemName: file.symbol).font(.system(size: 12, weight: .medium))
           .foregroundStyle(file.color).frame(width: 14)
-        (Text(file.folder).foregroundStyle(.white.opacity(0.35))
-          + Text(file.name).foregroundStyle(.white.opacity(0.9)))
-          .font(.system(size: 12)).lineLimit(1).truncationMode(.head)
+        Text(file.name).foregroundStyle(.white.opacity(0.9))
+          .font(.system(size: 12)).lineLimit(1).truncationMode(.middle)
         Spacer(minLength: 8)
         (Text("+\(file.additions)").foregroundStyle(Palette.open)
           + Text(" −\(file.deletions)").foregroundStyle(Palette.failed))
@@ -384,6 +428,8 @@ private struct FileRow: View {
         Image(systemName: "chevron.right").font(.system(size: 9, weight: .semibold))
           .foregroundStyle(.white.opacity(hovered ? 0.7 : 0.3))
       }
+      // A file's icon lines up with its sibling folders' icons, past their chevrons.
+      .padding(.leading, CGFloat(depth) * treeIndent + 16)
       .frame(height: PRDetailsView.rowHeight)
       .contentShape(Rectangle())
     }

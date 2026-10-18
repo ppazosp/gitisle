@@ -69,3 +69,48 @@ private actor Paths {
   var all: [String] = []
   func add(_ path: String) { all.append(path) }
 }
+
+struct FileTreeTests {
+  private func file(_ path: String) -> PullRequestDetails.FileChange {
+    .init(path: path, additions: 1, deletions: 0)
+  }
+
+  private func describe(_ rows: [FileTree.Row]) -> [String] {
+    rows.map { row in
+      let indent = String(repeating: "  ", count: row.depth)
+      switch row.kind {
+      case .folder(let name, _, let folded): return "\(indent)\(folded ? "▸" : "▾") \(name)/"
+      case .file(let file): return "\(indent)\(file.name)"
+      }
+    }
+  }
+
+  @Test func foldersComeFirstAndSingleFolderChainsJoin() {
+    let rows = FileTree.rows([
+      file("README.md"),
+      file("apps/omnia/app/chat/engine.ts"),
+      file("apps/omnia/app/chat/recovery/held.ts"),
+      file("apps/omnia/lib/sandbox/wake.ts"),
+      file("apps/omnia/lib/sandbox/health.ts"),
+    ])
+    #expect(
+      describe(rows) == [
+        "▾ apps/omnia/",
+        "  ▾ app/chat/",
+        "    ▾ recovery/",
+        "      held.ts",
+        "    engine.ts",
+        "  ▾ lib/sandbox/",
+        "    wake.ts",
+        "    health.ts",
+        "README.md",
+      ])
+  }
+
+  @Test func aFoldedFolderHidesWhatsInside() {
+    let files = [file("apps/omnia/app/chat/engine.ts"), file("apps/omnia/lib/sandbox/wake.ts")]
+    let rows = FileTree.rows(files, folded: ["apps/omnia/app/chat"])
+    #expect(
+      describe(rows) == ["▾ apps/omnia/", "  ▸ app/chat/", "  ▾ lib/sandbox/", "    wake.ts"])
+  }
+}

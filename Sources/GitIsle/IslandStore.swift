@@ -88,6 +88,7 @@ final class IslandStore {
     didSet {
       if detailsID != oldValue {
         openFilePath = nil
+        foldedFolders = []
         // Only the open PR's diffs are kept.
         filePatches = filePatches.filter { $0.key.hasPrefix("\(detailsID ?? "")@") }
         patchPages = patchPages.filter { $0.key.hasPrefix("\(detailsID ?? "")@") }
@@ -97,6 +98,8 @@ final class IslandStore {
   }
   /// The file whose changes the open page shows, by path.
   private(set) var openFilePath: String?
+  /// Folders folded in the open page's file tree, by path; every folder starts open.
+  private(set) var foldedFolders: Set<String> = []
   /// Diffs read so far, by PR and head commit, then path. They're read when a file is opened,
   /// never on refresh, since a large PR's diffs run to megabytes.
   private(set) var filePatches: [String: [String: String]] = [:]
@@ -235,6 +238,10 @@ final class IslandStore {
         if openFilePath == path { patchError = error.localizedDescription }
       }
     }
+  }
+
+  func toggleFolder(_ path: String) {
+    if foldedFolders.remove(path) == nil { foldedFolders.insert(path) }
   }
 
   func closeFile() {
