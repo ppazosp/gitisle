@@ -670,21 +670,21 @@ private struct ListStack: View {
   }
 }
 
-/// A folded stack's icon in the list: a stack coloured by its worst PR, with a badge counting
-/// its PRs.
+/// A folded stack's icon in the list: a stack coloured by its worst PR, with a small grey
+/// count beside its lower corner.
 private struct StackIcon: View {
   let pile: [PullRequest]
 
   var body: some View {
     Image(systemName: "square.stack.3d.up.fill").font(.system(size: 14, weight: .medium))
       .foregroundStyle(StackCount.color(pile))
+      // Beside the icon, not on it, so the row's title stays where every other row's is.
       .overlay(alignment: .bottomTrailing) {
-        Text("\(pile.count)").font(.system(size: 8.5, weight: .bold)).monospacedDigit()
-          .foregroundStyle(.black)
-          .frame(minWidth: 12, minHeight: 12)
-          .background(Circle().fill(.white.opacity(0.85)))
-          .background(Circle().fill(.black).padding(-1.5))
-          .offset(x: 6, y: 5)
+        Text("\(pile.count)").font(.system(size: 9.5, weight: .bold)).monospacedDigit()
+          .foregroundStyle(.white.opacity(0.55))
+          .fixedSize()
+          .alignmentGuide(.trailing) { $0[.leading] - 1 }
+          .offset(y: 2)
       }
       .help("A stack of \(pile.count) PRs. Click to open it.")
   }
