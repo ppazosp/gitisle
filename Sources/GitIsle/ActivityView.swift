@@ -526,8 +526,8 @@ private struct BoardView: View {
 
 private struct PRCard: View {
   let pr: PullRequest
-  /// On a folded pile: how many PRs it holds, shown in place of "on #436".
-  var pile: Int?
+  /// On a folded pile: the PRs it holds, counted in place of "on #436".
+  var pile: [PullRequest]?
   /// What a click does instead of opening the PR, such as fanning out its pile.
   var tap: (() -> Void)?
   @State private var hovered = false
@@ -545,13 +545,15 @@ private struct PRCard: View {
       }
     } label: {
       VStack(alignment: .leading, spacing: 7) {
-        HStack(spacing: 6) {
+        // Its text shares one baseline; the picture centres on the letters.
+        HStack(alignment: .firstTextBaseline, spacing: 6) {
           RepoAvatar(url: pr.ownerAvatar, size: 14)
+            .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 3.8 }
           Text(verbatim: pr.repository.split(separator: "/").last.map(String.init) ?? "")
             .lineLimit(1)
           Spacer(minLength: 4)
           if let pile {
-            StackCount(count: pile)
+            StackCount(pile: pile)
           }
           Text(verbatim: "#\(pr.number)").monospacedDigit()
           if pile == nil { StackLabel(link: stacks[pr.id]) }
@@ -595,7 +597,7 @@ private struct StackPile: View {
       VStack(alignment: .leading, spacing: 6) {
         Button(action: toggle) {
           HStack(spacing: 5) {
-            StackCount(count: pile.count)
+            StackCount(pile: pile)
             Image(systemName: "chevron.up").font(.system(size: 8, weight: .bold))
               .foregroundStyle(.white.opacity(0.4))
             Spacer(minLength: 0)
@@ -608,7 +610,7 @@ private struct StackPile: View {
       }
     } else if let top = pile.last {
       // Cards peeking out below the top one make it read as a pile.
-      PRCard(pr: top, pile: pile.count, tap: toggle)
+      PRCard(pr: top, pile: pile, tap: toggle)
         // Cards are see-through; a solid back keeps the ones below from showing through it.
         .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(.black))
         .background(alignment: .bottom) {
@@ -626,17 +628,31 @@ private struct StackPile: View {
   }
 }
 
-/// The stack icon and how many PRs the stack holds, like the card's other details.
+/// The stack icon and how many PRs the stack holds, coloured by its worst PR, so a folded
+/// pile can't hide a failure.
 private struct StackCount: View {
-  let count: Int
+  let pile: [PullRequest]
 
   var body: some View {
-    HStack(spacing: 3) {
-      Image(systemName: "square.stack.3d.up").font(.system(size: 9.5, weight: .medium))
-      Text("\(count)").monospacedDigit()
+    // The icon sits inside the text, on the same baseline as the number beside it.
+    Text("\(Image(systemName: "square.stack.3d.up")) \(pile.count)").monospacedDigit()
+      .font(.system(size: 10.5, weight: .medium)).foregroundStyle(Self.color(pile))
+      .help("A stack of \(pile.count) PRs")
+  }
+
+  /// Red when any PR failed, has conflicts or was asked for changes; amber while any still
+  /// runs checks or waits on a review; green when all are ready or merging; grey otherwise.
+  static func color(_ pile: [PullRequest]) -> Color {
+    let statuses = pile.map(\.status)
+    if statuses.contains(where: { [.failed, .conflicts, .changesRequested].contains($0) }) {
+      return Palette.failed
     }
-    .font(.system(size: 10.5)).foregroundStyle(.white.opacity(0.45))
-    .help("A stack of \(count) PRs")
+    if statuses.contains(where: { [.checking, .review, .waiting, .behind, .blocked].contains($0) })
+    {
+      return Palette.attention
+    }
+    if statuses.allSatisfy({ [.ready, .queued, .merged].contains($0) }) { return Palette.open }
+    return .white.opacity(0.45)
   }
 }
 
