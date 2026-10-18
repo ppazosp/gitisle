@@ -118,13 +118,13 @@ struct PRDetailsView: View {
       }
       HStack(spacing: 14) {
         if !head.isEmpty {
-          // Each branch shortens on its own, so the arrow and the base always show.
+          // Each branch shortens on its own, sharing the room, so the arrow always shows.
           HStack(spacing: 5) {
             GlyphView(glyph: .branch, size: 12)
             BranchChip(name: head)
             Image(systemName: "arrow.right").font(.system(size: 8.5, weight: .bold))
               .foregroundStyle(.white.opacity(0.35))
-            BranchChip(name: base).layoutPriority(1)
+            BranchChip(name: base)
           }
           .help("\(head) into \(base)")
         }
@@ -154,15 +154,13 @@ struct PRDetailsView: View {
   }
 }
 
-/// A branch name as GitHub shows one: monospaced on a faint tag, shortened in the middle.
+/// A branch name, monospaced and shortened in the middle when the line is tight.
 private struct BranchChip: View {
   let name: String
 
   var body: some View {
     Text(verbatim: name).font(.system(size: 11, design: .monospaced)).lineLimit(1)
-      .truncationMode(.middle).foregroundStyle(Color(red: 0.6, green: 0.78, blue: 1))
-      .padding(.horizontal, 6).padding(.vertical, 2)
-      .background(RoundedRectangle(cornerRadius: 5).fill(Palette.update.opacity(0.14)))
+      .truncationMode(.middle)
   }
 }
 
