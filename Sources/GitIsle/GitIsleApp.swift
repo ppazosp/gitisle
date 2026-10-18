@@ -92,6 +92,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
       let pr = store.github?.pullRequests.first(where: { $0.id == arguments[index + 1] })
     {
       let url = URL(fileURLWithPath: arguments[index + 2])
+      if let style = arguments.firstIndex(of: "--backdrop"), arguments.count > style + 1,
+        let backdrop = ShareCard.Backdrop(rawValue: arguments[style + 1])
+      {
+        IslandStore.shareBackdrop = backdrop
+      }
       Task {
         guard let png = await store.shareCard(for: pr) else { exit(1) }
         do {
@@ -107,6 +112,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
       let pr = store.github?.pullRequests.first(where: { $0.id == arguments[index + 1] })
     {
       store.openDetails(pr)
+      // `--file <path>` opens one of its files to the diff.
+      if let file = arguments.firstIndex(of: "--file"), arguments.count > file + 1 {
+        store.openFile(arguments[file + 1])
+      }
     }
     if arguments.contains("--banner"),
       let pr = store.github?.pullRequests.first(where: {

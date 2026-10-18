@@ -1,48 +1,74 @@
 import Foundation
 
-/// Everything the PR page shows, read on demand: the description, reviews, changed files, the
-/// latest comments, and every check on the head commit with its errors.
+/// Everything the PR page shows, read on demand: who opened it and who's reviewing, the files
+/// it changes, and every check on the head commit.
 public struct PullRequestDetails: Equatable, Sendable {
   public struct FileChange: Equatable, Sendable {
+    public enum Kind: Equatable, Sendable {
+      case added, modified, removed, renamed
+    }
+
     public var path: String
     public var additions: Int
     public var deletions: Int
+    public var kind: Kind
 
-    public init(path: String, additions: Int, deletions: Int) {
+    public init(path: String, additions: Int, deletions: Int, kind: Kind = .modified) {
       self.path = path
       self.additions = additions
       self.deletions = deletions
+      self.kind = kind
+    }
+
+    /// GitHub's change type: ADDED, DELETED, RENAMED, COPIED, MODIFIED, or CHANGED.
+    public static func kind(_ changeType: String?) -> Kind {
+      switch changeType {
+      case "ADDED", "COPIED": .added
+      case "DELETED": .removed
+      case "RENAMED": .renamed
+      default: .modified
+      }
+    }
+
+    /// The file's name, after its folder.
+    public var name: String { path.split(separator: "/").last.map(String.init) ?? path }
+
+    /// The folder the file is in, such as "sandbox/"; empty at the repository root.
+    public var folder: String {
+      let parts = path.split(separator: "/")
+      return parts.count > 1 ? "\(parts[parts.count - 2])/" : ""
+    }
+  }
+
+  /// Someone asked to review, or who has: a person, a team, or a bot.
+  public struct Reviewer: Equatable, Sendable {
+    public var name: String
+    public var avatar: URL?
+
+    public init(name: String, avatar: URL? = nil) {
+      self.name = name
+      self.avatar = avatar
     }
   }
 
   public struct Review: Equatable, Sendable {
     public var author: String
+    public var avatar: URL?
     /// GitHub's review state: APPROVED, CHANGES_REQUESTED, COMMENTED, DISMISSED, or PENDING.
     public var state: String
     public var submittedAt: Date?
 
-    public init(author: String, state: String, submittedAt: Date?) {
+    public init(author: String, avatar: URL? = nil, state: String, submittedAt: Date?) {
       self.author = author
+      self.avatar = avatar
       self.state = state
       self.submittedAt = submittedAt
     }
   }
 
-  public struct Comment: Equatable, Sendable {
-    public var author: String
-    public var body: String
-    public var createdAt: Date
-
-    public init(author: String, body: String, createdAt: Date) {
-      self.author = author
-      self.body = body
-      self.createdAt = createdAt
-    }
-  }
-
   public var id: String
-  public var body: String
   public var author: String?
+  public var authorAvatar: URL?
   public var baseRefName: String
   public var headRefName: String
   public var createdAt: Date?
@@ -52,29 +78,26 @@ public struct PullRequestDetails: Equatable, Sendable {
   public var files: [FileChange]
   public var commitCount: Int
   /// People and teams asked for a review who haven't given one yet.
-  public var requestedReviewers: [String]
+  public var requestedReviewers: [Reviewer]
   /// Each reviewer's latest review.
   public var reviews: [Review]
   public var commentCount: Int
-  /// The newest comments, oldest first.
-  public var comments: [Comment]
   public var checks: [Check]
   /// Preview deploys of the head commit.
   public var previews: [PreviewDeploy]
   public var fetchedAt: Date
 
   public init(
-    id: String, body: String = "", author: String? = nil, baseRefName: String = "",
+    id: String, author: String? = nil, authorAvatar: URL? = nil, baseRefName: String = "",
     headRefName: String = "", createdAt: Date? = nil, additions: Int = 0, deletions: Int = 0,
     changedFiles: Int = 0, files: [FileChange] = [], commitCount: Int = 0,
-    requestedReviewers: [String] = [], reviews: [Review] = [], commentCount: Int = 0,
-    comments: [Comment] = [], checks: [Check] = [], previews: [PreviewDeploy] = [],
-    fetchedAt: Date = Date()
+    requestedReviewers: [Reviewer] = [], reviews: [Review] = [], commentCount: Int = 0,
+    checks: [Check] = [], previews: [PreviewDeploy] = [], fetchedAt: Date = Date()
   ) {
     self.previews = previews
     self.id = id
-    self.body = body
     self.author = author
+    self.authorAvatar = authorAvatar
     self.baseRefName = baseRefName
     self.headRefName = headRefName
     self.createdAt = createdAt
@@ -86,7 +109,6 @@ public struct PullRequestDetails: Equatable, Sendable {
     self.requestedReviewers = requestedReviewers
     self.reviews = reviews
     self.commentCount = commentCount
-    self.comments = comments
     self.checks = checks
     self.fetchedAt = fetchedAt
   }

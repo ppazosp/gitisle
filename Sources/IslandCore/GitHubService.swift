@@ -28,11 +28,17 @@ public actor GitHubService {
     "deployments(last: 10) { nodes { environment latestStatus { state environmentUrl } } }"
 
   private let transport: (@Sendable (Data) async throws -> Data)?
+  /// Answers REST requests by path instead of `gh`, for tests.
+  private let restTransport: (@Sendable (String) async throws -> Data)?
   /// The GraphQL budget GitHub reported with the last response, for pacing refreshes.
   public private(set) var budget: RateBudget?
 
-  public init(transport: (@Sendable (Data) async throws -> Data)? = nil) {
+  public init(
+    transport: (@Sendable (Data) async throws -> Data)? = nil,
+    restTransport: (@Sendable (String) async throws -> Data)? = nil
+  ) {
     self.transport = transport
+    self.restTransport = restTransport
   }
 
   public func fetch(selection: RepositorySelection, previous: GitHubSnapshot?) async throws
@@ -410,12 +416,14 @@ extension GitHubService {
       query($id: ID!) {
         rateLimit { remaining resetAt }
         node(id: $id) { ... on PullRequest {
-          id body author { login } baseRefName headRefName createdAt additions deletions changedFiles
-          files(first: 100) { nodes { path additions deletions } }
+          id author { login avatarUrl(size: 64) } baseRefName headRefName createdAt
+          additions deletions changedFiles
+          files(first: 100) { nodes { path additions deletions changeType } }
           reviewRequests(first: 10) { nodes { requestedReviewer {
-            ... on User { login } ... on Team { name } ... on Bot { login } } } }
-          latestReviews(first: 10) { nodes { author { login } state submittedAt } }
-          comments(last: 5) { totalCount nodes { author { login } bodyText createdAt } }
+            ... on User { login avatarUrl(size: 64) } ... on Team { name avatarUrl(size: 64) }
+            ... on Bot { login avatarUrl(size: 64) } } } }
+          latestReviews(first: 10) { nodes { author { login avatarUrl(size: 64) } state submittedAt } }
+          comments { totalCount }
           commits(last: 1) { totalCount nodes { commit {
             \(Self.deployments)
             statusCheckRollup { contexts(first: 100) {
@@ -448,46 +456,85 @@ extension GitHubService {
       (value as? [String: Any])?["nodes"] as? [[String: Any]] ?? []
     }
     func login(_ value: Any?) -> String? { (value as? [String: Any])?["login"] as? String }
+    func face(_ value: Any?) -> URL? { personAvatar((value as? [String: Any])?["avatarUrl"]) }
     let files = nodes(node["files"]).compactMap { file -> PullRequestDetails.FileChange? in
       guard let path = file["path"] as? String else { return nil }
       return .init(
         path: path, additions: file["additions"] as? Int ?? 0,
-        deletions: file["deletions"] as? Int ?? 0)
+        deletions: file["deletions"] as? Int ?? 0,
+        kind: PullRequestDetails.FileChange.kind(file["changeType"] as? String))
     }
-    let requested = nodes(node["reviewRequests"]).compactMap { request -> String? in
+    let requested = nodes(node["reviewRequests"]).compactMap {
+      request -> PullRequestDetails.Reviewer? in
       let reviewer = request["requestedReviewer"] as? [String: Any]
-      return (reviewer?["login"] ?? reviewer?["name"]) as? String
+      guard let name = (reviewer?["login"] ?? reviewer?["name"]) as? String else { return nil }
+      return .init(name: name, avatar: face(reviewer))
     }
     let reviews = nodes(node["latestReviews"]).compactMap { review -> PullRequestDetails.Review? in
       guard let author = login(review["author"]), let state = review["state"] as? String else {
         return nil
       }
       return .init(
-        author: author, state: state,
+        author: author, avatar: face(review["author"]), state: state,
         submittedAt: (review["submittedAt"] as? String).flatMap(Dates.parse))
-    }
-    let commentsConnection = node["comments"] as? [String: Any]
-    let comments = nodes(commentsConnection).compactMap { comment -> PullRequestDetails.Comment? in
-      guard let created = (comment["createdAt"] as? String).flatMap(Dates.parse) else { return nil }
-      return .init(
-        author: login(comment["author"]) ?? "ghost", body: comment["bodyText"] as? String ?? "",
-        createdAt: created)
     }
     let commits = node["commits"] as? [String: Any]
     let commit = nodes(commits).last?["commit"] as? [String: Any]
     let contexts = ((commit?["statusCheckRollup"] as? [String: Any])?["contexts"])
     let checks = nodes(contexts).compactMap(Self.decodeCheck)
     return PullRequestDetails(
-      id: id, body: node["body"] as? String ?? "", author: login(node["author"]),
+      id: id, author: login(node["author"]), authorAvatar: face(node["author"]),
       baseRefName: node["baseRefName"] as? String ?? "",
       headRefName: node["headRefName"] as? String ?? "",
       createdAt: (node["createdAt"] as? String).flatMap(Dates.parse),
       additions: node["additions"] as? Int ?? 0, deletions: node["deletions"] as? Int ?? 0,
       changedFiles: node["changedFiles"] as? Int ?? files.count, files: files,
       commitCount: commits?["totalCount"] as? Int ?? 0, requestedReviewers: requested,
-      reviews: reviews, commentCount: commentsConnection?["totalCount"] as? Int ?? comments.count,
-      comments: comments, checks: checks,
+      reviews: reviews,
+      commentCount: (node["comments"] as? [String: Any])?["totalCount"] as? Int ?? 0,
+      checks: checks,
       previews: (commit?["deployments"] as? [String: Any]).map(previews) ?? [], fetchedAt: now)
+  }
+
+  /// A person's, team's, or bot's picture, from GitHub's own avatar host only.
+  static func personAvatar(_ value: Any?) -> URL? {
+    guard let link = value as? String, let url = URL(string: link), url.scheme == "https",
+      url.host == "avatars.githubusercontent.com"
+    else { return nil }
+    return url
+  }
+
+  /// The changes in one page of a PR's files, by path, as unified diffs. GraphQL can't read
+  /// them, so this is one REST request per 100 files, which spends no GraphQL points. Binary
+  /// files and those too large for GitHub to show have no diff.
+  public func patches(repository: String, number: Int, page: Int) async throws -> [String: String] {
+    let parts = repository.split(separator: "/")
+    guard parts.count == 2,
+      parts.allSatisfy({ part in
+        part.allSatisfy { $0.isASCII && ($0.isLetter || $0.isNumber || "-_.".contains($0)) }
+      }), number > 0, page > 0
+    else { throw ProcessFailure.failed("That pull request can't be read.") }
+    let path = "repos/\(repository)/pulls/\(number)/files?per_page=100&page=\(page)"
+    let output: Data
+    if let restTransport {
+      output = try await restTransport(path)
+    } else {
+      guard let gh = ProcessRunner.executable("gh") else {
+        throw ProcessFailure.unavailable("GitHub CLI (gh)")
+      }
+      output = try await ProcessRunner.run(gh, arguments: ["api", path])
+    }
+    guard let files = try JSONSerialization.jsonObject(with: output) as? [[String: Any]] else {
+      throw ProcessFailure.failed("GitHub returned unreadable changes.")
+    }
+    var result: [String: String] = [:]
+    for file in files {
+      guard let name = file["filename"] as? String, let patch = file["patch"] as? String else {
+        continue
+      }
+      result[name] = patch
+    }
+    return result
   }
 
   static func decodeCheck(_ node: [String: Any]) -> Check? {

@@ -398,6 +398,8 @@ struct RepoAvatar: View {
   /// People are shown in circles; repositories and organizations in rounded squares.
   var circular = false
   var placeholder: Glyph = .repo
+  /// A person's name, whose first letter stands in until their picture loads.
+  var name: String?
   @State private var image: NSImage?
 
   @MainActor private static var cache: [URL: NSImage] = [:]
@@ -409,6 +411,11 @@ struct RepoAvatar: View {
           .frame(width: size, height: size)
           .clipShape(
             RoundedRectangle(cornerRadius: circular ? size / 2 : size * 0.28, style: .continuous))
+      } else if let initial = name?.first {
+        Text(String(initial).uppercased())
+          .font(.system(size: size * 0.5, weight: .semibold)).foregroundStyle(.white.opacity(0.8))
+          .frame(width: size, height: size)
+          .background(Circle().fill(.white.opacity(0.16)))
       } else {
         GlyphView(glyph: placeholder, size: size * 0.8).foregroundStyle(.white.opacity(0.5))
           .frame(width: size, height: size)
