@@ -6,6 +6,8 @@ public enum PRStatus: String, Codable, Sendable {
     closed, unknown
   /// Only announced: one of your PRs opened ready for review, or a draft of yours marked ready.
   case opened, readyForReview
+  /// Only announced: a preview deploy of one of your PRs is ready to open.
+  case previewReady
 
   public var label: String {
     switch self {
@@ -25,6 +27,7 @@ public enum PRStatus: String, Codable, Sendable {
     case .unknown: "Status unavailable"
     case .opened: "New PR"
     case .readyForReview: "Ready for review"
+    case .previewReady: "Preview ready"
     }
   }
 
@@ -96,6 +99,10 @@ public struct PullRequest: Codable, Hashable, Identifiable, Sendable {
   public var mergedAt: Date?
   /// When the PR was opened; nil in snapshots saved before it was read.
   public var createdAt: Date?
+  /// Preview deploys of the head commit, from hosts that report them to GitHub (Vercel,
+  /// Netlify, Railway, and others). Nil when they haven't been read: only active and changed
+  /// PRs read them, and full searches keep what was read for the same commit.
+  public var previews: [PreviewDeploy]?
 
   public init(
     id: String, number: Int, repository: String, title: String, url: URL, state: String = "OPEN",
@@ -103,9 +110,11 @@ public struct PullRequest: Codable, Hashable, Identifiable, Sendable {
     mergeable: String = "UNKNOWN", mergeStateStatus: String = "UNKNOWN", checks: String? = nil,
     checkSummary: CheckSummary? = nil, headOID: String = "", autoMerge: Bool = false,
     queuePosition: Int? = nil, mergingSince: Date? = nil, updatedAt: Date = Date(),
-    mergedAt: Date? = nil, author: String? = nil, ownerAvatar: URL? = nil, createdAt: Date? = nil
+    mergedAt: Date? = nil, author: String? = nil, ownerAvatar: URL? = nil, createdAt: Date? = nil,
+    previews: [PreviewDeploy]? = nil
   ) {
     self.createdAt = createdAt
+    self.previews = previews
     self.id = id
     self.number = number
     self.repository = repository
@@ -496,6 +505,64 @@ public struct GitHubStats: Equatable, Sendable {
   public func window(days: Int) -> Window? { windows.first { $0.days == days } }
 }
 
+/// A preview deploy of a PR's head commit, one per project.
+public struct PreviewDeploy: Codable, Hashable, Sendable {
+  public enum State: String, Codable, Sendable {
+    case ready, building, failed
+  }
+
+  /// The project, such as "omnia-docs" from Vercel's "Preview – omnia-docs".
+  public var name: String
+  public var state: State
+  /// Where the preview lives, once it's ready.
+  public var url: URL?
+
+  public init(name: String, state: State, url: URL? = nil) {
+    self.name = name
+    self.state = state
+    self.url = url
+  }
+
+  /// Previews from GitHub's deployments for one commit: the newest per environment, without
+  /// those replaced by a later deploy or retired after a merge. Production deploys are left out.
+  public static func from(
+    _ deployments: [(environment: String, state: String?, url: String?)]
+  ) -> [PreviewDeploy] {
+    var latest: [String: PreviewDeploy] = [:]
+    var order: [String] = []
+    for deployment in deployments {
+      let environment = deployment.environment
+      guard !environment.localizedCaseInsensitiveContains("production") else { continue }
+      let state: State? =
+        switch deployment.state {
+        case "SUCCESS": .ready
+        case "FAILURE", "ERROR": .failed
+        case "PENDING", "QUEUED", "IN_PROGRESS", "WAITING": .building
+        default: nil
+        }
+      let name = environment.replacingOccurrences(
+        of: #"^Preview\s*[–—-]\s*"#, with: "", options: .regularExpression)
+      if latest[name] == nil { order.append(name) }
+      guard let state else {
+        latest[name] = nil
+        continue
+      }
+      let url = deployment.url.flatMap(URL.init(string:)).flatMap {
+        $0.scheme == "https" ? $0 : nil
+      }
+      latest[name] = PreviewDeploy(name: name, state: state, url: state == .ready ? url : nil)
+    }
+    return order.compactMap { latest[$0] }
+  }
+}
+
+extension PullRequest {
+  /// Previews you can open now.
+  public var readyPreviews: [PreviewDeploy] {
+    (previews ?? []).filter { $0.state == .ready && $0.url != nil }
+  }
+}
+
 public struct IslandEvent: Codable, Identifiable, Sendable {
   public var id: String
   public var title: String
@@ -529,7 +596,9 @@ public enum GitHubChanges {
     else { return [] }
     let old = Dictionary(
       previous.pullRequests.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
-    func event(_ pr: PullRequest, _ kind: PRStatus, _ occurrence: String) -> IslandEvent {
+    func event(_ pr: PullRequest, _ kind: PRStatus, _ occurrence: String, url: URL? = nil)
+      -> IslandEvent
+    {
       let label: String =
         switch kind {
         case .queued: "Merging"
@@ -538,7 +607,7 @@ public enum GitHubChanges {
         }
       return IslandEvent(
         id: "\(pr.id):\(kind.rawValue):\(occurrence)",
-        title: "\(pr.repository) #\(pr.number) · \(label)", detail: pr.title, url: pr.url,
+        title: "\(pr.repository) #\(pr.number) · \(label)", detail: pr.title, url: url ?? pr.url,
         occurredAt: current.fetchedAt, kind: kind, repository: pr.repository)
     }
     return current.pullRequests.flatMap { pr -> [IslandEvent] in
@@ -565,6 +634,17 @@ public enum GitHubChanges {
       // Marking a draft ready can also make it ready to merge, so both can announce.
       let undrafted = mine && prior.isDraft && !pr.isDraft && pr.state == "OPEN"
       var events = undrafted ? [event(pr, .readyForReview, pr.headOID)] : []
+      // A preview of your PR that became ready on this commit. Previews GitIsle reads for the
+      // first time stay quiet, so updating or relaunching never replays them.
+      if mine, pr.state == "OPEN", prior.previews != nil {
+        let before = Set(prior.headOID == pr.headOID ? prior.readyPreviews.map(\.name) : [])
+        let fresh = pr.readyPreviews.filter { !before.contains($0.name) }
+        if let first = fresh.first {
+          var ready = event(pr, .previewReady, pr.headOID, url: first.url)
+          ready.note = fresh.map(\.name).joined(separator: ", ")
+          events.append(ready)
+        }
+      }
       guard merged || failed || review || merging || ready else { return events }
       let kind: PRStatus =
         merged ? .merged : failed ? .failed : review ? .review : merging ? .queued : .ready

@@ -27,8 +27,9 @@ shows what's merging, which checks are running, and what needs you.
 - **Live work.** While one of your PRs merges or runs checks, the island shows
   its number and a timer or check progress. Click it to open the PR.
 - **Banners.** PRs you open (ready or draft), drafts marked ready for review,
-  your PRs becoming ready to merge or starting to merge, merges, failed checks,
-  and review requests slide out of the notch. Click one to open the PR.
+  your PRs becoming ready to merge or starting to merge, preview deploys
+  becoming ready, merges, failed checks, and review requests slide out of the
+  notch. Click one to open the PR, or the preview.
 - **Activity.** Hover to open your PRs by repository, or as a board of GitHub
   states: draft, open, merging, merged. Filter by state, by what needs you,
   by repository, and by today, 7 days, or 30 days.
@@ -102,6 +103,7 @@ To uninstall, quit GitIsle (right-click the island), then delete
 | Open the island | Hover the notch for a moment, or click it |
 | Open a live or announced PR | Click the top row or the banner |
 | See a PR's checks, errors, reviews, and files | Click it in Activity; ⌘-click opens GitHub |
+| Open a PR's preview deploy | Click its Preview chip (Vercel, Netlify, Railway, and other hosts that report to GitHub) |
 | Switch between list and board | Use the toggle at the top right |
 | Filter | Use the state chips, the repository picker, and Today / 7 days / 30 days. Pick one or more repositories; the live bar, banners, and notifications follow the picker too |
 | Change settings | Click the gear, or right-click the island |
