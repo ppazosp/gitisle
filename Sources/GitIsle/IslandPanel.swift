@@ -70,6 +70,8 @@ struct IslandMetrics: Equatable {
     CGSize(width: hasNotch ? liveWidth : max(liveWidth, 340), height: closedHeight + 50)
   }
   var expandedWidth: CGFloat { 640 }
+  /// A PR's page sets files beside checks, so it takes more room than the list.
+  var detailsWidth: CGFloat { 820 }
   /// The board grows with its columns and never gets narrower than the list.
   func boardWidth(columns: Int) -> CGFloat {
     let column: CGFloat = 230

@@ -17,6 +17,7 @@ struct PRDetailsView: View {
   let pr: PullRequest
   @Binding var contentHeight: CGFloat
   @State private var headingHeight: CGFloat = 0
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @State private var bodyHeight: CGFloat = 0
 
   /// Files and checks share one row height, so the two columns line up.
@@ -51,6 +52,7 @@ struct PRDetailsView: View {
                 ChecksColumn(details: details) { measured($0, column: 1) }
               }
             }
+            .transition(.opacity)
           }
         } else if let error = store.detailsError {
           Text(error).font(.system(size: 11.5)).foregroundStyle(Palette.attention)
@@ -64,9 +66,12 @@ struct PRDetailsView: View {
         } else {
           // The columns' shape from what the list already knows, so loading doesn't jump.
           LoadingColumns(pr: pr) { measured($0) }
+            .transition(.opacity)
         }
       }
       .frame(maxHeight: .infinity, alignment: .top)
+      // Placeholders fade into the page as it arrives; its rows then come in one by one.
+      .animation(reduceMotion ? nil : .easeOut(duration: 0.22), value: details != nil)
     }
     // Back from a file, the page returns to its columns' height; they don't measure again.
     .onChange(of: store.openFilePath) { _, path in
@@ -113,10 +118,13 @@ struct PRDetailsView: View {
       }
       HStack(spacing: 14) {
         if !head.isEmpty {
-          Meta(glyph: .branch, shrinks: true) {
-            Text(verbatim: "\(head) → \(base)")
-              .font(.system(size: 11, design: .monospaced)).lineLimit(1)
-              .truncationMode(.middle)
+          // Each branch shortens on its own, so the arrow and the base always show.
+          HStack(spacing: 5) {
+            GlyphView(glyph: .branch, size: 12)
+            BranchChip(name: head)
+            Image(systemName: "arrow.right").font(.system(size: 8.5, weight: .bold))
+              .foregroundStyle(.white.opacity(0.35))
+            BranchChip(name: base).layoutPriority(1)
           }
           .help("\(head) into \(base)")
         }
@@ -131,10 +139,12 @@ struct PRDetailsView: View {
         if let commits { Meta(glyph: .commit) { Text("\(commits)") }.help("Commits") }
         if let details {
           Meta(glyph: .comment) { Text("\(details.commentCount)") }.help("Comments")
+            .transition(.opacity)
         }
         Spacer(minLength: 8)
-        if let details { Reviewers(details: details).fixedSize() }
+        if let details { Reviewers(details: details).fixedSize().transition(.opacity) }
       }
+      .animation(reduceMotion ? nil : .easeOut(duration: 0.22), value: details != nil)
       // As tall as the reviewers' faces, so the line doesn't grow when they load.
       .frame(minHeight: 20)
       .font(.system(size: 11.5)).foregroundStyle(.white.opacity(0.5))
@@ -144,12 +154,22 @@ struct PRDetailsView: View {
   }
 }
 
+/// A branch name as GitHub shows one: monospaced on a faint tag, shortened in the middle.
+private struct BranchChip: View {
+  let name: String
+
+  var body: some View {
+    Text(verbatim: name).font(.system(size: 11, design: .monospaced)).lineLimit(1)
+      .truncationMode(.middle).foregroundStyle(Color(red: 0.6, green: 0.78, blue: 1))
+      .padding(.horizontal, 6).padding(.vertical, 2)
+      .background(RoundedRectangle(cornerRadius: 5).fill(Palette.update.opacity(0.14)))
+  }
+}
+
 /// An icon and a value in the line under the title.
 private struct Meta<Value: View>: View {
   var glyph: Glyph?
   var systemImage: String?
-  /// Whether the value may shorten when the line runs out of room, as a long branch name does.
-  var shrinks = false
   @ViewBuilder let value: Value
 
   var body: some View {
@@ -161,7 +181,7 @@ private struct Meta<Value: View>: View {
       }
       value
     }
-    .fixedSize(horizontal: !shrinks, vertical: false)
+    .fixedSize()
   }
 }
 
@@ -171,8 +191,12 @@ private struct Reviewers: View {
 
   var body: some View {
     let reviewed = Set(details.reviews.map(\.author))
+    // Newest review first, then those still asked; the first face sits on top.
+    let newest = details.reviews.sorted {
+      ($0.submittedAt ?? .distantPast) > ($1.submittedAt ?? .distantPast)
+    }
     let people: [(name: String, avatar: URL?, color: Color, label: String)] =
-      details.reviews.map { review in
+      newest.map { review in
         let (label, color) = Self.describe(review.state)
         return (review.author, review.avatar, color, label)
       }
@@ -183,7 +207,7 @@ private struct Reviewers: View {
       HStack(spacing: 6) {
         GlyphView(glyph: .eye, size: 13)
         HStack(spacing: -5) {
-          ForEach(Array(people.prefix(5).enumerated()), id: \.offset) { _, person in
+          ForEach(Array(people.prefix(5).enumerated()), id: \.offset) { index, person in
             // On white, as GitHub shows them: bots' logos are often dark and see-through.
             RepoAvatar(url: person.avatar, size: 18, circular: true, name: person.name)
               .background(Circle().fill(person.avatar == nil ? .clear : .white))
@@ -194,6 +218,7 @@ private struct Reviewers: View {
                   .offset(x: 2, y: 2)
               }
               .help("\(person.name) · \(person.label)")
+              .zIndex(Double(-index))
           }
         }
         if people.count > 5 {
@@ -340,17 +365,20 @@ private struct FilesColumn: View {
     } rows: {
       ForEach(
         Array(FileTree.rows(details.files, folded: store.foldedFolders).enumerated()), id: \.offset
-      ) { _, row in
-        switch row.kind {
-        case .folder(let name, let path, let folded):
-          FolderRow(name: name, folded: folded, depth: row.depth) {
-            withAnimation(Motion.snappy) { store.toggleFolder(path) }
-          }
-        case .file(let file):
-          FileRow(file: file, depth: row.depth) {
-            withAnimation(Motion.snappy) { store.openFile(file.path) }
+      ) { index, row in
+        Group {
+          switch row.kind {
+          case .folder(let name, let path, let folded):
+            FolderRow(name: name, folded: folded, depth: row.depth) {
+              withAnimation(Motion.snappy) { store.toggleFolder(path) }
+            }
+          case .file(let file):
+            FileRow(file: file, depth: row.depth) {
+              withAnimation(Motion.snappy) { store.openFile(file.path) }
+            }
           }
         }
+        .arriving(index)
       }
       if details.changedFiles > details.files.count {
         // The page reads up to 100 files; GitHub lists the rest.
@@ -483,7 +511,9 @@ private struct ChecksColumn: View {
           .foregroundStyle(.white.opacity(0.45))
           .frame(maxWidth: .infinity, minHeight: PRDetailsView.rowHeight, alignment: .leading)
       }
-      ForEach(checks) { CheckRow(check: $0) }
+      ForEach(Array(checks.enumerated()), id: \.element.id) { index, check in
+        CheckRow(check: check).arriving(index)
+      }
     } onHeight: {
       onHeight($0)
     }
@@ -773,5 +803,29 @@ private struct PlaceholderRow: View {
       .frame(maxHeight: .infinity)
     }
     .frame(height: PRDetailsView.rowHeight)
+  }
+}
+
+extension View {
+  /// Fades a row in and lifts it into place when it first shows, a beat after the one above.
+  func arriving(_ index: Int) -> some View { modifier(Arriving(index: index)) }
+}
+
+private struct Arriving: ViewModifier {
+  let index: Int
+  @State private var shown = false
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+  func body(content: Content) -> some View {
+    content
+      .opacity(shown || reduceMotion ? 1 : 0)
+      .offset(y: shown || reduceMotion ? 0 : 5)
+      .onAppear {
+        guard !shown else { return }
+        // Long lists stop staggering after a dozen rows, so the last ones don't lag.
+        withAnimation(.easeOut(duration: 0.26).delay(Double(min(index, 12)) * 0.025)) {
+          shown = true
+        }
+      }
   }
 }

@@ -91,12 +91,18 @@ struct IslandView: View {
       let board =
         store.tab == .activity && store.activityLayout == .board && !store.showingSettings
         && !store.showingOnboarding && store.detailsPullRequest == nil
-      let width = board ? metrics.boardWidth(columns: store.sections.count) : metrics.expandedWidth
+      let details =
+        store.tab == .activity && store.detailsPullRequest != nil && !store.showingSettings
+        && !store.showingOnboarding
+      let width =
+        board
+        ? metrics.boardWidth(columns: store.sections.count)
+        : details ? metrics.detailsWidth : metrics.expandedWidth
+      let stats = store.tab == .stats && !store.showingSettings && !store.showingOnboarding
       return CGSize(
         width: width + 2 * metrics.ear,
         height: min(
-          store.tab == .stats && !store.showingSettings && !store.showingOnboarding
-            ? metrics.maxStatsHeight : metrics.maxExpandedHeight,
+          stats ? metrics.maxStatsHeight : metrics.maxExpandedHeight,
           chrome + max(contentHeight, ExpandedIsland.repositoryPickerHeight(store))))
     }
   }
