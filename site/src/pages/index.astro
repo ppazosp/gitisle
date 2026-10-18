@@ -4,15 +4,55 @@ import MicroButton from '../components/MicroButton.astro';
 import Screen from '../components/Screen.astro';
 import Base from '../layouts/Base.astro';
 import { BREW, CHANNELS, DMG, INSTALL_SCRIPT, REPO } from '../lib/links';
+import details from '../assets/new/details.png';
+import diff from '../assets/new/diff.png';
+import mergeFailed from '../assets/new/merge-failed.png';
+import previewReady from '../assets/new/preview-ready.png';
+import shareCard from '../assets/new/share-card.jpg';
+import board from '../assets/island/board.png';
+import live from '../assets/island/live.png';
 
 // One caption per island state, in the order the story plays.
 const steps = [
   { state: 'idle', title: 'Invisible at rest.', body: "Nothing happening? It's just your notch." },
   { state: 'banner', title: 'Only what matters.', body: 'A new draft, ready for review, failed checks, ready to merge: each step slides out of the notch, then gets out of the way.' },
-  { state: 'live', title: 'Live while you ship.', body: 'Once it starts merging, the notch shows its number and a timer until it lands. Click it to open the PR.' },
-  { state: 'list', title: 'Every PR, one hover away.', body: 'Grouped by repository, with checks, merge queue and what needs you.' },
-  { state: 'board', title: 'Or as a board.', body: 'Draft, open, merging, merged. Filter by state, repository or time.' },
+  { state: 'live', title: 'Live while you ship.', body: "Once it starts merging, the notch shows its number, the merge queue's checks and a timer until it lands." },
+  { state: 'list', title: 'Every PR, one hover away.', body: 'Grouped by repository, with checks, previews, stacks and what needs you. Click one to open it.' },
+  { state: 'board', title: 'Or as a board.', body: 'Draft, open, merging, merged. Stacks fold into a pile. Filter by state, repository or time.' },
   { state: 'stats', title: 'Your shipping, in numbers.', body: 'GitHub activity, plus local Claude Code and Codex usage.' },
+];
+
+// What 0.2 adds, each with a real capture of the app.
+const news = [
+  {
+    title: 'Every PR has a page.',
+    body: "Click a PR and the island opens it: the files it touches as a tree, every check with its status, who's reviewing and a link to its preview.",
+    images: [{ image: details, alt: 'A PR page: its files as a tree beside its checks, two of them failed' }],
+  },
+  {
+    title: 'Read the diff without leaving.',
+    body: 'Open a file to see what changed, in one column or side by side, with the words that changed marked.',
+    images: [{ image: diff, alt: 'A diff side by side: the old file on the left, the new on the right' }],
+  },
+  {
+    title: 'Stacks fold into a pile.',
+    body: 'PRs built on each other gather into one card, in the colour of the worst one. Click to fan them out.',
+    images: [{ image: board, alt: 'The board, with a stack of two PRs folded into one card in the Open column' }],
+  },
+  {
+    title: 'Previews and the merge queue, live.',
+    body: "Know the moment a preview deploy is ready, and open it in a click. While a PR is in the merge queue, the notch shows the queue's checks, and tells you if the merge fails.",
+    images: [
+      { image: live, alt: "The live bar: a PR merging, with the merge queue's checks and a timer" },
+      { image: previewReady, alt: 'A banner: Preview ready, orbit-web and orbit-docs' },
+      { image: mergeFailed, alt: 'A banner: Merge failed' },
+    ],
+  },
+  {
+    title: 'Share what you shipped.',
+    body: 'Every PR has a card to post, with its repository, its author and how much it changed. One click opens the share menu.',
+    images: [{ image: shareCard, alt: 'A share card: Landing page, merged after 10h 40m, 5,159 lines added across 31 files' }],
+  },
 ];
 
 const promises = [
@@ -59,6 +99,30 @@ const promises = [
                 <h2>{s.title}</h2>
                 <p>{s.body}</p>
               </div>
+            ))
+          }
+        </div>
+      </div>
+    </section>
+
+    <section id="new" class="section new" aria-labelledby="new-title">
+      <div class="container">
+        <p class="eyebrow reveal">New in 0.2</p>
+        <h2 id="new-title" class="section-title reveal">Open any PR,<br />right in the notch.</h2>
+        <div class="news">
+          {
+            news.map((n, i) => (
+              <article class:list={['news-item', { flip: i % 2 === 1 }]}>
+                <div class="news-copy reveal">
+                  <h3>{n.title}</h3>
+                  <p>{n.body}</p>
+                </div>
+                <div class:list={['news-shots reveal', { stacked: n.images.length > 1 }]}>
+                  {n.images.map((shot) => (
+                    <img src={shot.image.src} alt={shot.alt} width={shot.image.width / 2} height={shot.image.height / 2} loading="lazy" decoding="async" />
+                  ))}
+                </div>
+              </article>
             ))
           }
         </div>
@@ -330,6 +394,69 @@ const promises = [
   code {
     font-family: var(--mono);
     font-size: 0.9em;
+  }
+
+  /* ---------- New in 0.2 ---------- */
+  .new {
+    border-top: 1px solid var(--line);
+  }
+  .news {
+    display: grid;
+    gap: 96px;
+    margin-top: 72px;
+  }
+  .news-item {
+    display: grid;
+    gap: 28px;
+    align-items: center;
+  }
+  @media (min-width: 960px) {
+    .news-item {
+      grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr);
+      gap: 64px;
+    }
+    .news-item.flip {
+      grid-template-columns: minmax(0, 1.2fr) minmax(0, 0.8fr);
+    }
+    .news-item.flip .news-copy {
+      order: 2;
+    }
+  }
+  .news-copy h3 {
+    margin: 0 0 12px;
+    font-size: clamp(26px, 3.2vw, 36px);
+    font-weight: 600;
+    letter-spacing: -0.04em;
+    line-height: 1.05;
+  }
+  .news-copy p {
+    margin: 0;
+    max-width: 440px;
+    font-size: 17px;
+    line-height: 1.55;
+    color: var(--muted);
+  }
+  .news-shots {
+    display: flex;
+    justify-content: center;
+  }
+  .news-shots img {
+    max-width: 100%;
+    height: auto;
+    border-radius: 22px;
+    box-shadow:
+      0 0 0 1px var(--line),
+      0 30px 80px rgba(0, 0, 0, 0.6);
+  }
+  /* Small captures, like banners and the live bar, sit one under another at their own size. */
+  .news-shots.stacked {
+    flex-direction: column;
+    align-items: center;
+    gap: 18px;
+  }
+  .news-shots.stacked img {
+    width: min(100%, 460px);
+    border-radius: 22px;
   }
 
   /* ---------- Principles ---------- */
