@@ -100,6 +100,7 @@ private struct RepositoryCard: View {
   let toggle: () -> Void
   @State private var hovered = false
   @State private var showsAllMerged = false
+  @Environment(IslandStore.self) private var store
 
   /// Merged PRs are history; a few are enough next to open work until asked for more.
   private var visible: [PullRequest] {
@@ -165,9 +166,17 @@ private struct RepositoryCard: View {
       // over the header while the section opens or closes.
       VStack(spacing: 0) {
         let visible = self.visible
-        ForEach(visible) { pr in
-          PRRow(pr: pr).transition(.opacity)
+        // A stack folds into one row, its top PR; a click unfolds it.
+        ForEach(PRStacks.piles(visible, links: store.stackLinks), id: \.first?.id) { pile in
+          if pile.count > 1, let bottom = pile.first {
+            ListStack(pile: pile, unfolded: store.unfoldedStacks.contains(bottom.id)) {
+              withAnimation(Motion.snappy) { store.toggleStack(bottom.id) }
+            }
+          } else if let pr = pile.first {
+            PRRow(pr: pr)
+          }
         }
+        .transition(.opacity)
         if visible.count < section.pullRequests.count {
           ShowMoreButton(hidden: section.pullRequests.count - visible.count) {
             withAnimation(Motion.snappy) { showsAllMerged = true }
@@ -327,22 +336,22 @@ private struct PRContextMenu: View {
       NSPasteboard.general.clearContents()
       NSPasteboard.general.setString(pr.url.absoluteString, forType: .string)
     }
-    if pr.state == "MERGED", let store {
+    if let store {
       Divider()
       ShareCardActions(store: store, pr: pr)
     }
   }
 }
 
-/// "· on #4340" for a PR built on another, or a restack hint once that one merged.
+/// "on #4340" for a PR built on another, or a restack hint once that one merged.
 private struct StackLabel: View {
   let link: PRStacks.Link?
 
   var body: some View {
     if let parent = link?.parent {
-      Text(verbatim: "· on #\(parent.number)")
+      Text(verbatim: "on #\(parent.number)")
     } else if let merged = link?.mergedParent {
-      Text("· restack: #\(merged.number) merged").foregroundStyle(Palette.attention)
+      Text("restack: #\(merged.number) merged").foregroundStyle(Palette.attention)
     }
   }
 }
@@ -370,6 +379,10 @@ private struct StackConnector: View {
 
 struct PRRow: View {
   let pr: PullRequest
+  /// On a folded stack: the PRs it holds, counted in place of "on #436".
+  var pile: [PullRequest]?
+  /// What a click does instead of opening the PR, such as unfolding its stack.
+  var tap: (() -> Void)?
   @State private var hovered = false
   @Environment(\.openPullRequest) private var open
   @Environment(\.stackLinks) private var stacks
@@ -379,19 +392,27 @@ struct PRRow: View {
       // ⌘-click opens GitHub, as a link would.
       if NSEvent.modifierFlags.contains(.command) {
         NSWorkspace.shared.open(pr.url)
+      } else if let tap {
+        tap()
       } else {
         open(pr)
       }
     } label: {
       HStack(spacing: 10) {
-        if let depth = stacks[pr.id]?.depth, depth > 0 { StackConnector(depth: min(depth, 3)) }
-        GlyphView(glyph: pr.glyph, size: 15).foregroundStyle(pr.glyphColor)
-          .frame(width: 18)
+        if pile == nil, let depth = stacks[pr.id]?.depth, depth > 0 {
+          StackConnector(depth: min(depth, 3))
+        }
+        if let pile {
+          StackIcon(pile: pile).frame(width: 18)
+        } else {
+          GlyphView(glyph: pr.glyph, size: 15).foregroundStyle(pr.glyphColor)
+            .frame(width: 18)
+        }
         VStack(alignment: .leading, spacing: 3) {
           Text(pr.title).font(.system(size: 12.5, weight: .medium)).lineLimit(1)
-          HStack(spacing: 4) {
+          HStack(alignment: .firstTextBaseline, spacing: 4) {
             Text(verbatim: "#\(pr.number)")
-            StackLabel(link: stacks[pr.id])
+            if pile == nil { StackLabel(link: stacks[pr.id]) }
             Text("·")
             Text(pr.stateLabel.text).foregroundStyle(pr.stateLabel.color)
             Text("·")
@@ -498,12 +519,21 @@ private struct BoardView: View {
         Spacer(minLength: 0)
       }
       .padding(.horizontal, 4).padding(.top, 4)
-      let limit = shortened(section) ? 8 : section.pullRequests.count
-      ForEach(section.pullRequests.prefix(limit)) { pr in
-        PRCard(pr: pr).transition(.opacity)
+      // A stack's PRs fold into one pile; clicking it fans them out, bottom first.
+      let piles = PRStacks.piles(section.pullRequests, links: store.stackLinks)
+      let limit = shortened(section) ? 8 : piles.count
+      ForEach(piles.prefix(limit), id: \.first?.id) { pile in
+        if pile.count > 1, let bottom = pile.first {
+          StackPile(pile: pile, fanned: store.unfoldedStacks.contains(bottom.id)) {
+            withAnimation(Motion.snappy) { store.toggleStack(bottom.id) }
+          }
+          .transition(.opacity)
+        } else if let pr = pile.first {
+          PRCard(pr: pr).transition(.opacity)
+        }
       }
-      if section.pullRequests.count > limit {
-        ShowMoreButton(hidden: section.pullRequests.count - limit) {
+      if piles.count > limit {
+        ShowMoreButton(hidden: piles.count - limit) {
           withAnimation(Motion.snappy) { _ = expanded.insert(section.group) }
         }
       }
@@ -513,6 +543,10 @@ private struct BoardView: View {
 
 private struct PRCard: View {
   let pr: PullRequest
+  /// On a folded pile: the PRs it holds, counted in place of "on #436".
+  var pile: [PullRequest]?
+  /// What a click does instead of opening the PR, such as fanning out its pile.
+  var tap: (() -> Void)?
   @State private var hovered = false
   @Environment(\.openPullRequest) private var open
   @Environment(\.stackLinks) private var stacks
@@ -521,18 +555,25 @@ private struct PRCard: View {
     Button {
       if NSEvent.modifierFlags.contains(.command) {
         NSWorkspace.shared.open(pr.url)
+      } else if let tap {
+        tap()
       } else {
         open(pr)
       }
     } label: {
       VStack(alignment: .leading, spacing: 7) {
-        HStack(spacing: 6) {
+        // Its text shares one baseline; the picture centres on the letters.
+        HStack(alignment: .firstTextBaseline, spacing: 6) {
           RepoAvatar(url: pr.ownerAvatar, size: 14)
+            .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 3.8 }
           Text(verbatim: pr.repository.split(separator: "/").last.map(String.init) ?? "")
             .lineLimit(1)
           Spacer(minLength: 4)
+          if let pile {
+            StackCount(pile: pile)
+          }
           Text(verbatim: "#\(pr.number)").monospacedDigit()
-          StackLabel(link: stacks[pr.id])
+          if pile == nil { StackLabel(link: stacks[pr.id]) }
         }
         .font(.system(size: 10.5)).foregroundStyle(.white.opacity(0.45))
         Text(pr.title).font(.system(size: 12, weight: .medium)).lineLimit(2)
@@ -558,6 +599,147 @@ private struct PRCard: View {
     .help("Show \(pr.repository) #\(pr.number). ⌘-click opens it on GitHub.")
     .contextMenu { PRContextMenu(pr: pr) }
     .accessibilityLabel("\(pr.title), \(pr.repository) number \(pr.number), \(pr.stateLabel.text)")
+  }
+}
+
+/// A stack's PRs in one board column, as a pile with its top PR in front and the cards below
+/// peeking out. A click fans the cards out from under it, top PR first; a click on the count
+/// above them folds them back. The cards stay the same views throughout, so they slide
+/// rather than swap.
+private struct StackPile: View {
+  let pile: [PullRequest]
+  let fanned: Bool
+  let toggle: () -> Void
+
+  var body: some View {
+    let cards = Array(pile.reversed())
+    VStack(alignment: .leading, spacing: fanned ? 6 : 0) {
+      if fanned {
+        FoldStack(pile: pile, action: toggle).transition(.opacity)
+      }
+      ForEach(Array(cards.enumerated()), id: \.element.id) { index, pr in
+        if index == 0 {
+          PRCard(pr: pr, pile: fanned ? nil : pile, tap: fanned ? nil : toggle)
+            // Cards are see-through; a solid back keeps the ones below from showing through.
+            .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(.black))
+            .zIndex(Double(cards.count))
+        } else {
+          let peeking = index <= 2
+          PRCard(pr: pr)
+            // Folded, only the card's bottom edge shows, solid and a step narrower per card.
+            .overlay {
+              RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(Color(white: index == 1 ? 0.07 : 0.045))
+                .opacity(fanned ? 0 : 1)
+            }
+            .frame(height: fanned ? nil : (peeking ? 4.5 : 0), alignment: .bottom)
+            .clipped()
+            .padding(.horizontal, fanned ? 0 : CGFloat(index) * 5)
+            .opacity(fanned || peeking ? 1 : 0)
+            .allowsHitTesting(fanned)
+            .zIndex(Double(cards.count - index))
+        }
+      }
+    }
+    .help(fanned ? "" : "A stack of \(pile.count) PRs. Click to see them all.")
+  }
+}
+
+/// A stack in the list. Folded, only its top PR shows, with the stack's count; unfolded, the
+/// rows below it open above it, bottom PR first. The rows stay the same views either way, so
+/// they open and close rather than swap.
+private struct ListStack: View {
+  let pile: [PullRequest]
+  let unfolded: Bool
+  let toggle: () -> Void
+
+  var body: some View {
+    VStack(spacing: 0) {
+      if unfolded {
+        FoldStack(pile: pile, action: toggle).transition(.opacity)
+      }
+      ForEach(pile) { pr in
+        let top = pr.id == pile.last?.id
+        PRRow(pr: pr, pile: unfolded || !top ? nil : pile, tap: unfolded ? nil : toggle)
+          .frame(height: unfolded || top ? nil : 0, alignment: .top)
+          .clipped()
+          .opacity(unfolded || top ? 1 : 0)
+          .allowsHitTesting(unfolded || top)
+      }
+    }
+  }
+}
+
+/// A folded stack's icon in the list: a stack coloured by its worst PR, with its count on the
+/// lower corner.
+private struct StackIcon: View {
+  let pile: [PullRequest]
+
+  var body: some View {
+    Image(systemName: "square.stack.3d.up.fill").font(.system(size: 14, weight: .medium))
+      .foregroundStyle(StackCount.color(pile))
+      // On the stack's lower corner in grey, outlined in black so it reads over any colour.
+      .overlay(alignment: .bottomTrailing) {
+        Text("\(pile.count)").font(.system(size: 10, weight: .medium)).monospacedDigit()
+          .foregroundStyle(Color(white: 0.6))
+          .shadow(color: .black, radius: 0, x: 1, y: 0).shadow(
+            color: .black, radius: 0, x: -1, y: 0
+          )
+          .shadow(color: .black, radius: 0, x: 0, y: 1).shadow(
+            color: .black, radius: 0, x: 0, y: -1
+          )
+          .fixedSize()
+          .offset(x: 2, y: 3)
+      }
+      .help("A stack of \(pile.count) PRs. Click to open it.")
+  }
+}
+
+/// Above an unfolded stack: its count and a chevron that folds it again.
+private struct FoldStack: View {
+  let pile: [PullRequest]
+  let action: () -> Void
+
+  var body: some View {
+    Button(action: action) {
+      HStack(spacing: 5) {
+        StackCount(pile: pile)
+        Image(systemName: "chevron.up").font(.system(size: 8, weight: .bold))
+          .foregroundStyle(.white.opacity(0.4))
+        Spacer(minLength: 0)
+      }
+      .padding(.horizontal, 8).padding(.vertical, 3).contentShape(Rectangle())
+    }
+    .buttonStyle(.plain)
+    .help("Fold the stack")
+  }
+}
+
+/// The stack icon and how many PRs the stack holds, coloured by its worst PR, so a folded
+/// pile can't hide a failure.
+private struct StackCount: View {
+  let pile: [PullRequest]
+
+  var body: some View {
+    // The icon sits inside the text, on the same baseline as the number beside it.
+    Text("\(Image(systemName: "square.stack.3d.up")) \(pile.count)").monospacedDigit()
+      .font(.system(size: 10.5, weight: .medium)).foregroundStyle(Self.color(pile))
+      .help("A stack of \(pile.count) PRs")
+  }
+
+  /// Red when any PR failed, has conflicts or was asked for changes; amber while any still
+  /// runs checks or waits on a review; green when all are ready or merging; grey otherwise.
+  static func color(_ pile: [PullRequest]) -> Color {
+    let statuses = pile.map(\.status)
+    if statuses.contains(where: { [.failed, .conflicts, .changesRequested].contains($0) }) {
+      return Palette.failed
+    }
+    if statuses.contains(where: { [.checking, .review, .waiting, .behind, .blocked].contains($0) })
+    {
+      return Palette.attention
+    }
+    if statuses.allSatisfy({ [.ready, .queued, .merged].contains($0) }) { return Palette.open }
+    return .white.opacity(0.45)
   }
 }
 

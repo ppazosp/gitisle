@@ -107,6 +107,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
       let pr = store.github?.pullRequests.first(where: { $0.id == arguments[index + 1] })
     {
       store.openDetails(pr)
+      // `--file <path>` opens one of its files to the diff.
+      if let file = arguments.firstIndex(of: "--file"), arguments.count > file + 1 {
+        store.openFile(arguments[file + 1])
+      }
     }
     if arguments.contains("--banner"),
       let pr = store.github?.pullRequests.first(where: {

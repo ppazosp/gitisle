@@ -29,6 +29,19 @@ struct StackTests {
     #expect(PRStacks.chain(of: middle, links: links).map(\.number) == [1, 2, 3])
   }
 
+  @Test func aBoardColumnGathersEachStackIntoOnePile() {
+    let bottom = pr(1, head: "auth")
+    let middle = pr(2, head: "auth-ui", base: "auth")
+    let top = pr(3, head: "auth-docs", base: "auth-ui")
+    let alone = pr(4, head: "fix")
+    let links = PRStacks.links([bottom, middle, top, alone])
+    // Newest first, as the board sorts them: the stack's pile sits where its first PR was.
+    let piles = PRStacks.piles([top, alone, bottom, middle], links: links)
+    #expect(piles.map { $0.map(\.number) } == [[1, 2, 3], [4]])
+    // Part of a stack in another column still piles up with the rest that's here.
+    #expect(PRStacks.piles([top, middle], links: links).map { $0.map(\.number) } == [[2, 3]])
+  }
+
   @Test func aPRWhoseParentMergedNeedsARestack() {
     let parent = pr(1, head: "auth", state: "MERGED")
     let child = pr(2, head: "auth-ui", base: "auth")

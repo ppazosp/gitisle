@@ -91,12 +91,18 @@ struct IslandView: View {
       let board =
         store.tab == .activity && store.activityLayout == .board && !store.showingSettings
         && !store.showingOnboarding && store.detailsPullRequest == nil
-      let width = board ? metrics.boardWidth(columns: store.sections.count) : metrics.expandedWidth
+      let details =
+        store.tab == .activity && store.detailsPullRequest != nil && !store.showingSettings
+        && !store.showingOnboarding
+      let width =
+        board
+        ? metrics.boardWidth(columns: store.sections.count)
+        : details ? metrics.detailsWidth : metrics.expandedWidth
+      let stats = store.tab == .stats && !store.showingSettings && !store.showingOnboarding
       return CGSize(
         width: width + 2 * metrics.ear,
         height: min(
-          store.tab == .stats && !store.showingSettings && !store.showingOnboarding
-            ? metrics.maxStatsHeight : metrics.maxExpandedHeight,
+          stats ? metrics.maxStatsHeight : metrics.maxExpandedHeight,
           chrome + max(contentHeight, ExpandedIsland.repositoryPickerHeight(store))))
     }
   }
@@ -392,27 +398,27 @@ private struct ExpandedIsland: View {
         FooterButton(glyph: nil, systemImage: "chevron.left", label: "Back") {
           withAnimation(Motion.snappy) { store.closeDetails() }
         }
-        (Text(verbatim: "\(pr.repository) ").foregroundStyle(.white.opacity(0.5))
-          + Text(verbatim: "#\(pr.number)"))
+        RepoAvatar(url: pr.ownerAvatar, size: 20)
+        let owner = pr.repository.split(separator: "/").first.map { "\($0)/" } ?? ""
+        let name = pr.repository.split(separator: "/").last.map(String.init) ?? pr.repository
+        (Text(verbatim: owner).foregroundStyle(.white.opacity(0.5)) + Text(verbatim: name))
           .font(.system(size: 14, weight: .semibold)).lineLimit(1)
-        Spacer()
-        if pr.state == "MERGED" {
-          Menu {
-            ShareCardActions(store: store, pr: pr)
-          } label: {
-            HStack(spacing: 4) {
-              Image(systemName: "square.and.arrow.up").font(.system(size: 9, weight: .bold))
-              Text("Share")
-            }
-            .font(.system(size: 10.5, weight: .medium)).foregroundStyle(.white.opacity(0.75))
-            .padding(.horizontal, 8).padding(.vertical, 3)
-            .background(Capsule().fill(.white.opacity(0.08)))
-          }
-          .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden).fixedSize()
+        HStack(spacing: 5) {
+          GlyphView(glyph: pr.glyph, size: 13).foregroundStyle(pr.glyphColor)
+          Text(verbatim: "#\(pr.number)").monospacedDigit()
         }
-        LinkButton(title: "Open on GitHub", url: pr.url)
+        .font(.system(size: 14, weight: .semibold)).fixedSize()
+        Spacer()
+        HStack(spacing: 4) {
+          ShareButton(store: store, pr: pr)
+          PreviewButton(
+            previews: store.pullRequestDetails[pr.id]?.previews ?? pr.previews ?? [])
+          FooterButton(glyph: .github, label: "Open on GitHub") {
+            NSWorkspace.shared.open(pr.url)
+          }
+        }
       }
-      .padding(.leading, 22).padding(.trailing, 28)
+      .padding(.leading, 22).padding(.trailing, 22)
       .frame(height: Self.headerHeight)
     } else {
       tabsHeader
@@ -676,7 +682,7 @@ private struct LayoutToggle: View {
   }
 }
 
-private struct FooterButton: View {
+struct FooterButton: View {
   let glyph: Glyph?
   var systemImage = "chevron.up"
   let label: String
@@ -715,5 +721,98 @@ private struct FooterButton: View {
     .onHover { hovered = $0 }
     .help(label)
     .accessibilityLabel(label)
+  }
+}
+
+/// Opens the system share menu for a PR's share card and link.
+private struct ShareButton: View {
+  let store: IslandStore
+  let pr: PullRequest
+  @State private var anchor = ViewAnchor()
+
+  var body: some View {
+    FooterButton(glyph: nil, systemImage: "square.and.arrow.up", label: "Share") {
+      Task { await share() }
+    }
+    .background(AnchorView(anchor: anchor))
+  }
+
+  private func share() async {
+    var items: [Any] = [pr.url]
+    // The share menu ignores an image next to a link, but takes an image file.
+    if let file = await store.shareCardFile(for: pr) { items.insert(file, at: 0) }
+    guard let view = anchor.view else { return }
+    NSSharingServicePicker(items: items).show(
+      relativeTo: view.bounds, of: view, preferredEdge: .minY)
+  }
+}
+
+/// The view a share menu opens from.
+@MainActor private final class ViewAnchor {
+  weak var view: NSView?
+}
+
+private struct AnchorView: NSViewRepresentable {
+  let anchor: ViewAnchor
+
+  func makeNSView(context: Context) -> NSView {
+    let view = NSView()
+    anchor.view = view
+    return view
+  }
+
+  func updateNSView(_ view: NSView, context: Context) { anchor.view = view }
+}
+
+/// Opens the PR's preview deploy. A dot shows its state: green ready, amber building, red
+/// failed. Several projects open as a menu.
+private struct PreviewButton: View {
+  let previews: [PreviewDeploy]
+
+  var body: some View {
+    if let first = previews.first {
+      Group {
+        if previews.count == 1 {
+          FooterButton(glyph: nil, systemImage: "globe", label: label(first)) {
+            if let url = first.url { NSWorkspace.shared.open(url) }
+          }
+          .disabled(first.url == nil)
+        } else {
+          Menu {
+            ForEach(previews, id: \.name) { preview in
+              Button(label(preview)) { if let url = preview.url { NSWorkspace.shared.open(url) } }
+                .disabled(preview.url == nil)
+            }
+          } label: {
+            Image(systemName: "globe").font(.system(size: 11, weight: .semibold))
+              .frame(width: 26, height: 24).contentShape(Rectangle())
+          }
+          .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden).fixedSize()
+          .foregroundStyle(.white.opacity(0.55))
+          .help("Previews")
+        }
+      }
+      .overlay(alignment: .bottomTrailing) {
+        Circle().fill(color(previews)).frame(width: 6, height: 6)
+          .background(Circle().fill(.black).padding(-1.5))
+          .offset(x: -5, y: -4)
+          .allowsHitTesting(false)
+      }
+    }
+  }
+
+  private func label(_ preview: PreviewDeploy) -> String {
+    switch preview.state {
+    case .ready: "Open \(preview.name) preview"
+    case .building: "\(preview.name) preview is building"
+    case .failed: "\(preview.name) preview failed"
+    }
+  }
+
+  /// Failed wins, then building, so the dot never hides a problem.
+  private func color(_ previews: [PreviewDeploy]) -> Color {
+    if previews.contains(where: { $0.state == .failed }) { return Palette.failed }
+    if previews.contains(where: { $0.state == .building }) { return Palette.merging }
+    return Palette.open
   }
 }

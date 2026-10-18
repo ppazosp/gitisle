@@ -25,6 +25,8 @@ fi
 swift scripts/make-icon.swift assets/icon.png dist/GitIsle.iconset
 iconutil -c icns dist/GitIsle.iconset -o "$bundle/Contents/Resources/GitIsle.icns"
 cp THIRD_PARTY_NOTICES.md "$bundle/Contents/Resources/ThirdPartyNotices.md"
+# The share card signs itself with the transparent logo.
+cp assets/logo.png "$bundle/Contents/Resources/Logo.png"
 cp LICENSE "$bundle/Contents/Resources/LICENSE"
 mkdir -p "$bundle/Contents/Resources/DependencyLicenses"
 while IFS= read -r license; do

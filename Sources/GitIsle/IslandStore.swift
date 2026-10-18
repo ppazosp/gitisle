@@ -85,8 +85,28 @@ final class IslandStore {
   var repositoryPickerOpen = false
   /// The PR whose page replaces Activity, by ID.
   private(set) var detailsID: String? {
-    didSet { if detailsID != oldValue { loadDetails() } }
+    didSet {
+      if detailsID != oldValue {
+        openFilePath = nil
+        foldedFolders = []
+        // Only the open PR's diffs are kept.
+        filePatches = filePatches.filter { $0.key.hasPrefix("\(detailsID ?? "")@") }
+        patchPages = patchPages.filter { $0.key.hasPrefix("\(detailsID ?? "")@") }
+        loadDetails()
+      }
+    }
   }
+  /// The file whose changes the open page shows, by path.
+  private(set) var openFilePath: String?
+  /// Folders folded in the open page's file tree, by path; every folder starts open.
+  private(set) var foldedFolders: Set<String> = []
+  /// Diffs read so far, by PR and head commit, then path. They're read when a file is opened,
+  /// never on refresh, since a large PR's diffs run to megabytes.
+  private(set) var filePatches: [String: [String: String]] = [:]
+  /// The pages of files whose diffs have been read, by PR and head commit.
+  @ObservationIgnored private var patchPages: [String: Set<Int>] = [:]
+  private(set) var patchError: String?
+  @ObservationIgnored private var patchTask: Task<Void, Never>?
   /// Pages read so far, by PR ID; an open page keeps its own fresh.
   private(set) var pullRequestDetails: [String: PullRequestDetails] = [:]
   private(set) var detailsError: String?
@@ -109,18 +129,46 @@ final class IslandStore {
     }
   }
 
-  /// A merged PR's share card as a PNG, reading its page first if it hasn't been.
+  /// A PR's share card as a PNG, reading its page first if it hasn't been.
   func shareCard(for pr: PullRequest) async -> Data? {
     var details = pullRequestDetails[pr.id]
     if details == nil {
       details = isDemo ? demoDetails(pr.id) : try? await githubService.details(of: pr)
       if let details { pullRequestDetails[pr.id] = details }
     }
-    guard let details, let png = ShareCard(pr: pr, details: details).png() else {
+    guard let details else {
+      flash("Couldn't make the share card")
+      return nil
+    }
+    // The card renders at once, so its pictures are read first.
+    async let repoImage = Self.image(pr.ownerAvatar)
+    async let authorImage = Self.image(details.authorAvatar)
+    let card = ShareCard(
+      pr: pr, details: details, repoImage: await repoImage, authorImage: await authorImage)
+    guard let png = card.png() else {
       flash("Couldn't make the share card")
       return nil
     }
     return png
+  }
+
+  private static func image(_ url: URL?) async -> NSImage? {
+    guard let url, let (data, _) = try? await URLSession.shared.data(from: url) else { return nil }
+    return NSImage(data: data)
+  }
+
+  /// The share card as a PNG file in a temporary folder, named after the PR, for the share
+  /// menu.
+  func shareCardFile(for pr: PullRequest) async -> URL? {
+    guard let png = await shareCard(for: pr) else { return nil }
+    let folder = FileManager.default.temporaryDirectory.appending(path: "GitIsle share cards")
+    let name = pr.repository.split(separator: "/").last.map(String.init) ?? "pr"
+    let file = folder.appending(path: "\(name)-\(pr.number).png")
+    do {
+      try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+      try png.write(to: file, options: .atomic)
+      return file
+    } catch { return nil }
   }
 
   func copyShareCard(for pr: PullRequest) async {
@@ -150,6 +198,64 @@ final class IslandStore {
   }
 
   func closeDetails() { detailsID = nil }
+
+  /// Where a PR's diffs are kept: a new commit changes them.
+  static func patchKey(_ pr: PullRequest) -> String { "\(pr.id)@\(pr.headOID)" }
+
+  /// Whether the open file's diff has been read: nil while it loads, and an empty string for a
+  /// file GitHub shows no diff for, such as a binary or very large one.
+  func openFilePatch() -> String? {
+    guard let pr = detailsPullRequest, let path = openFilePath else { return nil }
+    let key = Self.patchKey(pr)
+    if let patch = filePatches[key]?[path] { return patch }
+    guard let page = patchPage(of: path, in: pr), patchPages[key]?.contains(page) == true else {
+      return nil
+    }
+    return ""
+  }
+
+  func openFile(_ path: String) {
+    openFilePath = path
+    patchError = nil
+    guard let pr = detailsPullRequest, let page = patchPage(of: path, in: pr) else { return }
+    let key = Self.patchKey(pr)
+    guard patchPages[key]?.contains(page) != true else { return }
+    if isDemo {
+      filePatches[key, default: [:]][path] = Self.demoPatch
+      patchPages[key, default: []].insert(page)
+      return
+    }
+    patchTask?.cancel()
+    patchTask = Task { [weak self] in
+      guard let self else { return }
+      do {
+        let patches = try await githubService.patches(
+          repository: pr.repository, number: pr.number, page: page)
+        guard !Task.isCancelled else { return }
+        filePatches[key, default: [:]].merge(patches) { _, new in new }
+        patchPages[key, default: []].insert(page)
+      } catch {
+        if openFilePath == path { patchError = error.localizedDescription }
+      }
+    }
+  }
+
+  func toggleFolder(_ path: String) {
+    if foldedFolders.remove(path) == nil { foldedFolders.insert(path) }
+  }
+
+  func closeFile() {
+    patchTask?.cancel()
+    openFilePath = nil
+    patchError = nil
+  }
+
+  /// GitHub lists a PR's files in the same order for GraphQL and REST, 100 to a REST page.
+  private func patchPage(of path: String, in pr: PullRequest) -> Int? {
+    guard let index = pullRequestDetails[pr.id]?.files.firstIndex(where: { $0.path == path })
+    else { return nil }
+    return index / 100 + 1
+  }
 
   /// Reads the open page, then again every 10 seconds while the PR is active and every minute
   /// otherwise, for about a point each.
@@ -226,6 +332,14 @@ final class IslandStore {
       if !isDemo { UserDefaults.standard.set(activityLayout.rawValue, forKey: "activityLayout") }
     }
   }
+  /// Stacks unfolded in the list and on the board, by the ID of their bottom PR; every stack
+  /// starts folded.
+  private(set) var unfoldedStacks: Set<String> = []
+
+  func toggleStack(_ bottom: String) {
+    if unfoldedStacks.remove(bottom) == nil { unfoldedStacks.insert(bottom) }
+  }
+
   /// Repositories collapsed in the activity list, remembered across launches.
   private(set) var collapsedRepositories: Set<String> =
     Set(UserDefaults.standard.stringArray(forKey: "collapsedRepositories") ?? [])
@@ -729,8 +843,9 @@ final class IslandStore {
     // While something is live or announced, a click opens that PR, so expanding needs a
     // longer, deliberate hover; otherwise it would replace the island under the click.
     let busy = presentation == .live || presentation == .banner
+    // Leaving waits a moment, so overshooting the edge doesn't close the island.
     let delay =
-      inside ? (busy ? max(settings.hoverDelay + 0.6, 0.8) : settings.hoverDelay) : 0.15
+      inside ? (busy ? max(settings.hoverDelay + 0.6, 0.8) : settings.hoverDelay) : 0.4
     hoverTask = Task { [weak self] in
       guard let self else { return }
       do { try await Task.sleep(for: .seconds(delay)) } catch { return }
@@ -964,7 +1079,10 @@ final class IslandStore {
         completedAt: outcome == .running ? nil : started.addingTimeInterval(seconds),
         url: pr.url, errors: errors)
     }
-    var checks = [check("lint", .passed, seconds: 41), check("build", .passed, seconds: 212)]
+    var checks = [
+      check("lint", .passed, seconds: 41), check("build", .passed, seconds: 212),
+      check("typecheck", .passed, seconds: 74),
+    ]
     switch id {
     case "demo2":
       checks.insert(
@@ -985,39 +1103,49 @@ final class IslandStore {
       checks += [check("unit", .passed, seconds: 287), check("e2e", .passed, seconds: 344)]
     }
     return PullRequestDetails(
-      id: id,
-      body: """
-        \(pr.title) so the island feels instant.
-
-        Measured on a cold launch: 1.4 s before, 0.6 s after. The cache is invalidated on every \
-        push, and falls back to a full read when it's older than a day.
-        """,
-      author: pr.author, baseRefName: pr.baseRefName ?? "main",
+      id: id, author: pr.author, baseRefName: pr.baseRefName ?? "main",
       headRefName: pr.headRefName ?? "maya/\(pr.number)",
       createdAt: now.addingTimeInterval(-26 * 3600), additions: 342, deletions: 61,
       changedFiles: 9,
       files: [
         .init(path: "Sources/Core/Cache.swift", additions: 188, deletions: 12),
         .init(path: "Sources/Core/Loader.swift", additions: 74, deletions: 31),
-        .init(path: "Tests/CoreTests/CacheTests.swift", additions: 61, deletions: 0),
+        .init(path: "Sources/Core/Retry.swift", additions: 61, deletions: 0, kind: .added),
+        .init(path: "Tests/CoreTests/CacheTests.swift", additions: 48, deletions: 0, kind: .added),
         .init(path: "Sources/App/Launch.swift", additions: 12, deletions: 9),
+        .init(path: "Sources/Core/LegacyCache.swift", additions: 0, deletions: 48, kind: .removed),
+        .init(path: "Sources/App/Settings.swift", additions: 9, deletions: 2),
+        .init(path: "Sources/App/Strings.swift", additions: 4, deletions: 1),
         .init(path: "README.md", additions: 7, deletions: 9),
       ],
-      commitCount: 6, requestedReviewers: id == "demo4" ? ["sam", "core"] : ["sam"],
+      commitCount: 6,
+      requestedReviewers: (id == "demo4" ? ["sam", "core"] : ["sam"]).map { .init(name: $0) },
       reviews: [
         .init(author: "lena", state: "APPROVED", submittedAt: now.addingTimeInterval(-5400))
       ],
-      commentCount: 4,
-      comments: [
-        .init(
-          author: "lena", body: "Nice. Could the cache key include the locale?",
-          createdAt: now.addingTimeInterval(-7200)),
-        .init(
-          author: pr.author ?? "maya", body: "Good call, added in the last commit.",
-          createdAt: now.addingTimeInterval(-3600)),
-      ],
-      checks: checks, previews: pr.previews ?? [], fetchedAt: now)
+      commentCount: 4, checks: checks, previews: pr.previews ?? [], fetchedAt: now)
   }
+
+  /// Example data only: the diff every example file shows.
+  static let demoPatch = """
+    @@ -52,9 +52,21 @@ func loadWorkspace(_ id: Workspace.ID) async throws -> Workspace {
+       let cache = try await Cache.shared()
+    -  return try await loader.read(id)
+    +  if let cached = await cache.workspace(id), !cached.isStale {
+    +    return cached
+    +  }
+    +  let fresh = try await loader.read(id)
+    +  await cache.store(fresh)
+    +  return fresh
+     }
+    @@ -88,6 +100,9 @@ extension Cache {
+       func workspace(_ id: Workspace.ID) async -> Workspace? {
+    -    entries[id]
+    +    guard let entry = entries[id] else { return nil }
+    +    entry.touch()
+    +    return entry.value
+       }
+    """
 
   private func loadDemo() {
     let now = Date()
@@ -1069,6 +1197,8 @@ final class IslandStore {
       var pr = pr
       pr.headRefName = "\(pr.author ?? "maya")/\(pr.number)"
       pr.baseRefName = pr.id == "demo2" ? "maya/436" : "main"
+      // The same size as their example pages.
+      (pr.additions, pr.deletions, pr.changedFiles, pr.commitCount) = (342, 61, 9, 6)
       return pr
     }
     setGitHub(GitHubSnapshot(login: "maya", pullRequests: branched))

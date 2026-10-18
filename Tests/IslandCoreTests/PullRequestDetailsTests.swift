@@ -29,29 +29,42 @@ struct PullRequestDetailsTests {
   /// The shape a failed run on a real PR came back in.
   private var node: [String: Any] {
     [
-      "id": "PR1", "body": "Adds the cache.", "author": ["login": "person"],
+      "id": "PR1",
+      "author": [
+        "login": "person", "avatarUrl": "https://avatars.githubusercontent.com/u/1?v=4",
+      ],
       "baseRefName": "main", "headRefName": "feature", "createdAt": "2026-10-13T09:00:00Z",
       "additions": 120, "deletions": 8, "changedFiles": 2,
-      "files": ["nodes": [["path": "Sources/Cache.swift", "additions": 100, "deletions": 8]]],
+      "files": [
+        "nodes": [
+          [
+            "path": "Sources/Cache.swift", "additions": 100, "deletions": 8,
+            "changeType": "MODIFIED",
+          ],
+          ["path": "Sources/New.swift", "additions": 20, "deletions": 0, "changeType": "ADDED"],
+        ]
+      ],
       "reviewRequests": [
         "nodes": [
-          ["requestedReviewer": ["login": "maya"]], ["requestedReviewer": ["name": "core"]],
+          [
+            "requestedReviewer": [
+              "login": "maya", "avatarUrl": "https://evil.example/u/2.png",
+            ]
+          ],
+          ["requestedReviewer": ["name": "core"]],
         ]
       ],
       "latestReviews": [
         "nodes": [
-          ["author": ["login": "sam"], "state": "APPROVED", "submittedAt": "2026-10-13T11:00:00Z"]
+          ["author": ["login": "sam"], "state": "APPROVED", "submittedAt": "2026-10-13T11:00:00Z"],
+          // Review bots, such as Codex's, count as reviewers too.
+          [
+            "author": ["__typename": "Bot", "login": "chatgpt-codex-connector"],
+            "state": "COMMENTED", "submittedAt": "2026-10-13T11:05:00Z",
+          ],
         ]
       ],
-      "comments": [
-        "totalCount": 7,
-        "nodes": [
-          [
-            "author": ["login": "sam"], "bodyText": "Looks good",
-            "createdAt": "2026-10-13T11:00:00Z",
-          ]
-        ],
-      ],
+      "comments": ["totalCount": 7],
       "commits": [
         "totalCount": 3,
         "nodes": [
@@ -97,12 +110,15 @@ struct PullRequestDetailsTests {
 
   @Test func detailsDecodeEverythingThePageShows() throws {
     let details = try GitHubService.decodeDetails(node)
-    #expect(details.body == "Adds the cache." && details.author == "person")
+    #expect(details.author == "person")
+    #expect(details.authorAvatar?.host() == "avatars.githubusercontent.com")
     #expect(details.additions == 120 && details.deletions == 8 && details.changedFiles == 2)
-    #expect(details.files.map(\.path) == ["Sources/Cache.swift"])
-    #expect(details.requestedReviewers == ["maya", "core"])
-    #expect(details.reviews.map(\.state) == ["APPROVED"])
-    #expect(details.commentCount == 7 && details.comments.first?.body == "Looks good")
+    #expect(details.files.map(\.path) == ["Sources/Cache.swift", "Sources/New.swift"])
+    #expect(details.files.map(\.kind) == [.modified, .added])
+    // Avatars come only from GitHub's avatar host.
+    #expect(details.requestedReviewers == [.init(name: "maya"), .init(name: "core")])
+    #expect(details.reviews.map(\.author) == ["sam", "chatgpt-codex-connector"])
+    #expect(details.commentCount == 7)
     #expect(details.commitCount == 3)
     #expect(details.checks.count == 5)
   }

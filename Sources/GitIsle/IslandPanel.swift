@@ -70,6 +70,8 @@ struct IslandMetrics: Equatable {
     CGSize(width: hasNotch ? liveWidth : max(liveWidth, 340), height: closedHeight + 50)
   }
   var expandedWidth: CGFloat { 640 }
+  /// A PR's page sets files beside checks, so it takes more room than the list.
+  var detailsWidth: CGFloat { 820 }
   /// The board grows with its columns and never gets narrower than the list.
   func boardWidth(columns: Int) -> CGFloat {
     let column: CGFloat = 230
@@ -141,9 +143,12 @@ final class IslandPanel: NSPanel {
       .mouseMoved, .leftMouseDown, .keyDown,
     ]) { [weak self] event in
       if event.type == .keyDown, event.keyCode == 53, self?.panel.isKeyWindow == true {
-        // Escape closes the repository picker or a PR's page first, then the island.
+        // Escape closes the repository picker, an open file, or a PR's page first, then the
+        // island.
         if self?.store.repositoryPickerOpen == true {
           withAnimation(Motion.snappy) { self?.store.repositoryPickerOpen = false }
+        } else if self?.store.openFilePath != nil {
+          withAnimation(Motion.snappy) { self?.store.closeFile() }
         } else if self?.store.detailsID != nil {
           withAnimation(Motion.snappy) { self?.store.closeDetails() }
         } else {
