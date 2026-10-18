@@ -396,6 +396,20 @@ private struct ExpandedIsland: View {
           + Text(verbatim: "#\(pr.number)"))
           .font(.system(size: 14, weight: .semibold)).lineLimit(1)
         Spacer()
+        if pr.state == "MERGED" {
+          Menu {
+            ShareCardActions(store: store, pr: pr)
+          } label: {
+            HStack(spacing: 4) {
+              Image(systemName: "square.and.arrow.up").font(.system(size: 9, weight: .bold))
+              Text("Share")
+            }
+            .font(.system(size: 10.5, weight: .medium)).foregroundStyle(.white.opacity(0.75))
+            .padding(.horizontal, 8).padding(.vertical, 3)
+            .background(Capsule().fill(.white.opacity(0.08)))
+          }
+          .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden).fixedSize()
+        }
         LinkButton(title: "Open on GitHub", url: pr.url)
       }
       .padding(.leading, 22).padding(.trailing, 28)
@@ -462,7 +476,9 @@ private struct ExpandedIsland: View {
   private var refreshing: Bool { store.githubRefreshing || store.usageRefreshing }
 
   @ViewBuilder private var status: some View {
-    if let release = store.updater.available, store.updater.installing {
+    if let note = store.footerNote {
+      Text(note).foregroundStyle(.white.opacity(0.75))
+    } else if let release = store.updater.available, store.updater.installing {
       Text("Updating to \(release.version)…")
     } else if let error = store.updater.error {
       Text(error).foregroundStyle(Palette.failed)
