@@ -6,6 +6,8 @@ extension EnvironmentValues {
   /// What clicking a PR in a list does: open its page in the island. ⌘-click and banners still
   /// open GitHub.
   @Entry var openPullRequest: (PullRequest) -> Void = { NSWorkspace.shared.open($0.url) }
+  /// Each open PR's place in its stack, by ID.
+  @Entry var stackLinks: [String: PRStacks.Link] = [:]
 }
 
 /// One PR's page, in place of Activity: why it's blocked, what failed and why, who's reviewing,
@@ -21,6 +23,7 @@ struct PRDetailsView: View {
     MeasuredColumn {
       VStack(alignment: .leading, spacing: 18) {
         heading
+        StackStrip(store: store, pr: pr)
         if let details {
           PreviewsSection(details: details)
           ChecksSection(details: details)
@@ -82,6 +85,74 @@ struct PRDetailsView: View {
         .font(.system(size: 11, weight: .medium)).foregroundStyle(.white.opacity(0.55))
       }
     }
+  }
+}
+
+/// The PRs this one sits on and those built on it, bottom first; click one to open it.
+private struct StackStrip: View {
+  let store: IslandStore
+  let pr: PullRequest
+
+  var body: some View {
+    let link = store.stackLinks[pr.id]
+    let chain = PRStacks.chain(of: pr, links: store.stackLinks)
+    if chain.count > 1 || link?.mergedParent != nil {
+      VStack(alignment: .leading, spacing: 7) {
+        if chain.count > 1 {
+          DetailsHeader(title: "Stack", trailing: "\(chain.count) PRs")
+          ScrollView(.horizontal) {
+            HStack(spacing: 6) {
+              ForEach(Array(chain.enumerated()), id: \.element.id) { index, member in
+                if index > 0 {
+                  Image(systemName: "arrow.right").font(.system(size: 9, weight: .bold))
+                    .foregroundStyle(.white.opacity(0.3))
+                }
+                StackChip(pr: member, current: member.id == pr.id) {
+                  withAnimation(Motion.snappy) { store.openDetails(member) }
+                }
+              }
+            }
+          }
+          .scrollIndicators(.never)
+        }
+        if let merged = link?.mergedParent {
+          Text(
+            "#\(merged.number) merged, but this PR still targets its branch. Retarget it or rebase it onto \(merged.baseRefName ?? "the base branch")."
+          )
+          .font(.system(size: 11)).foregroundStyle(Palette.attention)
+          .fixedSize(horizontal: false, vertical: true)
+        }
+      }
+    }
+  }
+}
+
+private struct StackChip: View {
+  let pr: PullRequest
+  let current: Bool
+  let action: () -> Void
+  @State private var hovered = false
+
+  var body: some View {
+    Button(action: action) {
+      HStack(spacing: 5) {
+        GlyphView(glyph: pr.glyph, size: 11).foregroundStyle(pr.glyphColor)
+        Text(verbatim: "#\(pr.number)").monospacedDigit()
+        if pr.state == "OPEN", let summary = pr.checkSummary, summary.failed > 0 {
+          GlyphView(glyph: .failFill, size: 10).foregroundStyle(Palette.failed)
+        }
+      }
+      .font(.system(size: 11, weight: current ? .semibold : .medium))
+      .foregroundStyle(.white.opacity(current ? 1 : 0.7))
+      .padding(.horizontal, 8).padding(.vertical, 4)
+      .background(Capsule().fill(.white.opacity(current ? 0.16 : hovered ? 0.11 : 0.06)))
+      .overlay(Capsule().strokeBorder(.white.opacity(current ? 0.25 : 0)))
+      .contentShape(Capsule())
+    }
+    .buttonStyle(.plain)
+    .disabled(current)
+    .onHover { hovered = $0 }
+    .help(pr.title)
   }
 }
 
