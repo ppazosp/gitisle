@@ -6,11 +6,12 @@ dist/
 *.xcuserstate
 __pycache__/
 
-# Landing page and launch video
+# Landing page
 site/node_modules/
 site/dist/
 site/.astro/
 .vercel/
-video/node_modules/
-video/renders/
 site/public/install.sh
+
+# Launch video projects stay local; the app's `--tour` modes record their footage.
+videos/

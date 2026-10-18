@@ -1,7 +1,15 @@
 // Records one app's windows with ScreenCaptureKit, keeping transparency, as ProRes 4444:
-//   swift tools/capture-window.swift <pid> <seconds> <output.mov> [width height]
+//   swift scripts/capture-window.swift <pid> <seconds> <output.mov> [width height]
 // Only that app is captured: no desktop, no other apps, no cursor. The region is centred
 // horizontally at the top of the app's display (the notch), default 1100 × 700 points.
+//
+// For product videos, record a tour of the example data:
+//   bash scripts/build-app.sh
+//   swiftc -O scripts/capture-window.swift -o /tmp/capture-window
+//   open -n dist/GitIsle.app --args --tour pages -AppleLocale en_US -AppleLanguages "(en)"
+//   /tmp/capture-window "$(pgrep -n -f GitIsle.app/Contents/MacOS/GitIsle)" 34 tour.mov
+// `--tour` plays every state of the island (about 25 s); `--tour pages` plays a PR's page,
+// its diff, a stack and a failed merge (about 32 s).
 import AVFoundation
 import AppKit
 import CoreMedia
@@ -40,7 +48,9 @@ final class Recorder: NSObject, SCStreamOutput, SCStreamDelegate {
     writer.add(input)
   }
 
-  func stream(_ stream: SCStream, didOutputSampleBuffer buffer: CMSampleBuffer, of type: SCStreamOutputType) {
+  func stream(
+    _ stream: SCStream, didOutputSampleBuffer buffer: CMSampleBuffer, of type: SCStreamOutputType
+  ) {
     guard type == .screen, buffer.isValid,
       let attachments = CMSampleBufferGetSampleAttachmentsArray(buffer, createIfNecessary: false)
         as? [[SCStreamFrameInfo: Any]],
@@ -63,10 +73,13 @@ let semaphore = DispatchSemaphore(value: 0)
 Task {
   do {
     // The app may still be launching; wait up to ten seconds for its first window.
-    var content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
-    for _ in 0..<100 where !content.windows.contains(where: { $0.owningApplication?.processID == pid }) {
+    var content = try await SCShareableContent.excludingDesktopWindows(
+      false, onScreenWindowsOnly: true)
+    for _ in 0..<100
+    where !content.windows.contains(where: { $0.owningApplication?.processID == pid }) {
       try await Task.sleep(for: .milliseconds(100))
-      content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
+      content = try await SCShareableContent.excludingDesktopWindows(
+        false, onScreenWindowsOnly: true)
     }
     guard let app = content.applications.first(where: { $0.processID == pid }),
       let window = content.windows.first(where: { $0.owningApplication?.processID == pid }),
@@ -89,9 +102,12 @@ Task {
     let recorder = try Recorder(url: output, width: width, height: height)
     let filter = SCContentFilter(display: display, including: [app], exceptingWindows: [])
     let stream = SCStream(filter: filter, configuration: configuration, delegate: recorder)
-    try stream.addStreamOutput(recorder, type: .screen, sampleHandlerQueue: DispatchQueue(label: "frames"))
+    try stream.addStreamOutput(
+      recorder, type: .screen, sampleHandlerQueue: DispatchQueue(label: "frames"))
     try await stream.startCapture()
-    print("recording \(app.applicationName) on display \(display.displayID) \(width)x\(height) for \(seconds)s")
+    print(
+      "recording \(app.applicationName) on display \(display.displayID) \(width)x\(height) for \(seconds)s"
+    )
     try await Task.sleep(for: .seconds(seconds))
     try await stream.stopCapture()
     recorder.input.markAsFinished()
