@@ -16,9 +16,7 @@ struct PRDetailsView: View {
   let store: IslandStore
   let pr: PullRequest
   @Binding var contentHeight: CGFloat
-  @State private var headingHeight: CGFloat = 0
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
-  @State private var bodyHeight: CGFloat = 0
 
   /// Files and checks share one row height, so the two columns line up.
   static let rowHeight: CGFloat = 28
@@ -30,26 +28,20 @@ struct PRDetailsView: View {
     VStack(alignment: .leading, spacing: 0) {
       heading
         .padding(.horizontal, 28).padding(.top, 14).padding(.bottom, 12)
-        .onGeometryChange(for: CGFloat.self) {
-          $0.size.height
-        } action: {
-          headingHeight = $0
-          report()
-        }
       Rectangle().fill(Palette.hairline).frame(height: 1).padding(.horizontal, 28)
       Group {
         if let details {
           if let path = store.openFilePath,
             let file = details.files.first(where: { $0.path == path })
           {
-            FileDiffView(store: store, file: file) { measured($0) }
+            FileDiffView(store: store, file: file)
           } else {
             GeometryReader { proxy in
               HStack(alignment: .top, spacing: 0) {
-                FilesColumn(store: store, pr: pr, details: details) { measured($0, column: 0) }
+                FilesColumn(store: store, pr: pr, details: details)
                   .frame(width: proxy.size.width * 0.57)
                 Rectangle().fill(Palette.hairline).frame(width: 1)
-                ChecksColumn(details: details) { measured($0, column: 1) }
+                ChecksColumn(details: details)
               }
             }
             .transition(.opacity)
@@ -58,14 +50,9 @@ struct PRDetailsView: View {
           Text(error).font(.system(size: 11.5)).foregroundStyle(Palette.attention)
             .textSelection(.enabled).padding(.horizontal, 28).padding(.vertical, 16)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .onGeometryChange(for: CGFloat.self) {
-              $0.size.height
-            } action: {
-              measured($0)
-            }
         } else {
           // The columns' shape from what the list already knows, so loading doesn't jump.
-          LoadingColumns(pr: pr) { measured($0) }
+          LoadingColumns(pr: pr)
             .transition(.opacity)
         }
       }
@@ -73,30 +60,13 @@ struct PRDetailsView: View {
       // Placeholders fade into the page as it arrives; its rows then come in one by one.
       .animation(reduceMotion ? nil : .easeOut(duration: 0.22), value: details != nil)
     }
-    // Back from a file, the page returns to its columns' height; they don't measure again.
-    .onChange(of: store.openFilePath) { _, path in
-      if path == nil, let tallest = columnHeights.max(), tallest > 0 {
-        bodyHeight = tallest
-        report()
-      }
-    }
+    // The page always takes the island's full height: loading, small, or large, so it never
+    // grows or shrinks under the pointer. Past that, each column scrolls on its own.
+    .onAppear { contentHeight = PRDetailsView.fillsIsland }
   }
 
-  @State private var columnHeights: [CGFloat] = [0, 0]
-
-  /// The page is as tall as its taller column, up to the island's limit; past that, each
-  /// column scrolls on its own.
-  private func measured(_ height: CGFloat, column: Int? = nil) {
-    if let column {
-      columnHeights[column] = height
-      if store.openFilePath == nil { bodyHeight = columnHeights.max() ?? height }
-    } else {
-      bodyHeight = height
-    }
-    report()
-  }
-
-  private func report() { contentHeight = headingHeight + 1 + bodyHeight }
+  /// More than the island ever allows, so it opens to its limit.
+  static let fillsIsland: CGFloat = 10_000
 
   /// Drawn from the list's copy of the PR first, then its page once read, so it doesn't jump.
   private var heading: some View {
@@ -324,12 +294,10 @@ private struct ColumnHeader<Trailing: View>: View {
   }
 }
 
-/// A column that scrolls once the island reaches its height, and reports how tall it wants to
-/// be.
+/// A column with a header that stays put while its rows scroll.
 private struct Column<Header: View, Rows: View>: View {
   @ViewBuilder let header: Header
   @ViewBuilder let rows: Rows
-  let onHeight: (CGFloat) -> Void
 
   var body: some View {
     VStack(spacing: 0) {
@@ -337,11 +305,6 @@ private struct Column<Header: View, Rows: View>: View {
       ScrollView {
         VStack(spacing: 0) { rows }
           .padding(.bottom, 10)
-          .onGeometryChange(for: CGFloat.self) {
-            $0.size.height
-          } action: {
-            onHeight($0 + PRDetailsView.columnHeaderHeight)
-          }
       }
       // Like the rest of the island, without a scroll bar over the rows.
       .scrollIndicators(.never)
@@ -353,7 +316,6 @@ private struct FilesColumn: View {
   let store: IslandStore
   let pr: PullRequest
   let details: PullRequestDetails
-  let onHeight: (CGFloat) -> Void
 
   var body: some View {
     Column {
@@ -393,8 +355,6 @@ private struct FilesColumn: View {
         }
         .buttonStyle(.plain)
       }
-    } onHeight: {
-      onHeight($0)
     }
     .padding(.leading, 28).padding(.trailing, 18)
     .frame(maxWidth: .infinity)
@@ -486,7 +446,6 @@ extension PullRequestDetails.FileChange {
 
 private struct ChecksColumn: View {
   let details: PullRequestDetails
-  let onHeight: (CGFloat) -> Void
 
   var body: some View {
     let checks = details.sortedChecks
@@ -512,8 +471,6 @@ private struct ChecksColumn: View {
       ForEach(Array(checks.enumerated()), id: \.element.id) { index, check in
         CheckRow(check: check).arriving(index)
       }
-    } onHeight: {
-      onHeight($0)
     }
     .padding(.leading, 18).padding(.trailing, 28)
     .frame(maxWidth: .infinity)
@@ -604,7 +561,6 @@ struct RunningRing: View {
 private struct FileDiffView: View {
   let store: IslandStore
   let file: PullRequestDetails.FileChange
-  let onHeight: (CGFloat) -> Void
   /// One column or side by side; the choice stays for the next file.
   @AppStorage("diffLayout") private var layout: DiffLayout = .unified
 
@@ -650,11 +606,6 @@ private struct FileDiffView: View {
       ScrollView {
         content
           .padding(.bottom, 12)
-          .onGeometryChange(for: CGFloat.self) {
-            $0.size.height
-          } action: {
-            onHeight($0 + PRDetailsView.columnHeaderHeight)
-          }
       }
       .scrollIndicators(.never)
     }
@@ -826,7 +777,6 @@ private enum DiffStyle {
 /// faint rows where files and checks will be.
 private struct LoadingColumns: View {
   let pr: PullRequest
-  let onHeight: (CGFloat) -> Void
 
   var body: some View {
     let files = min(pr.changedFiles ?? 4, 12)
@@ -872,11 +822,6 @@ private struct LoadingColumns: View {
         }
         .padding(.leading, 18).padding(.trailing, 28)
       }
-    }
-    .onAppear {
-      onHeight(
-        PRDetailsView.columnHeaderHeight + CGFloat(max(files, checks)) * PRDetailsView.rowHeight
-          + 10)
     }
   }
 }

@@ -835,8 +835,9 @@ final class IslandStore {
     // While something is live or announced, a click opens that PR, so expanding needs a
     // longer, deliberate hover; otherwise it would replace the island under the click.
     let busy = presentation == .live || presentation == .banner
+    // Leaving waits a moment, so overshooting the edge doesn't close the island.
     let delay =
-      inside ? (busy ? max(settings.hoverDelay + 0.6, 0.8) : settings.hoverDelay) : 0.15
+      inside ? (busy ? max(settings.hoverDelay + 0.6, 0.8) : settings.hoverDelay) : 0.4
     hoverTask = Task { [weak self] in
       guard let self else { return }
       do { try await Task.sleep(for: .seconds(delay)) } catch { return }
