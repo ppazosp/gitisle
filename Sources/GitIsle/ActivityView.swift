@@ -169,15 +169,8 @@ private struct RepositoryCard: View {
         // A stack folds into one row, its top PR; a click unfolds it.
         ForEach(PRStacks.piles(visible, links: store.stackLinks), id: \.first?.id) { pile in
           if pile.count > 1, let bottom = pile.first {
-            if store.unfoldedStacks.contains(bottom.id) {
-              FoldStack(pile: pile) {
-                withAnimation(Motion.snappy) { store.toggleStack(bottom.id) }
-              }
-              ForEach(pile) { PRRow(pr: $0) }
-            } else if let top = pile.last {
-              PRRow(pr: top, pile: pile) {
-                withAnimation(Motion.snappy) { store.toggleStack(bottom.id) }
-              }
+            ListStack(pile: pile, unfolded: store.unfoldedStacks.contains(bottom.id)) {
+              withAnimation(Motion.snappy) { store.toggleStack(bottom.id) }
             }
           } else if let pr = pile.first {
             PRRow(pr: pr)
@@ -350,15 +343,15 @@ private struct PRContextMenu: View {
   }
 }
 
-/// "· on #4340" for a PR built on another, or a restack hint once that one merged.
+/// "on #4340" for a PR built on another, or a restack hint once that one merged.
 private struct StackLabel: View {
   let link: PRStacks.Link?
 
   var body: some View {
     if let parent = link?.parent {
-      Text(verbatim: "· on #\(parent.number)")
+      Text(verbatim: "on #\(parent.number)")
     } else if let merged = link?.mergedParent {
-      Text("· restack: #\(merged.number) merged").foregroundStyle(Palette.attention)
+      Text("restack: #\(merged.number) merged").foregroundStyle(Palette.attention)
     }
   }
 }
@@ -646,6 +639,31 @@ private struct StackPile: View {
       }
     }
     .help(fanned ? "" : "A stack of \(pile.count) PRs. Click to see them all.")
+  }
+}
+
+/// A stack in the list. Folded, only its top PR shows, with the stack's count; unfolded, the
+/// rows below it open above it, bottom PR first. The rows stay the same views either way, so
+/// they open and close rather than swap.
+private struct ListStack: View {
+  let pile: [PullRequest]
+  let unfolded: Bool
+  let toggle: () -> Void
+
+  var body: some View {
+    VStack(spacing: 0) {
+      if unfolded {
+        FoldStack(pile: pile, action: toggle).transition(.opacity)
+      }
+      ForEach(pile) { pr in
+        let top = pr.id == pile.last?.id
+        PRRow(pr: pr, pile: unfolded || !top ? nil : pile, tap: unfolded ? nil : toggle)
+          .frame(height: unfolded || top ? nil : 0, alignment: .top)
+          .clipped()
+          .opacity(unfolded || top ? 1 : 0)
+          .allowsHitTesting(unfolded || top)
+      }
+    }
   }
 }
 
