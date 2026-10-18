@@ -613,9 +613,10 @@ private struct StackPile: View {
         .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(.black))
         .background(alignment: .bottom) {
           ZStack(alignment: .bottom) {
-            RoundedRectangle(cornerRadius: 10, style: .continuous).fill(.white.opacity(0.03))
+            // Solid, so the cards below don't show through each other.
+            RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Color(white: 0.045))
               .padding(.horizontal, 10).offset(y: 9)
-            RoundedRectangle(cornerRadius: 10, style: .continuous).fill(.white.opacity(0.045))
+            RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Color(white: 0.07))
               .padding(.horizontal, 5).offset(y: 4.5)
           }
         }
@@ -625,16 +626,17 @@ private struct StackPile: View {
   }
 }
 
-/// "3 PRs" with the stack icon, in the stack colour.
+/// The stack icon and how many PRs the stack holds, like the card's other details.
 private struct StackCount: View {
   let count: Int
 
   var body: some View {
     HStack(spacing: 3) {
-      Image(systemName: "square.stack.3d.up").font(.system(size: 9.5, weight: .semibold))
-      Text("\(count) PRs")
+      Image(systemName: "square.stack.3d.up").font(.system(size: 9.5, weight: .medium))
+      Text("\(count)").monospacedDigit()
     }
-    .font(.system(size: 10.5, weight: .medium)).foregroundStyle(Palette.merged)
+    .font(.system(size: 10.5)).foregroundStyle(.white.opacity(0.45))
+    .help("A stack of \(count) PRs")
   }
 }
 
