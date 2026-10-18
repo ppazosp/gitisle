@@ -306,7 +306,8 @@ private struct Column<Header: View, Rows: View>: View {
             onHeight($0 + PRDetailsView.columnHeaderHeight)
           }
       }
-      .scrollIndicators(.automatic)
+      // Like the rest of the island, without a scroll bar over the rows.
+      .scrollIndicators(.never)
     }
   }
 }
@@ -551,6 +552,7 @@ private struct FileDiffView: View {
             onHeight($0 + PRDetailsView.columnHeaderHeight)
           }
       }
+      .scrollIndicators(.never)
     }
     .padding(.horizontal, 28)
   }
