@@ -432,6 +432,8 @@ private struct BoardView: View {
   @Binding var contentHeight: CGFloat
   @State private var heights: [PRGroup: CGFloat] = [:]
   @State private var expanded: Set<PRGroup> = []
+  /// Stacks fanned out from their pile, by the ID of their bottom PR.
+  @State private var fanned: Set<String> = []
 
   var body: some View {
     Group {
@@ -498,12 +500,23 @@ private struct BoardView: View {
         Spacer(minLength: 0)
       }
       .padding(.horizontal, 4).padding(.top, 4)
-      let limit = shortened(section) ? 8 : section.pullRequests.count
-      ForEach(section.pullRequests.prefix(limit)) { pr in
-        PRCard(pr: pr).transition(.opacity)
+      // A stack's PRs fold into one pile; clicking it fans them out, bottom first.
+      let piles = PRStacks.piles(section.pullRequests, links: store.stackLinks)
+      let limit = shortened(section) ? 8 : piles.count
+      ForEach(piles.prefix(limit), id: \.first?.id) { pile in
+        if pile.count > 1, let bottom = pile.first {
+          StackPile(pile: pile, fanned: fanned.contains(bottom.id)) {
+            withAnimation(Motion.snappy) {
+              if fanned.remove(bottom.id) == nil { fanned.insert(bottom.id) }
+            }
+          }
+          .transition(.opacity)
+        } else if let pr = pile.first {
+          PRCard(pr: pr).transition(.opacity)
+        }
       }
-      if section.pullRequests.count > limit {
-        ShowMoreButton(hidden: section.pullRequests.count - limit) {
+      if piles.count > limit {
+        ShowMoreButton(hidden: piles.count - limit) {
           withAnimation(Motion.snappy) { _ = expanded.insert(section.group) }
         }
       }
@@ -513,6 +526,10 @@ private struct BoardView: View {
 
 private struct PRCard: View {
   let pr: PullRequest
+  /// On a folded pile: how many PRs it holds, shown in place of "on #436".
+  var pile: Int?
+  /// What a click does instead of opening the PR, such as fanning out its pile.
+  var tap: (() -> Void)?
   @State private var hovered = false
   @Environment(\.openPullRequest) private var open
   @Environment(\.stackLinks) private var stacks
@@ -521,6 +538,8 @@ private struct PRCard: View {
     Button {
       if NSEvent.modifierFlags.contains(.command) {
         NSWorkspace.shared.open(pr.url)
+      } else if let tap {
+        tap()
       } else {
         open(pr)
       }
@@ -531,8 +550,11 @@ private struct PRCard: View {
           Text(verbatim: pr.repository.split(separator: "/").last.map(String.init) ?? "")
             .lineLimit(1)
           Spacer(minLength: 4)
+          if let pile {
+            StackCount(count: pile)
+          }
           Text(verbatim: "#\(pr.number)").monospacedDigit()
-          StackLabel(link: stacks[pr.id])
+          if pile == nil { StackLabel(link: stacks[pr.id]) }
         }
         .font(.system(size: 10.5)).foregroundStyle(.white.opacity(0.45))
         Text(pr.title).font(.system(size: 12, weight: .medium)).lineLimit(2)
@@ -558,6 +580,61 @@ private struct PRCard: View {
     .help("Show \(pr.repository) #\(pr.number). ⌘-click opens it on GitHub.")
     .contextMenu { PRContextMenu(pr: pr) }
     .accessibilityLabel("\(pr.title), \(pr.repository) number \(pr.number), \(pr.stateLabel.text)")
+  }
+}
+
+/// A stack's PRs in one board column. Folded, it's a pile showing the PR on top; a click fans
+/// it out, bottom PR first, and a click on its header folds it again.
+private struct StackPile: View {
+  let pile: [PullRequest]
+  let fanned: Bool
+  let toggle: () -> Void
+
+  var body: some View {
+    if fanned {
+      VStack(alignment: .leading, spacing: 6) {
+        Button(action: toggle) {
+          HStack(spacing: 5) {
+            StackCount(count: pile.count)
+            Image(systemName: "chevron.up").font(.system(size: 8, weight: .bold))
+              .foregroundStyle(.white.opacity(0.4))
+            Spacer(minLength: 0)
+          }
+          .padding(.horizontal, 4).contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help("Fold the stack")
+        ForEach(pile) { PRCard(pr: $0) }
+      }
+    } else if let top = pile.last {
+      // Cards peeking out below the top one make it read as a pile.
+      PRCard(pr: top, pile: pile.count, tap: toggle)
+        // Cards are see-through; a solid back keeps the ones below from showing through it.
+        .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(.black))
+        .background(alignment: .bottom) {
+          ZStack(alignment: .bottom) {
+            RoundedRectangle(cornerRadius: 10, style: .continuous).fill(.white.opacity(0.03))
+              .padding(.horizontal, 10).offset(y: 9)
+            RoundedRectangle(cornerRadius: 10, style: .continuous).fill(.white.opacity(0.045))
+              .padding(.horizontal, 5).offset(y: 4.5)
+          }
+        }
+        .padding(.bottom, 9)
+        .help("A stack of \(pile.count) PRs. Click to see them all.")
+    }
+  }
+}
+
+/// "3 PRs" with the stack icon, in the stack colour.
+private struct StackCount: View {
+  let count: Int
+
+  var body: some View {
+    HStack(spacing: 3) {
+      Image(systemName: "square.stack.3d.up").font(.system(size: 9.5, weight: .semibold))
+      Text("\(count) PRs")
+    }
+    .font(.system(size: 10.5, weight: .medium)).foregroundStyle(Palette.merged)
   }
 }
 

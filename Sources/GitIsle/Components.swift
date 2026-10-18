@@ -328,7 +328,7 @@ struct PreviewChip: View {
       Button {
         NSWorkspace.shared.open(url)
       } label: {
-        label("Preview", active: true)
+        globe(Palette.update)
       }
       .buttonStyle(.plain)
       .onHover { hovered = $0 }
@@ -340,27 +340,28 @@ struct PreviewChip: View {
           if let url = preview.url { Button(preview.name) { NSWorkspace.shared.open(url) } }
         }
       } label: {
-        label("\(ready.count) previews", active: true)
+        globe(Palette.update, count: ready.count)
       }
       .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden).fixedSize()
       .onHover { hovered = $0 }
+      .help("Open a preview")
       .accessibilityLabel("Open a preview")
     } else if pr.previews?.contains(where: { $0.state == .building }) == true {
-      label("Building", active: false)
-        .help("A preview is deploying")
+      globe(Palette.merging).help("A preview is deploying")
+    } else if pr.previews?.contains(where: { $0.state == .failed }) == true {
+      globe(Palette.failed).help("A preview failed to deploy")
     }
   }
 
-  private func label(_ text: String, active: Bool) -> some View {
-    HStack(spacing: 4) {
-      GlyphView(glyph: .linkExternal, size: 9)
-      Text(text)
+  /// A globe in the preview's colour: blue ready, amber building, red failed; with a count
+  /// when several projects deployed.
+  private func globe(_ color: Color, count: Int? = nil) -> some View {
+    HStack(spacing: 2) {
+      Image(systemName: "globe").font(.system(size: 11, weight: .medium))
+      if let count { Text("\(count)").font(.system(size: 10, weight: .semibold)).monospacedDigit() }
     }
-    .font(.system(size: 10, weight: .medium))
-    .foregroundStyle(Palette.update.opacity(active ? 1 : 0.55))
-    .padding(.horizontal, 6).padding(.vertical, 2)
-    .background(Capsule().fill(Palette.update.opacity(active ? (hovered ? 0.26 : 0.15) : 0.08)))
-    .contentShape(Capsule())
+    .foregroundStyle(color.opacity(hovered ? 1 : 0.85))
+    .contentShape(Rectangle())
   }
 }
 

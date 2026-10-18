@@ -107,4 +107,24 @@ public enum PRStacks {
     }
     return below + [pr] + above
   }
+
+  /// A board column's PRs gathered into piles: the PRs of one stack together, bottom first,
+  /// and every other PR on its own. Piles keep the order their first PR had.
+  public static func piles(_ pullRequests: [PullRequest], links: [String: Link])
+    -> [[PullRequest]]
+  {
+    var order: [String] = []
+    var piles: [String: [PullRequest]] = [:]
+    for pr in pullRequests {
+      // A stack is known by the PR at its bottom.
+      var root = pr
+      var seen: Set<String> = [pr.id]
+      while let parent = links[root.id]?.parent, seen.insert(parent.id).inserted { root = parent }
+      if piles[root.id] == nil { order.append(root.id) }
+      piles[root.id, default: []].append(pr)
+    }
+    return order.compactMap { id in
+      piles[id]?.sorted { (links[$0.id]?.depth ?? 0) < (links[$1.id]?.depth ?? 0) }
+    }
+  }
 }
