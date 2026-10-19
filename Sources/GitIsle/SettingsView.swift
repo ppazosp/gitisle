@@ -422,7 +422,7 @@ private struct DisplayPicker: View {
 
   var body: some View {
     let screens = Self.screens
-    DropdownButton(id: "display", width: 220, trailing: true) {
+    DropdownButton(id: "display", trailing: true) {
       [
         Dropdown.Section(
           id: "displays", title: nil,

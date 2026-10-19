@@ -343,7 +343,7 @@ struct PreviewChip: View {
       .help("Open the \(preview.name) preview")
       .accessibilityLabel("Open the \(preview.name) preview")
     } else if ready.count > 1 {
-      DropdownButton(id: "previews-\(pr.id)", width: 220, trailing: true) {
+      DropdownButton(id: "previews-\(pr.id)", trailing: true) {
         [
           Dropdown.Section(
             id: "previews", title: nil,

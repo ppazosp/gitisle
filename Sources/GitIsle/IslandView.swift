@@ -372,7 +372,8 @@ private struct ExpandedIsland: View {
     .overlay {
       GeometryReader { proxy in
         if let dropdown = store.dropdown {
-          let origin = dropdown.origin(in: proxy.size)
+          let placement = dropdown.placement
+          let size = proxy.size
           ZStack(alignment: .topLeading) {
             // A click anywhere else closes the dropdown without acting on what's under it.
             Color.black.opacity(0.001).contentShape(Rectangle())
@@ -380,7 +381,9 @@ private struct ExpandedIsland: View {
             DropdownMenu(dropdown: dropdown) {
               withAnimation(Motion.snappy) { store.dropdown = nil }
             }
-            .offset(x: origin.x, y: origin.y)
+            // Placed by its own size, so it lines up with its control however wide it is.
+            .alignmentGuide(.leading) { -placement.x(width: $0.width, in: size) }
+            .alignmentGuide(.top) { -placement.y(height: $0.height, in: size) }
             .transition(.scale(scale: 0.96, anchor: .top).combined(with: .opacity))
           }
           .transition(.opacity)
@@ -645,6 +648,8 @@ struct RepositoryPicker: View {
 
 struct PickerRow<Label: View>: View {
   let selected: Bool
+  /// Keeps room for the checkmark, for rows that show a choice.
+  var checkable = true
   @ViewBuilder let label: Label
   let action: () -> Void
   @State private var hovered = false
@@ -653,9 +658,11 @@ struct PickerRow<Label: View>: View {
     Button(action: action) {
       HStack(spacing: 9) {
         label
-        Spacer(minLength: 8)
-        Image(systemName: "checkmark").font(.system(size: 10, weight: .bold))
-          .opacity(selected ? 1 : 0)
+        Spacer(minLength: checkable ? 8 : 0)
+        if checkable {
+          Image(systemName: "checkmark").font(.system(size: 10, weight: .bold))
+            .opacity(selected ? 1 : 0)
+        }
       }
       .font(.system(size: 12, weight: .medium))
       .foregroundStyle(.white.opacity(selected ? 1 : 0.8))
@@ -806,7 +813,7 @@ private struct PreviewButton: View {
           }
           .disabled(first.url == nil)
         } else {
-          DropdownButton(id: "pr-previews", width: 240, trailing: true) {
+          DropdownButton(id: "pr-previews", trailing: true) {
             [
               Dropdown.Section(
                 id: "previews", title: nil,

@@ -128,7 +128,7 @@ struct ChartMenu: View {
   var setMetric: ((UsageMetric) -> Void)?
 
   var body: some View {
-    DropdownButton(id: metric == nil ? "chart-github" : "chart-usage", width: 180, trailing: true) {
+    DropdownButton(id: metric == nil ? "chart-github" : "chart-usage", trailing: true) {
       var sections = [
         Dropdown.Section(
           id: "chart", title: "Chart",

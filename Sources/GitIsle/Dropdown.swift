@@ -24,7 +24,8 @@ struct Dropdown {
   /// The control's frame in the expanded island.
   let anchor: CGRect
   var sections: [Section]
-  var width: CGFloat
+  /// It fits its rows, up to this width; longer titles are cut in the middle.
+  var maxWidth: CGFloat
   /// Lines the dropdown up with the control's trailing edge, for controls on the right.
   var trailing: Bool
 
@@ -33,31 +34,38 @@ struct Dropdown {
   static let padding: CGFloat = 6
   static let headerHeight: CGFloat = 24
   static let dividerHeight: CGFloat = 9
+  static let margin: CGFloat = 8
 
-  @MainActor var height: CGFloat {
-    let rows = sections.reduce(0) { total, section in
-      total + (section.title == nil ? 0 : Self.headerHeight)
-        + CGFloat(section.items.count) * RepositoryPicker.rowHeight
+  /// Whether rows keep room for a checkmark: only when one shows a choice.
+  var checkable: Bool { sections.contains { $0.items.contains(where: \.selected) } }
+
+  var placement: Placement { Placement(anchor: anchor, trailing: trailing) }
+
+  /// Where a dropdown opens in the island, from its control and its own size.
+  struct Placement: Sendable {
+    let anchor: CGRect
+    let trailing: Bool
+
+    /// Lined up with its control, and always inside the island.
+    func x(width: CGFloat, in size: CGSize) -> CGFloat {
+      let x = trailing ? anchor.maxX - width : anchor.minX
+      return min(max(x, Dropdown.margin), size.width - width - Dropdown.margin)
     }
-    return Self.padding * 2 + rows + CGFloat(max(sections.count - 1, 0)) * Self.dividerHeight
-  }
 
-  /// Where it opens in an island of this size: under the control, or over it when there's no
-  /// room below, and always inside the island.
-  @MainActor func origin(in size: CGSize) -> CGPoint {
-    let margin: CGFloat = 8
-    let x = trailing ? anchor.maxX - width : anchor.minX
-    let below = anchor.maxY + 6
-    let above = anchor.minY - 6 - height
-    let y = below + height > size.height - margin && above >= margin ? above : below
-    return CGPoint(x: min(max(x, margin), size.width - width - margin), y: y)
+    /// Under its control, or over it when there's no room below.
+    func y(height: CGFloat, in size: CGSize) -> CGFloat {
+      let below = anchor.maxY + 6
+      let above = anchor.minY - 6 - height
+      return below + height > size.height - Dropdown.margin && above >= Dropdown.margin
+        ? above : below
+    }
   }
 }
 
 /// A control that opens a dropdown inside the island; a second click closes it.
 struct DropdownButton<Label: View>: View {
   let id: String
-  var width: CGFloat = 200
+  var maxWidth: CGFloat = 260
   var trailing = false
   let sections: () -> [Dropdown.Section]
   @ViewBuilder let label: Label
@@ -83,7 +91,7 @@ struct DropdownButton<Label: View>: View {
   }
 
   private func open() -> Dropdown {
-    Dropdown(id: id, anchor: frame, sections: sections(), width: width, trailing: trailing)
+    Dropdown(id: id, anchor: frame, sections: sections(), maxWidth: maxWidth, trailing: trailing)
   }
 }
 
@@ -104,26 +112,29 @@ struct DropdownMenu: View {
             .font(.system(size: 10.5, weight: .semibold))
             .foregroundStyle(.white.opacity(0.4))
             .padding(.horizontal, 8)
-            .frame(height: Dropdown.headerHeight, alignment: .bottomLeading)
+            .frame(maxWidth: .infinity, minHeight: Dropdown.headerHeight, alignment: .bottomLeading)
         }
         ForEach(section.items) { item in
-          PickerRow(selected: item.selected) {
+          PickerRow(selected: item.selected, checkable: dropdown.checkable) {
             if let symbol = item.systemImage {
               Image(systemName: symbol).font(.system(size: 11, weight: .semibold))
                 .foregroundStyle(.white.opacity(0.6)).frame(width: 16)
             }
             Text(item.title).lineLimit(1).truncationMode(.middle)
+              .frame(maxWidth: dropdown.maxWidth - 60, alignment: .leading)
           } action: {
             close()
             item.action()
           }
+          // Every row as wide as the widest, so highlights and checkmarks line up.
+          .frame(maxWidth: .infinity)
           .disabled(!item.enabled)
           .opacity(item.enabled ? 1 : 0.4)
         }
       }
     }
     .padding(Dropdown.padding)
-    .frame(width: dropdown.width, alignment: .leading)
+    .fixedSize()
     .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color(white: 0.1)))
     .overlay(
       RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Palette.hairline)
