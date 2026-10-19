@@ -86,6 +86,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
       store.repositoryFilter = Set(arguments[index + 1].split(separator: ",").map(String.init))
     }
     if arguments.contains("--repo-picker"), store.isDemo { store.repositoryPickerOpen = true }
+    // `--dropdown <id>` opens a dropdown, such as `chart-github`, once its control is laid out.
+    if let index = arguments.firstIndex(of: "--dropdown"), arguments.count > index + 1,
+      store.isDemo
+    {
+      store.pendingDropdown = arguments[index + 1]
+    }
     // `--share-card <id> <file>` writes an example PR's share card and quits.
     if let index = arguments.firstIndex(of: "--share-card"), arguments.count > index + 2,
       store.isDemo,

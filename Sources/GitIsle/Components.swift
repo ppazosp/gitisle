@@ -324,8 +324,8 @@ struct CheckBadge: View {
   }
 }
 
-/// Opens a PR's preview deploy: a click for one, a menu to pick for several. A preview still
-/// building shows dimmed.
+/// Opens a PR's preview deploy: a click for one, a dropdown to pick for several. A preview
+/// still building shows dimmed.
 struct PreviewChip: View {
   let pr: PullRequest
   @State private var hovered = false
@@ -343,14 +343,22 @@ struct PreviewChip: View {
       .help("Open the \(preview.name) preview")
       .accessibilityLabel("Open the \(preview.name) preview")
     } else if ready.count > 1 {
-      Menu {
-        ForEach(ready, id: \.name) { preview in
-          if let url = preview.url { Button(preview.name) { NSWorkspace.shared.open(url) } }
-        }
+      DropdownButton(id: "previews-\(pr.id)", width: 220, trailing: true) {
+        [
+          Dropdown.Section(
+            id: "previews", title: nil,
+            items: ready.compactMap { preview in
+              preview.url.map { url in
+                Dropdown.Item(id: preview.name, title: preview.name, systemImage: "globe") {
+                  NSWorkspace.shared.open(url)
+                }
+              }
+            })
+        ]
       } label: {
         globe(Palette.update, count: ready.count)
       }
-      .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden).fixedSize()
+      .fixedSize()
       .onHover { hovered = $0 }
       .help("Open a preview")
       .accessibilityLabel("Open a preview")

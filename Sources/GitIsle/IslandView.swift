@@ -369,6 +369,26 @@ private struct ExpandedIsland: View {
         }
       }
     }
+    .overlay {
+      GeometryReader { proxy in
+        if let dropdown = store.dropdown {
+          let origin = dropdown.origin(in: proxy.size)
+          ZStack(alignment: .topLeading) {
+            // A click anywhere else closes the dropdown without acting on what's under it.
+            Color.black.opacity(0.001).contentShape(Rectangle())
+              .onTapGesture { withAnimation(Motion.snappy) { store.dropdown = nil } }
+            DropdownMenu(dropdown: dropdown) {
+              withAnimation(Motion.snappy) { store.dropdown = nil }
+            }
+            .offset(x: origin.x, y: origin.y)
+            .transition(.scale(scale: 0.96, anchor: .top).combined(with: .opacity))
+          }
+          .transition(.opacity)
+        }
+      }
+    }
+    .coordinateSpace(.named(Dropdown.space))
+    .environment(store)
   }
 
   /// The picker belongs to Activity; leaving it hides the picker.
@@ -623,7 +643,7 @@ struct RepositoryPicker: View {
   }
 }
 
-private struct PickerRow<Label: View>: View {
+struct PickerRow<Label: View>: View {
   let selected: Bool
   @ViewBuilder let label: Label
   let action: () -> Void
@@ -773,7 +793,7 @@ private struct AnchorView: NSViewRepresentable {
 }
 
 /// Opens the PR's preview deploy. A dot shows its state: green ready, amber building, red
-/// failed. Several projects open as a menu.
+/// failed. Several projects open as a dropdown.
 private struct PreviewButton: View {
   let previews: [PreviewDeploy]
 
@@ -786,16 +806,24 @@ private struct PreviewButton: View {
           }
           .disabled(first.url == nil)
         } else {
-          Menu {
-            ForEach(previews, id: \.name) { preview in
-              Button(label(preview)) { if let url = preview.url { NSWorkspace.shared.open(url) } }
-                .disabled(preview.url == nil)
-            }
+          DropdownButton(id: "pr-previews", width: 240, trailing: true) {
+            [
+              Dropdown.Section(
+                id: "previews", title: nil,
+                items: previews.map { preview in
+                  Dropdown.Item(
+                    id: preview.name, title: label(preview), systemImage: "globe",
+                    enabled: preview.url != nil
+                  ) {
+                    if let url = preview.url { NSWorkspace.shared.open(url) }
+                  }
+                })
+            ]
           } label: {
             Image(systemName: "globe").font(.system(size: 11, weight: .semibold))
               .frame(width: 26, height: 24).contentShape(Rectangle())
           }
-          .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden).fixedSize()
+          .fixedSize()
           .foregroundStyle(.white.opacity(0.55))
           .help("Previews")
         }

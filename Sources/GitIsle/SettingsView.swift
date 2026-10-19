@@ -228,18 +228,7 @@ struct SettingsView: View {
   private var island: some View {
     SettingsCard(glyph: .pullRequest, title: "Island") {
       SettingsRow("Display") {
-        Picker("", selection: $draft.displayID) {
-          Text("Automatic").tag(nil as UInt32?)
-          ForEach(NSScreen.screens, id: \.self) { screen in
-            if let id =
-              (screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?
-              .uint32Value
-            {
-              Text(screen.localizedName).tag(id as UInt32?)
-            }
-          }
-        }
-        .labelsHidden().pickerStyle(.menu).frame(maxWidth: 150)
+        DisplayPicker(displayID: $draft.displayID)
       }
       SettingsRow("Hover delay") {
         HStack(spacing: 8) {
@@ -425,4 +414,51 @@ extension View {
 extension Notification.Name {
   static let islandSettingsChanged = Notification.Name("dev.ppazosp.gitisle.settingsChanged")
   static let islandOpenSettings = Notification.Name("dev.ppazosp.gitisle.openSettings")
+}
+
+/// Picks the display the island lives on, or leaves it to GitIsle.
+private struct DisplayPicker: View {
+  @Binding var displayID: UInt32?
+
+  var body: some View {
+    let screens = Self.screens
+    DropdownButton(id: "display", width: 220, trailing: true) {
+      [
+        Dropdown.Section(
+          id: "displays", title: nil,
+          items: [
+            Dropdown.Item(id: "automatic", title: "Automatic", selected: displayID == nil) {
+              displayID = nil
+            }
+          ]
+            + screens.map { screen in
+              Dropdown.Item(
+                id: "\(screen.id)", title: screen.name, selected: displayID == screen.id
+              ) { displayID = screen.id }
+            })
+      ]
+    } label: {
+      HStack(spacing: 6) {
+        Text(screens.first { $0.id == displayID }?.name ?? "Automatic").lineLimit(1)
+        Image(systemName: "chevron.up.chevron.down").font(.system(size: 8.5, weight: .bold))
+          .foregroundStyle(.white.opacity(0.5))
+      }
+      .font(.system(size: 12, weight: .medium))
+      .padding(.horizontal, 10)
+      .frame(maxWidth: 170, minHeight: 24)
+      .background(Capsule().fill(.white.opacity(0.08)))
+      .contentShape(Capsule())
+    }
+    .fixedSize()
+  }
+
+  static var screens: [(id: UInt32, name: String)] {
+    NSScreen.screens.compactMap { screen in
+      guard
+        let id = (screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?
+          .uint32Value
+      else { return nil }
+      return (id, screen.localizedName)
+    }
+  }
 }
