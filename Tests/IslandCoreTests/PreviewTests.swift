@@ -32,6 +32,33 @@ struct PreviewTests {
     #expect(previews[2].url == nil)
   }
 
+  @Test func aPushThatSkipsAProjectKeepsItsEarlierPreview() {
+    // As on a monorepo PR: the last push only touched one app, so Vercel retired the others'
+    // deploys on the new commit and built nothing for the main app.
+    let previews = PreviewDeploy.from(commits: [
+      (
+        "old",
+        [
+          ("Preview – web", "SUCCESS", "https://web-1.vercel.app"),
+          ("Preview – docs", "SUCCESS", "https://docs-1.vercel.app"),
+          ("Preview – api", "SUCCESS", "https://api-1.vercel.app"),
+        ]
+      ),
+      (
+        "new",
+        [
+          ("Preview – docs", "INACTIVE", "https://docs-2.vercel.app"),
+          ("Preview – api", "PENDING", nil),
+        ]
+      ),
+    ])
+    #expect(previews.map(\.name) == ["web", "docs", "api"])
+    #expect(previews[0].commit == "old" && previews[0].url?.host() == "web-1.vercel.app")
+    #expect(previews[1].commit == "old" && previews[1].state == .ready)
+    // A project the push did touch shows its new build.
+    #expect(previews[2].commit == "new" && previews[2].state == .building)
+  }
+
   @Test func readsByIDCarryPreviewsAndSearchesDont() throws {
     var row: [String: Any] = [
       "id": "PR", "number": 1, "title": "t", "url": "https://github.com/example/app/pull/1",
@@ -39,10 +66,11 @@ struct PreviewTests {
       "repository": ["nameWithOwner": "example/app"],
     ]
     #expect(try GitHubService.decode(row).previews == nil)
-    row["commits"] = [
+    row["recentCommits"] = [
       "nodes": [
         [
           "commit": [
+            "oid": "abc",
             "deployments": [
               "nodes": [
                 [
@@ -52,12 +80,13 @@ struct PreviewTests {
                   ],
                 ]
               ]
-            ]
+            ],
           ]
         ]
       ]
     ]
     #expect(try GitHubService.decode(row).readyPreviews.map(\.name) == ["app"])
+    #expect(try GitHubService.decode(row).previews?.first?.commit == "abc")
   }
 
   private func events(_ before: PullRequest, _ after: PullRequest) -> [IslandEvent] {
@@ -78,6 +107,19 @@ struct PreviewTests {
       events(pr(previews: [ready]), pr(head: "def", previews: [ready])).map(\.kind) == [
         .previewReady
       ])
+  }
+
+  @Test func anEarlierCommitsPreviewDoesNotAnnounceAfterAPush() {
+    var built = ready
+    built.commit = "abc"
+    // After the push, the new commit has no preview of its own yet.
+    #expect(events(pr(previews: [built]), pr(head: "def", previews: [built])).isEmpty)
+    // Its own preview announces once it's ready.
+    var rebuilt = ready
+    rebuilt.commit = "def"
+    #expect(
+      events(pr(head: "def", previews: [built]), pr(head: "def", previews: [rebuilt])).map(\.kind)
+        == [.previewReady])
   }
 
   @Test func previewsStayQuietWhenFirstReadOrNotYours() {

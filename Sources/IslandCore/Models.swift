@@ -542,7 +542,8 @@ public struct GitHubStats: Equatable, Sendable {
   public func window(days: Int) -> Window? { windows.first { $0.days == days } }
 }
 
-/// A preview deploy of a PR's head commit, one per project.
+/// A PR's preview deploy, one per project: the head commit's, or an earlier commit's when a
+/// later push didn't touch that project.
 public struct PreviewDeploy: Codable, Hashable, Sendable {
   public enum State: String, Codable, Sendable {
     case ready, building, failed
@@ -553,11 +554,33 @@ public struct PreviewDeploy: Codable, Hashable, Sendable {
   public var state: State
   /// Where the preview lives, once it's ready.
   public var url: URL?
+  /// The commit it was built from; nil when not known.
+  public var commit: String?
 
-  public init(name: String, state: State, url: URL? = nil) {
+  public init(name: String, state: State, url: URL? = nil, commit: String? = nil) {
     self.name = name
     self.state = state
     self.url = url
+    self.commit = commit
+  }
+
+  /// Previews from the deployments of a PR's latest commits, oldest first. Each project shows
+  /// its newest deploy, so a commit that only retired a project's deploy, as Vercel does when a
+  /// push doesn't touch it, keeps showing the earlier one.
+  public static func from(
+    commits: [(oid: String, deployments: [(environment: String, state: String?, url: String?)])]
+  ) -> [PreviewDeploy] {
+    var latest: [String: PreviewDeploy] = [:]
+    var order: [String] = []
+    for commit in commits {
+      for preview in from(commit.deployments) {
+        if latest[preview.name] == nil { order.append(preview.name) }
+        var preview = preview
+        preview.commit = commit.oid
+        latest[preview.name] = preview
+      }
+    }
+    return order.compactMap { latest[$0] }
   }
 
   /// Previews from GitHub's deployments for one commit: the newest per environment, without
@@ -700,8 +723,14 @@ public enum GitHubChanges {
       // A preview of your PR that became ready on this commit. Previews GitIsle reads for the
       // first time stay quiet, so updating or relaunching never replays them.
       if mine, pr.state == "OPEN", prior.previews != nil {
-        let before = Set(prior.headOID == pr.headOID ? prior.readyPreviews.map(\.name) : [])
-        let fresh = pr.readyPreviews.filter { !before.contains($0.name) }
+        // An earlier commit's preview, still showing after a push, isn't new.
+        func key(_ preview: PreviewDeploy, _ head: String) -> String {
+          "\(preview.name)@\(preview.commit ?? head)"
+        }
+        let before = Set(prior.readyPreviews.map { key($0, prior.headOID) })
+        let fresh = pr.readyPreviews.filter {
+          ($0.commit ?? pr.headOID) == pr.headOID && !before.contains(key($0, pr.headOID))
+        }
         if let first = fresh.first {
           var ready = event(pr, .previewReady, pr.headOID, url: first.url)
           ready.note = fresh.map(\.name).joined(separator: ", ")
