@@ -40,11 +40,12 @@ public actor GitHubService {
       """
   }
 
-  /// The deployments of a PR's latest commits. A push that doesn't touch a project leaves its
-  /// preview on an earlier commit, as Vercel does when it skips a build.
+  /// The deployments and commit statuses of a PR's latest commits. A push that doesn't touch a
+  /// project leaves its preview on an earlier commit, as Vercel does when it skips a build.
   private static let recentDeployments = """
     recentCommits: commits(last: 4) { nodes { commit { oid
       deployments(last: 10) { nodes { environment latestStatus { state environmentUrl } } }
+      status { contexts { context state description } }
     } } }
     """
 
@@ -377,13 +378,20 @@ public actor GitHubService {
         guard let commit = row["commit"] as? [String: Any], let oid = commit["oid"] as? String
         else { return nil }
         let nodes = (commit["deployments"] as? [String: Any])?["nodes"] as? [[String: Any]] ?? []
-        let deployments: [(environment: String, state: String?, url: String?)] =
-          nodes.compactMap { node in
+        let contexts =
+          (commit["status"] as? [String: Any])?["contexts"] as? [[String: Any]] ?? []
+        return PreviewDeploy.CommitSignals(
+          oid: oid,
+          deployments: nodes.compactMap { node in
             guard let environment = node["environment"] as? String else { return nil }
             let status = node["latestStatus"] as? [String: Any]
             return (environment, status?["state"] as? String, status?["environmentUrl"] as? String)
-          }
-        return (oid, deployments)
+          },
+          statuses: contexts.compactMap { context in
+            guard let name = context["context"] as? String, let state = context["state"] as? String
+            else { return nil }
+            return (name, state, context["description"] as? String)
+          })
       })
   }
 

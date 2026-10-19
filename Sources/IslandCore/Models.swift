@@ -564,23 +564,61 @@ public struct PreviewDeploy: Codable, Hashable, Sendable {
     self.commit = commit
   }
 
-  /// Previews from the deployments of a PR's latest commits, oldest first. Each project shows
-  /// its newest deploy, so a commit that only retired a project's deploy, as Vercel does when a
-  /// push doesn't touch it, keeps showing the earlier one.
-  public static func from(
-    commits: [(oid: String, deployments: [(environment: String, state: String?, url: String?)])]
-  ) -> [PreviewDeploy] {
+  /// What one commit says about its previews: its deployments, and its commit statuses. Vercel
+  /// reports a build only as a status ("Vercel – omnia-docs"); the deployment, with its link,
+  /// appears once the build is done.
+  public struct CommitSignals: Sendable {
+    public var oid: String
+    public var deployments: [(environment: String, state: String?, url: String?)]
+    public var statuses: [(context: String, state: String, description: String?)]
+
+    public init(
+      oid: String, deployments: [(environment: String, state: String?, url: String?)] = [],
+      statuses: [(context: String, state: String, description: String?)] = []
+    ) {
+      self.oid = oid
+      self.deployments = deployments
+      self.statuses = statuses
+    }
+  }
+
+  /// Previews from a PR's latest commits, oldest first. Each project shows its newest state, so
+  /// a commit that only retired a project's deploy, as Vercel does when a push doesn't touch it,
+  /// keeps showing the earlier one.
+  public static func from(commits: [CommitSignals]) -> [PreviewDeploy] {
     var latest: [String: PreviewDeploy] = [:]
     var order: [String] = []
     for commit in commits {
-      for preview in from(commit.deployments) {
-        if latest[preview.name] == nil { order.append(preview.name) }
-        var preview = preview
+      let deployed = from(commit.deployments)
+      var found = Dictionary(deployed.map { ($0.name, $0) }) { first, _ in first }
+      var names = deployed.map(\.name)
+      // A build in progress, or one that failed, says more than a deploy that finished before.
+      for status in commit.statuses {
+        guard let name = vercelProject(status.context) else { continue }
+        let state: State? =
+          switch status.state {
+          case "PENDING", "EXPECTED": .building
+          case "FAILURE", "ERROR": .failed
+          default: nil
+          }
+        guard let state else { continue }
+        if found[name] == nil { names.append(name) }
+        found[name] = PreviewDeploy(name: name, state: state)
+      }
+      for name in names {
+        guard var preview = found[name] else { continue }
+        if latest[name] == nil { order.append(name) }
         preview.commit = commit.oid
-        latest[preview.name] = preview
+        latest[name] = preview
       }
     }
     return order.compactMap { latest[$0] }
+  }
+
+  /// "omnia-docs" from Vercel's status context "Vercel – omnia-docs".
+  static func vercelProject(_ context: String) -> String? {
+    guard let match = context.firstMatch(of: /^Vercel\s*[–—-]\s*(.+)$/) else { return nil }
+    return String(match.1)
   }
 
   /// Previews from GitHub's deployments for one commit: the newest per environment, without

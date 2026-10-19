@@ -36,27 +36,55 @@ struct PreviewTests {
     // As on a monorepo PR: the last push only touched one app, so Vercel retired the others'
     // deploys on the new commit and built nothing for the main app.
     let previews = PreviewDeploy.from(commits: [
-      (
-        "old",
-        [
+      .init(
+        oid: "old",
+        deployments: [
           ("Preview – web", "SUCCESS", "https://web-1.vercel.app"),
           ("Preview – docs", "SUCCESS", "https://docs-1.vercel.app"),
           ("Preview – api", "SUCCESS", "https://api-1.vercel.app"),
-        ]
-      ),
-      (
-        "new",
-        [
+        ]),
+      .init(
+        oid: "new",
+        deployments: [
           ("Preview – docs", "INACTIVE", "https://docs-2.vercel.app"),
           ("Preview – api", "PENDING", nil),
-        ]
-      ),
+        ]),
     ])
     #expect(previews.map(\.name) == ["web", "docs", "api"])
     #expect(previews[0].commit == "old" && previews[0].url?.host() == "web-1.vercel.app")
     #expect(previews[1].commit == "old" && previews[1].state == .ready)
     // A project the push did touch shows its new build.
     #expect(previews[2].commit == "new" && previews[2].state == .building)
+  }
+
+  @Test func vercelReportsABuildAsAStatusBeforeItsDeployExists() {
+    // Vercel says "deploying" only as a commit status; the deployment arrives when it's done.
+    let earlier = PreviewDeploy.CommitSignals(
+      oid: "old", deployments: [("Preview – web", "SUCCESS", "https://web-1.vercel.app")])
+    let building = PreviewDeploy.from(commits: [
+      earlier,
+      .init(
+        oid: "new",
+        statuses: [
+          ("Vercel – web", "PENDING", "Vercel is deploying your app"),
+          ("Vercel – docs", "SUCCESS", "Skipped - Not affected"),
+          ("Vercel – api", "FAILURE", "Deployment has failed"),
+          ("CI / unit", "PENDING", nil),
+        ]),
+    ])
+    #expect(building.map(\.name) == ["web", "api"])
+    #expect(building[0].state == .building && building[0].commit == "new")
+    #expect(building[0].url == nil)
+    #expect(building[1].state == .failed)
+    // Once built, the deploy gives the link.
+    let built = PreviewDeploy.from(commits: [
+      earlier,
+      .init(
+        oid: "new", deployments: [("Preview – web", "SUCCESS", "https://web-2.vercel.app")],
+        statuses: [("Vercel – web", "SUCCESS", "Deployment has completed")]),
+    ])
+    #expect(built.first?.state == .ready && built.first?.url?.host() == "web-2.vercel.app")
+    #expect(built.first?.commit == "new")
   }
 
   @Test func readsByIDCarryPreviewsAndSearchesDont() throws {
