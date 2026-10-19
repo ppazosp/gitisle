@@ -12,7 +12,7 @@ Notable changes to GitIsle. Releases follow [semantic versioning](https://semver
 
 ### Bug Fixes
 
-* Vercel previews show while they build, and after a push skips them ([#44](https://github.com/ppazosp/gitisle/issues/44)) ([ff4fdd2](https://github.com/ppazosp/gitisle/commit/ff4fdd251517b286560521bd0a87ca6ea94f3476))
+* Vercel previews show while they build ([#44](https://github.com/ppazosp/gitisle/issues/44)) ([ff4fdd2](https://github.com/ppazosp/gitisle/commit/ff4fdd251517b286560521bd0a87ca6ea94f3476))
 
 ## [0.2.0](https://github.com/ppazosp/gitisle/compare/v0.1.7...v0.2.0) (2026-10-18)
 
