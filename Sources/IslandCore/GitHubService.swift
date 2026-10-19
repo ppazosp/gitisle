@@ -39,8 +39,11 @@ public actor GitHubService {
       """
   }
 
-  private static let deployments =
-    "deployments(last: 10) { nodes { environment latestStatus { state environmentUrl } } }"
+  /// A commit's preview deploys, and its statuses, where Vercel reports a build in progress.
+  private static let deployments = """
+    deployments(last: 10) { nodes { environment latestStatus { state environmentUrl } } }
+    status { contexts { context state description } }
+    """
 
   private let transport: (@Sendable (Data) async throws -> Data)?
   /// Answers REST requests by path instead of `gh`, for tests.
@@ -340,7 +343,7 @@ public actor GitHubService {
       author: (row["author"] as? [String: Any])?["login"] as? String,
       ownerAvatar: avatar(row["repository"]),
       createdAt: (row["createdAt"] as? String).flatMap(Dates.parse),
-      previews: (commit?["deployments"] as? [String: Any]).map(previews),
+      previews: commit.flatMap(previews),
       headRefName: row["headRefName"] as? String, baseRefName: row["baseRefName"] as? String,
       authorAvatar: personAvatar((row["author"] as? [String: Any])?["avatarUrl"]),
       additions: row["additions"] as? Int, deletions: row["deletions"] as? Int,
@@ -363,14 +366,21 @@ public actor GitHubService {
     return summary.total > 0 ? summary : nil
   }
 
-  /// Previews from a commit's `deployments` connection.
-  static func previews(_ connection: [String: Any]) -> [PreviewDeploy] {
+  /// Previews from a commit's `deployments` and `status`; nil when they weren't read.
+  static func previews(_ commit: [String: Any]) -> [PreviewDeploy]? {
+    guard let connection = commit["deployments"] as? [String: Any] else { return nil }
     let nodes = connection["nodes"] as? [[String: Any]] ?? []
+    let contexts = (commit["status"] as? [String: Any])?["contexts"] as? [[String: Any]] ?? []
     return PreviewDeploy.from(
       nodes.compactMap { node in
         guard let environment = node["environment"] as? String else { return nil }
         let status = node["latestStatus"] as? [String: Any]
         return (environment, status?["state"] as? String, status?["environmentUrl"] as? String)
+      },
+      statuses: contexts.compactMap { context in
+        guard let name = context["context"] as? String, let state = context["state"] as? String
+        else { return nil }
+        return (name, state, context["description"] as? String)
       })
   }
 
@@ -530,7 +540,7 @@ extension GitHubService {
       reviews: reviews,
       commentCount: (node["comments"] as? [String: Any])?["totalCount"] as? Int ?? 0,
       checks: checks,
-      previews: (commit?["deployments"] as? [String: Any]).map(previews) ?? [], fetchedAt: now)
+      previews: commit.flatMap(previews) ?? [], fetchedAt: now)
   }
 
   /// A person's, team's, or bot's picture, from GitHub's own avatar host only.

@@ -562,8 +562,13 @@ public struct PreviewDeploy: Codable, Hashable, Sendable {
 
   /// Previews from GitHub's deployments for one commit: the newest per environment, without
   /// those replaced by a later deploy or retired after a merge. Production deploys are left out.
+  ///
+  /// Vercel reports a build only as a commit status ("Vercel – omnia-docs"); the deployment,
+  /// with its link, appears once the build is done. So a Vercel status that says it's deploying
+  /// or that it failed decides the preview's state, and one that skipped the build changes nothing.
   public static func from(
-    _ deployments: [(environment: String, state: String?, url: String?)]
+    _ deployments: [(environment: String, state: String?, url: String?)],
+    statuses: [(context: String, state: String, description: String?)] = []
   ) -> [PreviewDeploy] {
     var latest: [String: PreviewDeploy] = [:]
     var order: [String] = []
@@ -588,6 +593,19 @@ public struct PreviewDeploy: Codable, Hashable, Sendable {
         $0.scheme == "https" ? $0 : nil
       }
       latest[name] = PreviewDeploy(name: name, state: state, url: state == .ready ? url : nil)
+    }
+    for status in statuses {
+      guard let match = status.context.firstMatch(of: /^Vercel\s*[–—-]\s*(.+)$/) else { continue }
+      let state: State? =
+        switch status.state {
+        case "PENDING", "EXPECTED": .building
+        case "FAILURE", "ERROR": .failed
+        default: nil
+        }
+      guard let state else { continue }
+      let name = String(match.1)
+      if latest[name] == nil { order.append(name) }
+      latest[name] = PreviewDeploy(name: name, state: state)
     }
     return order.compactMap { latest[$0] }
   }

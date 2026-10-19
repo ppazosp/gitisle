@@ -32,6 +32,26 @@ struct PreviewTests {
     #expect(previews[2].url == nil)
   }
 
+  @Test func vercelReportsABuildAsAStatusBeforeItsDeployExists() {
+    // Vercel says "deploying" only as a commit status; the deployment arrives when it's done.
+    let building = PreviewDeploy.from(
+      [("Preview – docs", "INACTIVE", "https://docs-1.vercel.app")],
+      statuses: [
+        ("Vercel – web", "PENDING", "Vercel is deploying your app"),
+        ("Vercel – docs", "SUCCESS", "Skipped - Not affected"),
+        ("Vercel – api", "FAILURE", "Deployment has failed"),
+        ("CI / unit", "PENDING", nil),
+      ])
+    #expect(building.map(\.name) == ["web", "api"])
+    #expect(building[0].state == .building && building[0].url == nil)
+    #expect(building[1].state == .failed)
+    // Once built, the deploy gives the link.
+    let built = PreviewDeploy.from(
+      [("Preview – web", "SUCCESS", "https://web-2.vercel.app")],
+      statuses: [("Vercel – web", "SUCCESS", "Deployment has completed")])
+    #expect(built.first?.state == .ready && built.first?.url?.host() == "web-2.vercel.app")
+  }
+
   @Test func readsByIDCarryPreviewsAndSearchesDont() throws {
     var row: [String: Any] = [
       "id": "PR", "number": 1, "title": "t", "url": "https://github.com/example/app/pull/1",
