@@ -143,9 +143,11 @@ final class IslandPanel: NSPanel {
       .mouseMoved, .leftMouseDown, .keyDown,
     ]) { [weak self] event in
       if event.type == .keyDown, event.keyCode == 53, self?.panel.isKeyWindow == true {
-        // Escape closes the repository picker, an open file, or a PR's page first, then the
-        // island.
-        if self?.store.repositoryPickerOpen == true {
+        // Escape closes a dropdown, the repository picker, an open file, or a PR's page first,
+        // then the island.
+        if self?.store.dropdown != nil {
+          withAnimation(Motion.snappy) { self?.store.dropdown = nil }
+        } else if self?.store.repositoryPickerOpen == true {
           withAnimation(Motion.snappy) { self?.store.repositoryPickerOpen = false }
         } else if self?.store.openFilePath != nil {
           withAnimation(Motion.snappy) { self?.store.closeFile() }
@@ -159,7 +161,7 @@ final class IslandPanel: NSPanel {
       self?.trackPointer()
       return event
     }
-    // Menus (chart style, display picker) open outside the island.
+    // Right-click menus open outside the island.
     observers.append(
       NotificationCenter.default.addObserver(
         forName: NSMenu.didBeginTrackingNotification, object: nil, queue: .main

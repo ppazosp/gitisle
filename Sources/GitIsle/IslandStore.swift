@@ -25,6 +25,7 @@ final class IslandStore {
       if !expanded {
         showingSettings = false
         repositoryPickerOpen = false
+        dropdown = nil
         detailsID = nil
       }
       // Expanding shows the full context, so a pending banner has done its job.
@@ -83,10 +84,15 @@ final class IslandStore {
   }
   /// The repository picker is open over Activity.
   var repositoryPickerOpen = false
+  /// The dropdown open over the island, if any.
+  var dropdown: Dropdown?
+  /// Example data only: a dropdown to open once its control is laid out, for captures.
+  @ObservationIgnored var pendingDropdown: String?
   /// The PR whose page replaces Activity, by ID.
   private(set) var detailsID: String? {
     didSet {
       if detailsID != oldValue {
+        dropdown = nil
         openFilePath = nil
         foldedFolders = []
         // Only the open PR's diffs are kept.

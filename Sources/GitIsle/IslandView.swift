@@ -369,6 +369,29 @@ private struct ExpandedIsland: View {
         }
       }
     }
+    .overlay {
+      GeometryReader { proxy in
+        if let dropdown = store.dropdown {
+          let placement = dropdown.placement
+          let size = proxy.size
+          ZStack(alignment: .topLeading) {
+            // A click anywhere else closes the dropdown without acting on what's under it.
+            Color.black.opacity(0.001).contentShape(Rectangle())
+              .onTapGesture { withAnimation(Motion.snappy) { store.dropdown = nil } }
+            DropdownMenu(dropdown: dropdown) {
+              withAnimation(Motion.snappy) { store.dropdown = nil }
+            }
+            // Placed by its own size, so it lines up with its control however wide it is.
+            .alignmentGuide(.leading) { -placement.x(width: $0.width, in: size) }
+            .alignmentGuide(.top) { -placement.y(height: $0.height, in: size) }
+            .transition(.scale(scale: 0.96, anchor: .top).combined(with: .opacity))
+          }
+          .transition(.opacity)
+        }
+      }
+    }
+    .coordinateSpace(.named(Dropdown.space))
+    .environment(store)
   }
 
   /// The picker belongs to Activity; leaving it hides the picker.
@@ -623,8 +646,10 @@ struct RepositoryPicker: View {
   }
 }
 
-private struct PickerRow<Label: View>: View {
+struct PickerRow<Label: View>: View {
   let selected: Bool
+  /// Keeps room for the checkmark, for rows that show a choice.
+  var checkable = true
   @ViewBuilder let label: Label
   let action: () -> Void
   @State private var hovered = false
@@ -633,9 +658,11 @@ private struct PickerRow<Label: View>: View {
     Button(action: action) {
       HStack(spacing: 9) {
         label
-        Spacer(minLength: 8)
-        Image(systemName: "checkmark").font(.system(size: 10, weight: .bold))
-          .opacity(selected ? 1 : 0)
+        Spacer(minLength: checkable ? 8 : 0)
+        if checkable {
+          Image(systemName: "checkmark").font(.system(size: 10, weight: .bold))
+            .opacity(selected ? 1 : 0)
+        }
       }
       .font(.system(size: 12, weight: .medium))
       .foregroundStyle(.white.opacity(selected ? 1 : 0.8))
@@ -773,7 +800,7 @@ private struct AnchorView: NSViewRepresentable {
 }
 
 /// Opens the PR's preview deploy. A dot shows its state: green ready, amber building, red
-/// failed. Several projects open as a menu.
+/// failed. Several projects open as a dropdown.
 private struct PreviewButton: View {
   let previews: [PreviewDeploy]
 
@@ -786,16 +813,24 @@ private struct PreviewButton: View {
           }
           .disabled(first.url == nil)
         } else {
-          Menu {
-            ForEach(previews, id: \.name) { preview in
-              Button(label(preview)) { if let url = preview.url { NSWorkspace.shared.open(url) } }
-                .disabled(preview.url == nil)
-            }
+          DropdownButton(id: "pr-previews", trailing: true) {
+            [
+              Dropdown.Section(
+                id: "previews", title: nil,
+                items: previews.map { preview in
+                  Dropdown.Item(
+                    id: preview.name, title: label(preview), systemImage: "globe",
+                    enabled: preview.url != nil
+                  ) {
+                    if let url = preview.url { NSWorkspace.shared.open(url) }
+                  }
+                })
+            ]
           } label: {
             Image(systemName: "globe").font(.system(size: 11, weight: .semibold))
               .frame(width: 26, height: 24).contentShape(Rectangle())
           }
-          .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden).fixedSize()
+          .fixedSize()
           .foregroundStyle(.white.opacity(0.55))
           .help("Previews")
         }

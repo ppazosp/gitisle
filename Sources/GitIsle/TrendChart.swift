@@ -128,27 +128,28 @@ struct ChartMenu: View {
   var setMetric: ((UsageMetric) -> Void)?
 
   var body: some View {
-    Menu {
-      Section("Chart") {
-        ForEach(ChartStyle.allCases, id: \.self) { option in
-          Button {
-            setStyle(option)
-          } label: {
-            Label(option.label, systemImage: option == style ? "checkmark" : option.symbol)
-          }
-        }
-      }
+    DropdownButton(id: metric == nil ? "chart-github" : "chart-usage", trailing: true) {
+      var sections = [
+        Dropdown.Section(
+          id: "chart", title: "Chart",
+          items: ChartStyle.allCases.map { option in
+            Dropdown.Item(
+              id: option.rawValue, title: option.label, systemImage: option.symbol,
+              selected: option == style
+            ) { setStyle(option) }
+          })
+      ]
       if let metric, let setMetric {
-        Section("Show") {
-          ForEach(UsageMetric.allCases, id: \.self) { option in
-            Button {
-              setMetric(option)
-            } label: {
-              Label(option.label, systemImage: option == metric ? "checkmark" : "circle")
-            }
-          }
-        }
+        sections.append(
+          Dropdown.Section(
+            id: "show", title: "Show",
+            items: UsageMetric.allCases.map { option in
+              Dropdown.Item(
+                id: option.rawValue, title: option.label, selected: option == metric
+              ) { setMetric(option) }
+            }))
       }
+      return sections
     } label: {
       Image(systemName: style.symbol)
         .font(.system(size: 10.5, weight: .semibold))
@@ -157,7 +158,7 @@ struct ChartMenu: View {
         .background(Capsule().fill(.white.opacity(0.07)))
         .contentShape(Capsule())
     }
-    .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden).fixedSize()
+    .fixedSize()
     .help("Chart style")
     .accessibilityLabel("Chart style")
   }
