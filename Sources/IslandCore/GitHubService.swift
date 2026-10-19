@@ -34,19 +34,15 @@ public actor GitHubService {
             checkRunCountsByState { state count }
             statusContextCountsByState { state count }
           }
-        } } } }
-        \(extras ? recentDeployments : "")
+        } \(extras ? deployments : "") } } }
       }
       """
   }
 
-  /// The deployments and commit statuses of a PR's latest commits. A push that doesn't touch a
-  /// project leaves its preview on an earlier commit, as Vercel does when it skips a build.
-  private static let recentDeployments = """
-    recentCommits: commits(last: 4) { nodes { commit { oid
-      deployments(last: 10) { nodes { environment latestStatus { state environmentUrl } } }
-      status { contexts { context state description } }
-    } } }
+  /// A commit's preview deploys, and its statuses, where Vercel reports a build in progress.
+  private static let deployments = """
+    deployments(last: 10) { nodes { environment latestStatus { state environmentUrl } } }
+    status { contexts { context state description } }
     """
 
   private let transport: (@Sendable (Data) async throws -> Data)?
@@ -347,7 +343,7 @@ public actor GitHubService {
       author: (row["author"] as? [String: Any])?["login"] as? String,
       ownerAvatar: avatar(row["repository"]),
       createdAt: (row["createdAt"] as? String).flatMap(Dates.parse),
-      previews: (row["recentCommits"] as? [String: Any]).map(previews),
+      previews: commit.flatMap(previews),
       headRefName: row["headRefName"] as? String, baseRefName: row["baseRefName"] as? String,
       authorAvatar: personAvatar((row["author"] as? [String: Any])?["avatarUrl"]),
       additions: row["additions"] as? Int, deletions: row["deletions"] as? Int,
@@ -370,28 +366,21 @@ public actor GitHubService {
     return summary.total > 0 ? summary : nil
   }
 
-  /// Previews from the `recentCommits` connection, oldest commit first.
-  static func previews(_ commits: [String: Any]) -> [PreviewDeploy] {
-    let rows = commits["nodes"] as? [[String: Any]] ?? []
+  /// Previews from a commit's `deployments` and `status`; nil when they weren't read.
+  static func previews(_ commit: [String: Any]) -> [PreviewDeploy]? {
+    guard let connection = commit["deployments"] as? [String: Any] else { return nil }
+    let nodes = connection["nodes"] as? [[String: Any]] ?? []
+    let contexts = (commit["status"] as? [String: Any])?["contexts"] as? [[String: Any]] ?? []
     return PreviewDeploy.from(
-      commits: rows.compactMap { row in
-        guard let commit = row["commit"] as? [String: Any], let oid = commit["oid"] as? String
+      nodes.compactMap { node in
+        guard let environment = node["environment"] as? String else { return nil }
+        let status = node["latestStatus"] as? [String: Any]
+        return (environment, status?["state"] as? String, status?["environmentUrl"] as? String)
+      },
+      statuses: contexts.compactMap { context in
+        guard let name = context["context"] as? String, let state = context["state"] as? String
         else { return nil }
-        let nodes = (commit["deployments"] as? [String: Any])?["nodes"] as? [[String: Any]] ?? []
-        let contexts =
-          (commit["status"] as? [String: Any])?["contexts"] as? [[String: Any]] ?? []
-        return PreviewDeploy.CommitSignals(
-          oid: oid,
-          deployments: nodes.compactMap { node in
-            guard let environment = node["environment"] as? String else { return nil }
-            let status = node["latestStatus"] as? [String: Any]
-            return (environment, status?["state"] as? String, status?["environmentUrl"] as? String)
-          },
-          statuses: contexts.compactMap { context in
-            guard let name = context["context"] as? String, let state = context["state"] as? String
-            else { return nil }
-            return (name, state, context["description"] as? String)
-          })
+        return (name, state, context["description"] as? String)
       })
   }
 
@@ -482,8 +471,8 @@ extension GitHubService {
             ... on Bot { login avatarUrl(size: 64) } } } }
           latestReviews(first: 10) { nodes { author { login avatarUrl(size: 64) } state submittedAt } }
           comments { totalCount }
-          \(Self.recentDeployments)
           commits(last: 1) { totalCount nodes { commit {
+            \(Self.deployments)
             statusCheckRollup { contexts(first: 100) {
             nodes {
               __typename
@@ -551,7 +540,7 @@ extension GitHubService {
       reviews: reviews,
       commentCount: (node["comments"] as? [String: Any])?["totalCount"] as? Int ?? 0,
       checks: checks,
-      previews: (node["recentCommits"] as? [String: Any]).map(previews) ?? [], fetchedAt: now)
+      previews: commit.flatMap(previews) ?? [], fetchedAt: now)
   }
 
   /// A person's, team's, or bot's picture, from GitHub's own avatar host only.

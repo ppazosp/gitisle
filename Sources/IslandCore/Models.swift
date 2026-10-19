@@ -542,8 +542,7 @@ public struct GitHubStats: Equatable, Sendable {
   public func window(days: Int) -> Window? { windows.first { $0.days == days } }
 }
 
-/// A PR's preview deploy, one per project: the head commit's, or an earlier commit's when a
-/// later push didn't touch that project.
+/// A preview deploy of a PR's head commit, one per project.
 public struct PreviewDeploy: Codable, Hashable, Sendable {
   public enum State: String, Codable, Sendable {
     case ready, building, failed
@@ -554,77 +553,22 @@ public struct PreviewDeploy: Codable, Hashable, Sendable {
   public var state: State
   /// Where the preview lives, once it's ready.
   public var url: URL?
-  /// The commit it was built from; nil when not known.
-  public var commit: String?
 
-  public init(name: String, state: State, url: URL? = nil, commit: String? = nil) {
+  public init(name: String, state: State, url: URL? = nil) {
     self.name = name
     self.state = state
     self.url = url
-    self.commit = commit
-  }
-
-  /// What one commit says about its previews: its deployments, and its commit statuses. Vercel
-  /// reports a build only as a status ("Vercel – omnia-docs"); the deployment, with its link,
-  /// appears once the build is done.
-  public struct CommitSignals: Sendable {
-    public var oid: String
-    public var deployments: [(environment: String, state: String?, url: String?)]
-    public var statuses: [(context: String, state: String, description: String?)]
-
-    public init(
-      oid: String, deployments: [(environment: String, state: String?, url: String?)] = [],
-      statuses: [(context: String, state: String, description: String?)] = []
-    ) {
-      self.oid = oid
-      self.deployments = deployments
-      self.statuses = statuses
-    }
-  }
-
-  /// Previews from a PR's latest commits, oldest first. Each project shows its newest state, so
-  /// a commit that only retired a project's deploy, as Vercel does when a push doesn't touch it,
-  /// keeps showing the earlier one.
-  public static func from(commits: [CommitSignals]) -> [PreviewDeploy] {
-    var latest: [String: PreviewDeploy] = [:]
-    var order: [String] = []
-    for commit in commits {
-      let deployed = from(commit.deployments)
-      var found = Dictionary(deployed.map { ($0.name, $0) }) { first, _ in first }
-      var names = deployed.map(\.name)
-      // A build in progress, or one that failed, says more than a deploy that finished before.
-      for status in commit.statuses {
-        guard let name = vercelProject(status.context) else { continue }
-        let state: State? =
-          switch status.state {
-          case "PENDING", "EXPECTED": .building
-          case "FAILURE", "ERROR": .failed
-          default: nil
-          }
-        guard let state else { continue }
-        if found[name] == nil { names.append(name) }
-        found[name] = PreviewDeploy(name: name, state: state)
-      }
-      for name in names {
-        guard var preview = found[name] else { continue }
-        if latest[name] == nil { order.append(name) }
-        preview.commit = commit.oid
-        latest[name] = preview
-      }
-    }
-    return order.compactMap { latest[$0] }
-  }
-
-  /// "omnia-docs" from Vercel's status context "Vercel – omnia-docs".
-  static func vercelProject(_ context: String) -> String? {
-    guard let match = context.firstMatch(of: /^Vercel\s*[–—-]\s*(.+)$/) else { return nil }
-    return String(match.1)
   }
 
   /// Previews from GitHub's deployments for one commit: the newest per environment, without
   /// those replaced by a later deploy or retired after a merge. Production deploys are left out.
+  ///
+  /// Vercel reports a build only as a commit status ("Vercel – omnia-docs"); the deployment,
+  /// with its link, appears once the build is done. So a Vercel status that says it's deploying
+  /// or that it failed decides the preview's state, and one that skipped the build changes nothing.
   public static func from(
-    _ deployments: [(environment: String, state: String?, url: String?)]
+    _ deployments: [(environment: String, state: String?, url: String?)],
+    statuses: [(context: String, state: String, description: String?)] = []
   ) -> [PreviewDeploy] {
     var latest: [String: PreviewDeploy] = [:]
     var order: [String] = []
@@ -649,6 +593,19 @@ public struct PreviewDeploy: Codable, Hashable, Sendable {
         $0.scheme == "https" ? $0 : nil
       }
       latest[name] = PreviewDeploy(name: name, state: state, url: state == .ready ? url : nil)
+    }
+    for status in statuses {
+      guard let match = status.context.firstMatch(of: /^Vercel\s*[–—-]\s*(.+)$/) else { continue }
+      let state: State? =
+        switch status.state {
+        case "PENDING", "EXPECTED": .building
+        case "FAILURE", "ERROR": .failed
+        default: nil
+        }
+      guard let state else { continue }
+      let name = String(match.1)
+      if latest[name] == nil { order.append(name) }
+      latest[name] = PreviewDeploy(name: name, state: state)
     }
     return order.compactMap { latest[$0] }
   }
@@ -761,14 +718,8 @@ public enum GitHubChanges {
       // A preview of your PR that became ready on this commit. Previews GitIsle reads for the
       // first time stay quiet, so updating or relaunching never replays them.
       if mine, pr.state == "OPEN", prior.previews != nil {
-        // An earlier commit's preview, still showing after a push, isn't new.
-        func key(_ preview: PreviewDeploy, _ head: String) -> String {
-          "\(preview.name)@\(preview.commit ?? head)"
-        }
-        let before = Set(prior.readyPreviews.map { key($0, prior.headOID) })
-        let fresh = pr.readyPreviews.filter {
-          ($0.commit ?? pr.headOID) == pr.headOID && !before.contains(key($0, pr.headOID))
-        }
+        let before = Set(prior.headOID == pr.headOID ? prior.readyPreviews.map(\.name) : [])
+        let fresh = pr.readyPreviews.filter { !before.contains($0.name) }
         if let first = fresh.first {
           var ready = event(pr, .previewReady, pr.headOID, url: first.url)
           ready.note = fresh.map(\.name).joined(separator: ", ")
