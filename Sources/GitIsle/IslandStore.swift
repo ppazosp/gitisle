@@ -88,6 +88,8 @@ final class IslandStore {
   var dropdown: Dropdown?
   /// Example data only: a dropdown to open once its control is laid out, for captures.
   @ObservationIgnored var pendingDropdown: String?
+  /// Example data only: a PR whose row and card show as hovered, for captures.
+  @ObservationIgnored var previewHover: String?
   /// The PR whose page replaces Activity, by ID.
   private(set) var detailsID: String? {
     didSet {

@@ -386,64 +386,104 @@ struct PRRow: View {
   @State private var hovered = false
   @Environment(\.openPullRequest) private var open
   @Environment(\.stackLinks) private var stacks
+  @Environment(IslandStore.self) private var store
 
   var body: some View {
-    Button {
-      // ⌘-click opens GitHub, as a link would.
-      if NSEvent.modifierFlags.contains(.command) {
-        NSWorkspace.shared.open(pr.url)
-      } else if let tap {
-        tap()
-      } else {
-        open(pr)
-      }
-    } label: {
-      HStack(spacing: 10) {
-        if pile == nil, let depth = stacks[pr.id]?.depth, depth > 0 {
-          StackConnector(depth: min(depth, 3))
-        }
-        if let pile {
-          StackIcon(pile: pile).frame(width: 18)
+    // The GitHub button sits beside the row's own button: one inside the other wouldn't get
+    // its clicks.
+    HStack(spacing: 2) {
+      Button {
+        // ⌘-click opens GitHub, as a link would.
+        if NSEvent.modifierFlags.contains(.command) {
+          NSWorkspace.shared.open(pr.url)
+        } else if let tap {
+          tap()
         } else {
-          GlyphView(glyph: pr.glyph, size: 15).foregroundStyle(pr.glyphColor)
-            .frame(width: 18)
+          open(pr)
         }
-        VStack(alignment: .leading, spacing: 3) {
-          Text(pr.title).font(.system(size: 12.5, weight: .medium)).lineLimit(1)
-          HStack(alignment: .firstTextBaseline, spacing: 4) {
-            Text(verbatim: "#\(pr.number)")
-            if pile == nil { StackLabel(link: stacks[pr.id]) }
-            Text("·")
-            Text(pr.stateLabel.text).foregroundStyle(pr.stateLabel.color)
-            Text("·")
-            Text(Format.age(pr.mergedAt ?? pr.updatedAt))
-          }
-          .font(.system(size: 10.5)).foregroundStyle(.white.opacity(0.45)).lineLimit(1)
-        }
-        Spacer(minLength: 8)
-        if let position = pr.queuePosition, pr.state == "OPEN" {
-          Text(verbatim: "#\(position) in queue").font(.system(size: 10, weight: .medium))
-            .monospacedDigit()
-            .foregroundStyle(Palette.merging)
-            .padding(.horizontal, 6).padding(.vertical, 2)
-            .background(Capsule().fill(Palette.merging.opacity(0.14)))
-        }
-        if pr.state == "OPEN" { PreviewChip(pr: pr) }
-        if pr.state == "OPEN" { CheckBadge(pr: pr) }
+      } label: {
+        content
+          .padding(.vertical, 7).padding(.leading, 8)
+          .frame(maxWidth: .infinity, alignment: .leading)
+          .contentShape(Rectangle())
       }
-      .padding(.vertical, 7).padding(.horizontal, 8)
-      .frame(maxWidth: .infinity, alignment: .leading)
-      .background(
-        RoundedRectangle(cornerRadius: 9, style: .continuous)
-          .fill(.white.opacity(hovered ? 0.07 : 0))
-      )
-      .contentShape(Rectangle())
+      .buttonStyle(PressableStyle())
+      OpenOnGitHub(url: pr.url)
+        .opacity(hovered ? 1 : 0)
+        .allowsHitTesting(hovered)
+        .padding(.trailing, 5)
     }
-    .buttonStyle(PressableStyle())
+    .background(
+      RoundedRectangle(cornerRadius: 9, style: .continuous)
+        .fill(.white.opacity(hovered ? 0.07 : 0))
+    )
     .onHover { inside in withAnimation(.easeOut(duration: 0.12)) { hovered = inside } }
+    .onAppear { if store.previewHover == pr.id { hovered = true } }
     .help("Show \(pr.repository) #\(pr.number). ⌘-click opens it on GitHub.")
     .contextMenu { PRContextMenu(pr: pr) }
     .accessibilityLabel("\(pr.title), \(pr.repository) number \(pr.number), \(pr.stateLabel.text)")
+  }
+
+  private var content: some View {
+    HStack(spacing: 10) {
+      if pile == nil, let depth = stacks[pr.id]?.depth, depth > 0 {
+        StackConnector(depth: min(depth, 3))
+      }
+      if let pile {
+        StackIcon(pile: pile).frame(width: 18)
+      } else {
+        GlyphView(glyph: pr.glyph, size: 15).foregroundStyle(pr.glyphColor)
+          .frame(width: 18)
+      }
+      VStack(alignment: .leading, spacing: 3) {
+        Text(pr.title).font(.system(size: 12.5, weight: .medium)).lineLimit(1)
+        HStack(alignment: .firstTextBaseline, spacing: 4) {
+          Text(verbatim: "#\(pr.number)")
+          if pile == nil { StackLabel(link: stacks[pr.id]) }
+          Text("·")
+          Text(pr.stateLabel.text).foregroundStyle(pr.stateLabel.color)
+          Text("·")
+          Text(Format.age(pr.mergedAt ?? pr.updatedAt))
+        }
+        .font(.system(size: 10.5)).foregroundStyle(.white.opacity(0.45)).lineLimit(1)
+      }
+      Spacer(minLength: 8)
+      if let position = pr.queuePosition, pr.state == "OPEN" {
+        Text(verbatim: "#\(position) in queue").font(.system(size: 10, weight: .medium))
+          .monospacedDigit()
+          .foregroundStyle(Palette.merging)
+          .padding(.horizontal, 6).padding(.vertical, 2)
+          .background(Capsule().fill(Palette.merging.opacity(0.14)))
+      }
+      if pr.state == "OPEN" { PreviewChip(pr: pr) }
+      if pr.state == "OPEN" { CheckBadge(pr: pr) }
+    }
+  }
+}
+
+/// Opens a PR on GitHub in one click, without its page in the island. Rows and cards show it
+/// while hovered.
+struct OpenOnGitHub: View {
+  let url: URL
+  @State private var hovered = false
+
+  var body: some View {
+    Button {
+      NSWorkspace.shared.open(url)
+    } label: {
+      GlyphView(glyph: .github, size: 12)
+        .foregroundStyle(.white.opacity(hovered ? 1 : 0.65))
+        .frame(width: 22, height: 22)
+        .background(
+          RoundedRectangle(cornerRadius: 6, style: .continuous)
+            .fill(.white.opacity(hovered ? 0.16 : 0.09))
+        )
+        .contentShape(Rectangle())
+    }
+    .buttonStyle(.plain)
+    .onHover { hovered = $0 }
+    .help("Open on GitHub")
+    .accessibilityLabel("Open on GitHub")
   }
 }
 
@@ -550,6 +590,7 @@ private struct PRCard: View {
   @State private var hovered = false
   @Environment(\.openPullRequest) private var open
   @Environment(\.stackLinks) private var stacks
+  @Environment(IslandStore.self) private var store
 
   var body: some View {
     Button {
@@ -572,8 +613,12 @@ private struct PRCard: View {
           if let pile {
             StackCount(pile: pile)
           }
-          Text(verbatim: "#\(pr.number)").monospacedDigit()
-          if pile == nil { StackLabel(link: stacks[pr.id]) }
+          // While hovered, the GitHub button takes the number's place.
+          Group {
+            Text(verbatim: "#\(pr.number)").monospacedDigit()
+            if pile == nil { StackLabel(link: stacks[pr.id]) }
+          }
+          .opacity(hovered ? 0 : 1)
         }
         .font(.system(size: 10.5)).foregroundStyle(.white.opacity(0.45))
         Text(pr.title).font(.system(size: 12, weight: .medium)).lineLimit(2)
@@ -595,7 +640,15 @@ private struct PRCard: View {
       .contentShape(Rectangle())
     }
     .buttonStyle(PressableStyle())
+    // Over the card's number while hovered, outside its button so it gets its own clicks.
+    .overlay(alignment: .topTrailing) {
+      if hovered {
+        OpenOnGitHub(url: pr.url).padding(5)
+          .transition(.opacity)
+      }
+    }
     .onHover { inside in withAnimation(.easeOut(duration: 0.12)) { hovered = inside } }
+    .onAppear { if store.previewHover == pr.id { hovered = true } }
     .help("Show \(pr.repository) #\(pr.number). ⌘-click opens it on GitHub.")
     .contextMenu { PRContextMenu(pr: pr) }
     .accessibilityLabel("\(pr.title), \(pr.repository) number \(pr.number), \(pr.stateLabel.text)")

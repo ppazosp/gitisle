@@ -92,6 +92,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     {
       store.pendingDropdown = arguments[index + 1]
     }
+    // `--hover <id>` shows an example PR's row and card as hovered.
+    if let index = arguments.firstIndex(of: "--hover"), arguments.count > index + 1, store.isDemo {
+      store.previewHover = arguments[index + 1]
+    }
     // `--share-card <id> <file>` writes an example PR's share card and quits.
     if let index = arguments.firstIndex(of: "--share-card"), arguments.count > index + 2,
       store.isDemo,
