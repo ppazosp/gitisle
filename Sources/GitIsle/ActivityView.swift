@@ -384,6 +384,8 @@ struct PRRow: View {
   /// What a click does instead of opening the PR, such as unfolding its stack.
   var tap: (() -> Void)?
   @State private var hovered = false
+  /// The pointer is on the PR's number, its link to GitHub.
+  @State private var numberHovered = false
   @Environment(\.openPullRequest) private var open
   @Environment(\.stackLinks) private var stacks
   @Environment(IslandStore.self) private var store
@@ -412,7 +414,7 @@ struct PRRow: View {
         VStack(alignment: .leading, spacing: 3) {
           Text(pr.title).font(.system(size: 12.5, weight: .medium)).lineLimit(1)
           HStack(alignment: .firstTextBaseline, spacing: 4) {
-            PRNumber(number: pr.number, link: hovered)
+            PRNumber(number: pr.number, link: numberHovered)
             if pile == nil { StackLabel(link: stacks[pr.id]) }
             Text("·")
             Text(pr.stateLabel.text).foregroundStyle(pr.stateLabel.color)
@@ -441,25 +443,37 @@ struct PRRow: View {
       .contentShape(Rectangle())
     }
     .buttonStyle(PressableStyle())
-    .overlayPreferenceValue(PRNumberBounds.self) { PRNumberLink(url: pr.url, bounds: $0) }
+    .overlayPreferenceValue(PRNumberBounds.self) {
+      PRNumberLink(url: pr.url, bounds: $0, hovered: $numberHovered)
+    }
     .onHover { inside in withAnimation(.easeOut(duration: 0.12)) { hovered = inside } }
-    .onAppear { if store.previewHover == pr.id { hovered = true } }
+    .onAppear {
+      if store.previewHover == pr.id {
+        hovered = true
+        numberHovered = true
+      }
+    }
     .help("Show \(pr.repository) #\(pr.number). ⌘-click opens it on GitHub.")
     .contextMenu { PRContextMenu(pr: pr) }
     .accessibilityLabel("\(pr.title), \(pr.repository) number \(pr.number), \(pr.stateLabel.text)")
   }
 }
 
-/// A PR's number. While its row or card is hovered, it shows as a link to the PR on GitHub.
+/// A PR's number, which links to it on GitHub: with the pointer on it, it brightens and shows
+/// where it goes.
 struct PRNumber: View {
   let number: Int
   let link: Bool
 
   var body: some View {
-    Text(verbatim: "#\(number)").monospacedDigit()
-      .foregroundStyle(link ? Palette.link : .white.opacity(0.45))
-      .underline(link, color: Palette.link.opacity(0.6))
-      .anchorPreference(key: PRNumberBounds.self, value: .bounds) { $0 }
+    HStack(spacing: 2) {
+      Text(verbatim: "#\(number)").monospacedDigit()
+      if link {
+        Image(systemName: "arrow.up.right").font(.system(size: 7.5, weight: .bold))
+      }
+    }
+    .foregroundStyle(.white.opacity(link ? 0.9 : 0.45))
+    .anchorPreference(key: PRNumberBounds.self, value: .bounds) { $0 }
   }
 }
 
@@ -476,6 +490,7 @@ struct PRNumberBounds: PreferenceKey {
 private struct PRNumberLink: View {
   let url: URL
   let bounds: Anchor<CGRect>?
+  @Binding var hovered: Bool
 
   var body: some View {
     GeometryReader { proxy in
@@ -487,6 +502,7 @@ private struct PRNumberLink: View {
           .offset(x: rect.minX, y: rect.minY)
           .onTapGesture { NSWorkspace.shared.open(url) }
           .onHover { inside in
+            withAnimation(.easeOut(duration: 0.1)) { hovered = inside }
             if inside { NSCursor.pointingHand.push() } else { NSCursor.pop() }
           }
           .help("Open on GitHub")
@@ -599,6 +615,8 @@ private struct PRCard: View {
   /// What a click does instead of opening the PR, such as fanning out its pile.
   var tap: (() -> Void)?
   @State private var hovered = false
+  /// The pointer is on the PR's number, its link to GitHub.
+  @State private var numberHovered = false
   @Environment(\.openPullRequest) private var open
   @Environment(\.stackLinks) private var stacks
   @Environment(IslandStore.self) private var store
@@ -624,7 +642,7 @@ private struct PRCard: View {
           if let pile {
             StackCount(pile: pile)
           }
-          PRNumber(number: pr.number, link: hovered)
+          PRNumber(number: pr.number, link: numberHovered)
           if pile == nil { StackLabel(link: stacks[pr.id]) }
         }
         .font(.system(size: 10.5)).foregroundStyle(.white.opacity(0.45))
@@ -647,9 +665,16 @@ private struct PRCard: View {
       .contentShape(Rectangle())
     }
     .buttonStyle(PressableStyle())
-    .overlayPreferenceValue(PRNumberBounds.self) { PRNumberLink(url: pr.url, bounds: $0) }
+    .overlayPreferenceValue(PRNumberBounds.self) {
+      PRNumberLink(url: pr.url, bounds: $0, hovered: $numberHovered)
+    }
     .onHover { inside in withAnimation(.easeOut(duration: 0.12)) { hovered = inside } }
-    .onAppear { if store.previewHover == pr.id { hovered = true } }
+    .onAppear {
+      if store.previewHover == pr.id {
+        hovered = true
+        numberHovered = true
+      }
+    }
     .help("Show \(pr.repository) #\(pr.number). ⌘-click opens it on GitHub.")
     .contextMenu { PRContextMenu(pr: pr) }
     .accessibilityLabel("\(pr.title), \(pr.repository) number \(pr.number), \(pr.stateLabel.text)")
