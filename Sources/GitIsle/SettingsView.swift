@@ -182,6 +182,7 @@ struct SettingsView: View {
         )
         .islandToggle()
       }
+      if store.notificationsBlocked { NotificationsBlockedNote() }
       SettingsRow("Sound") {
         Toggle("", isOn: $draft.notificationSound).islandToggle()
       }
@@ -398,7 +399,54 @@ extension View {
   }
 
   func islandToggle() -> some View {
-    toggleStyle(.switch).controlSize(.mini).labelsHidden()
+    toggleStyle(IslandSwitchStyle()).labelsHidden()
+  }
+}
+
+/// The island's own switch: blue when on. A system switch turns grey in a panel that isn't
+/// the active window, which the island never is.
+struct IslandSwitchStyle: ToggleStyle {
+  @Environment(\.isEnabled) private var isEnabled
+
+  func makeBody(configuration: Configuration) -> some View {
+    Button {
+      withAnimation(Motion.snappy) { configuration.isOn.toggle() }
+    } label: {
+      Capsule()
+        .fill(configuration.isOn ? Color(nsColor: .systemBlue) : .white.opacity(0.16))
+        .frame(width: 30, height: 18)
+        .overlay(alignment: configuration.isOn ? .trailing : .leading) {
+          Circle().fill(.white).padding(2)
+            .shadow(color: .black.opacity(0.25), radius: 1, y: 0.5)
+        }
+        .opacity(isEnabled ? 1 : 0.45)
+        .contentShape(Capsule())
+    }
+    .buttonStyle(.plain)
+    .accessibilityRepresentation { Toggle(isOn: configuration.$isOn) { configuration.label } }
+  }
+}
+
+/// What to do when macOS won't let GitIsle send notifications.
+struct NotificationsBlockedNote: View {
+  var body: some View {
+    HStack(alignment: .firstTextBaseline, spacing: 10) {
+      Text("macOS didn't allow notifications. Turn them on for GitIsle in System Settings.")
+        .font(.system(size: 11)).foregroundStyle(Palette.attention)
+        .fixedSize(horizontal: false, vertical: true)
+      Spacer(minLength: 8)
+      Button("Open") {
+        let id = Bundle.main.bundleIdentifier ?? "dev.ppazosp.gitisle"
+        if let url = URL(
+          string: "x-apple.systempreferences:com.apple.Notifications-Settings.extension?id=\(id)")
+        {
+          NSWorkspace.shared.open(url)
+        }
+      }
+      .buttonStyle(.plain)
+      .font(.system(size: 11, weight: .semibold))
+      .foregroundStyle(.white.opacity(0.85))
+    }
   }
 }
 

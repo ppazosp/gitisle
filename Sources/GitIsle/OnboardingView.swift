@@ -272,6 +272,7 @@ private struct NotificationsStep: View {
               store.update { $0.notificationsEnabled = false }
             }
           }))
+      if store.notificationsBlocked { NotificationsBlockedNote() }
       Text("Choose which changes to announce any time in Settings.")
         .font(.system(size: 11)).foregroundStyle(.white.opacity(0.4))
     }
