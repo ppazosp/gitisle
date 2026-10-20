@@ -26,7 +26,12 @@ enum CostCurrency: String, Codable, CaseIterable {
 
 struct AppSettings: Codable, Equatable {
   var repositories = ""
-  var hoverDelay = 0.2
+  /// How long the pointer rests on the notch before the island opens.
+  var hoverDelay = 0.12
+  /// The same over a banner or the live bar, where a click opens that PR, so it waits longer.
+  var bannerHoverDelay = 0.8
+  /// How long the island stays open after the pointer leaves it.
+  var closeDelay = 0.4
   /// How often to look for new PRs and refresh the quiet ones.
   var githubRefreshSeconds = 60.0
   /// How often to refresh active PRs: checks running, merging, or just updated.
@@ -73,6 +78,8 @@ struct AppSettings: Codable, Equatable {
     }
     repositories = value(.repositories, defaults.repositories)
     hoverDelay = value(.hoverDelay, defaults.hoverDelay)
+    bannerHoverDelay = value(.bannerHoverDelay, defaults.bannerHoverDelay)
+    closeDelay = value(.closeDelay, defaults.closeDelay)
     githubRefreshSeconds = value(.githubRefreshSeconds, defaults.githubRefreshSeconds)
     activeRefreshSeconds = value(.activeRefreshSeconds, defaults.activeRefreshSeconds)
     displayID = value(.displayID, defaults.displayID)

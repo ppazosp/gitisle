@@ -60,9 +60,9 @@ enum Palette {
 
 enum Motion {
   /// Shape morphs between compact, banner, and expanded.
-  static let morph = Animation.spring(response: 0.3, dampingFraction: 0.85)
+  static let morph = Animation.spring(response: 0.24, dampingFraction: 0.85)
   /// Shrinking must not overshoot: a bounce below the resting size exposes what is behind it.
-  static let collapse = Animation.spring(response: 0.26, dampingFraction: 1)
+  static let collapse = Animation.spring(response: 0.2, dampingFraction: 1)
   static let snappy = Animation.snappy(duration: 0.18)
 }
 
@@ -71,7 +71,7 @@ extension AnyTransition {
   static var islandContent: AnyTransition {
     .asymmetric(
       insertion: .opacity.combined(with: .scale(scale: 0.96, anchor: .top))
-        .animation(.smooth(duration: 0.2).delay(0.04)),
+        .animation(.smooth(duration: 0.16).delay(0.03)),
       removal: .opacity.animation(.easeOut(duration: 0.08)))
   }
 }
@@ -165,7 +165,7 @@ extension PRStatus {
     case .ready: .checkFill
     case .queued: .mergeQueue
     case .draft: .draft
-    case .previewReady: .linkExternal
+    case .previewReady: .globe
     default: .pullRequest
     }
   }
@@ -349,7 +349,7 @@ struct PreviewChip: View {
             id: "previews", title: nil,
             items: ready.compactMap { preview in
               preview.url.map { url in
-                Dropdown.Item(id: preview.name, title: preview.name, systemImage: "globe") {
+                Dropdown.Item(id: preview.name, title: preview.name, glyph: .globe) {
                   NSWorkspace.shared.open(url)
                 }
               }
@@ -373,7 +373,7 @@ struct PreviewChip: View {
   /// when several projects deployed.
   private func globe(_ color: Color, count: Int? = nil) -> some View {
     HStack(spacing: 2) {
-      Image(systemName: "globe").font(.system(size: 11, weight: .medium))
+      GlyphView(glyph: .globe, size: 11.5)
       if let count { Text("\(count)").font(.system(size: 10, weight: .semibold)).monospacedDigit() }
     }
     .foregroundStyle(color.opacity(hovered ? 1 : 0.85))

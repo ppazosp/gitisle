@@ -95,14 +95,19 @@ struct IslandView: View {
         store.tab == .activity && store.detailsPullRequest != nil && !store.showingSettings
         && !store.showingOnboarding
       let width =
-        board
-        ? metrics.boardWidth(columns: store.sections.count)
-        : details ? metrics.detailsWidth : metrics.expandedWidth
-      let stats = store.tab == .stats && !store.showingSettings && !store.showingOnboarding
+        store.showingSettings && !store.showingOnboarding
+        ? metrics.settingsWidth
+        : board
+          ? metrics.boardWidth(columns: store.sections.count)
+          : details ? metrics.detailsWidth : metrics.expandedWidth
+      // Stats and Settings grow with the screen, so their cards fit without scrolling.
+      let tall =
+        store.showingSettings
+        || (store.tab == .stats && !store.showingOnboarding)
       return CGSize(
         width: width + 2 * metrics.ear,
         height: min(
-          stats ? metrics.maxStatsHeight : metrics.maxExpandedHeight,
+          tall ? metrics.maxStatsHeight : metrics.maxExpandedHeight,
           chrome + max(contentHeight, ExpandedIsland.repositoryPickerHeight(store))))
     }
   }
@@ -808,7 +813,7 @@ private struct PreviewButton: View {
     if let first = previews.first {
       Group {
         if previews.count == 1 {
-          FooterButton(glyph: nil, systemImage: "globe", label: label(first)) {
+          FooterButton(glyph: .globe, label: label(first)) {
             if let url = first.url { NSWorkspace.shared.open(url) }
           }
           .disabled(first.url == nil)
@@ -819,7 +824,7 @@ private struct PreviewButton: View {
                 id: "previews", title: nil,
                 items: previews.map { preview in
                   Dropdown.Item(
-                    id: preview.name, title: label(preview), systemImage: "globe",
+                    id: preview.name, title: label(preview), glyph: .globe,
                     enabled: preview.url != nil
                   ) {
                     if let url = preview.url { NSWorkspace.shared.open(url) }
@@ -827,7 +832,7 @@ private struct PreviewButton: View {
                 })
             ]
           } label: {
-            Image(systemName: "globe").font(.system(size: 11, weight: .semibold))
+            GlyphView(glyph: .globe, size: 13)
               .frame(width: 26, height: 24).contentShape(Rectangle())
           }
           .fixedSize()
