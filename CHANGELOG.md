@@ -2,6 +2,20 @@
 
 Notable changes to GitIsle. Releases follow [semantic versioning](https://semver.org).
 
+## [0.2.2](https://github.com/ppazosp/gitisle/compare/v0.2.1...v0.2.2) (2026-10-20)
+
+
+### Features
+
+* a PR's number links to it on GitHub ([#49](https://github.com/ppazosp/gitisle/issues/49)) ([29ebbe9](https://github.com/ppazosp/gitisle/commit/29ebbe91cc0aa5bd8376aff52861b6a5e939e973))
+* Settings fits without scrolling, and every hover delay is yours ([#50](https://github.com/ppazosp/gitisle/issues/50)) ([1eedda4](https://github.com/ppazosp/gitisle/commit/1eedda4edec73d0bd60757897b9bd5384e76bddf))
+* setup shows your screens, and how to make GitIsle yours ([#48](https://github.com/ppazosp/gitisle/issues/48)) ([ae07ec8](https://github.com/ppazosp/gitisle/commit/ae07ec81e885fa13c37484ebfcfd0339913dc1a2))
+
+
+### Bug Fixes
+
+* setup and Settings never freeze the island ([#47](https://github.com/ppazosp/gitisle/issues/47)) ([40bc145](https://github.com/ppazosp/gitisle/commit/40bc14523854e3395aaafc5b23f1b73c564459d5))
+
 ## [0.2.1](https://github.com/ppazosp/gitisle/compare/v0.2.0...v0.2.1) (2026-10-19)
 
 
