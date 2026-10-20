@@ -1,6 +1,5 @@
 import AppKit
 import IslandCore
-import ServiceManagement
 import SwiftUI
 
 /// The steps of first-run setup, in order.
@@ -38,7 +37,7 @@ struct OnboardingView: View {
         case .github: GitHubStep(store: store)
         case .agents: AgentsStep(store: store)
         case .notifications: NotificationsStep(store: store)
-        case .login: LoginStep()
+        case .login: LoginStep(store: store)
         }
       }
       .frame(maxWidth: .infinity, alignment: .leading)
@@ -280,27 +279,16 @@ private struct NotificationsStep: View {
 }
 
 private struct LoginStep: View {
-  @State private var startAtLogin = SMAppService.mainApp.status == .enabled
-  @State private var error: String?
+  let store: IslandStore
 
   var body: some View {
     VStack(alignment: .leading, spacing: 12) {
       StepToggle(
         title: "Open GitIsle when you log in",
         detail: "It lives in the notch, so it's ready whenever you are.",
-        isOn: $startAtLogin
+        isOn: Binding(get: { store.startsAtLogin }, set: { store.setStartsAtLogin($0) })
       )
-      .onChange(of: startAtLogin) { _, enabled in
-        do {
-          if enabled {
-            try SMAppService.mainApp.register()
-          } else {
-            try SMAppService.mainApp.unregister()
-          }
-          error = nil
-        } catch { self.error = error.localizedDescription }
-      }
-      if let error {
+      if let error = store.loginItemError {
         Text(error).font(.system(size: 11)).foregroundStyle(Palette.failed).lineLimit(2)
       }
       StepText(

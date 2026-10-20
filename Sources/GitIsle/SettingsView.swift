@@ -1,6 +1,5 @@
 import AppKit
 import IslandCore
-import ServiceManagement
 import SwiftUI
 
 /// Settings shown inside the expanded island. They save as they change, like System Settings:
@@ -17,8 +16,6 @@ struct SettingsView: View {
   @State private var claudeHomeText: String
   @FocusState private var focusedField: TextSetting?
   @State private var pendingApply: Task<Void, Never>?
-  @State private var loginItemError: String?
-  @State private var startAtLogin = SMAppService.mainApp.status == .enabled
   @State private var cardsHeight: CGFloat = 0
   @State private var footerHeight: CGFloat = 0
 
@@ -90,7 +87,7 @@ struct SettingsView: View {
         contentHeight = $0 + footerHeight
       }
       HStack(spacing: 12) {
-        if let error = store.persistenceError ?? loginItemError {
+        if let error = store.persistenceError ?? store.loginItemError {
           Text(error).font(.system(size: 11)).foregroundStyle(Palette.failed).lineLimit(2)
         } else {
           Text("Changes save automatically. GitIsle reads GitHub through your gh login.")
@@ -243,17 +240,11 @@ struct SettingsView: View {
         Toggle("", isOn: $draft.showInFullscreen).islandToggle()
       }
       SettingsRow("Start at login") {
-        Toggle("", isOn: $startAtLogin).islandToggle()
-          .onChange(of: startAtLogin) { _, enabled in
-            do {
-              if enabled {
-                try SMAppService.mainApp.register()
-              } else {
-                try SMAppService.mainApp.unregister()
-              }
-              loginItemError = nil
-            } catch { loginItemError = error.localizedDescription }
-          }
+        Toggle(
+          "",
+          isOn: Binding(get: { store.startsAtLogin }, set: { store.setStartsAtLogin($0) })
+        )
+        .islandToggle()
       }
     }
   }
