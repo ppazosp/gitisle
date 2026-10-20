@@ -79,7 +79,7 @@ const promises = [
           ships, then shows what's merging, what's failing and what needs you.
         </p>
         <div class="hero-actions" data-intro>
-          <MicroButton variant="copy" command={INSTALL_SCRIPT} />
+          <MicroButton variant="copy" command={BREW} />
           <MicroButton variant="star" href={REPO} />
         </div>
         <div data-intro>
@@ -152,17 +152,18 @@ const promises = [
 
         <div class="install-grid">
           <div class="install-card reveal">
+            <h3>Homebrew</h3>
+            <div class="command" data-copy={BREW}>
+              <code>{BREW}</code>
+              <button type="button" aria-label="Copy the Homebrew command">Copy</button>
+            </div>
+            <p>Installs the GitHub CLI too, if you don't have it.</p>
+          </div>
+          <div class="install-card reveal">
             <h3>Install script</h3>
             <div class="command" data-copy={INSTALL_SCRIPT}>
               <code>{INSTALL_SCRIPT}</code>
               <button type="button" aria-label="Copy the install command">Copy</button>
-            </div>
-          </div>
-          <div class="install-card reveal">
-            <h3>Homebrew</h3>
-            <div class="command" data-copy={BREW.join(' && ')}>
-              <code>{BREW.map((line) => <span>{line}</span>)}</code>
-              <button type="button" aria-label="Copy the Homebrew commands">Copy</button>
             </div>
           </div>
           <div class="install-card reveal">
@@ -545,7 +546,8 @@ const promises = [
     gap: 6px;
     font-size: 13px;
     line-height: 1.5;
-    word-break: break-all;
+    /* Wrap at spaces; break inside a word only when it can't fit on its own. */
+    overflow-wrap: anywhere;
     color: #e6e6e6;
   }
   .command button {

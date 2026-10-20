@@ -1,6 +1,6 @@
-# Homebrew cask, installable straight from this repository:
-#   brew tap ppazosp/gitisle https://github.com/ppazosp/gitisle
-#   brew install --cask gitisle
+# Homebrew cask. New installs use the tap at github.com/ppazosp/homebrew-gitisle:
+#   brew install --cask ppazosp/gitisle/gitisle
+# This copy stays for anyone who tapped this repository; keep the two the same.
 cask "gitisle" do
   version :latest
   sha256 :no_check
@@ -10,7 +10,7 @@ cask "gitisle" do
   desc "GitHub pull requests in your Mac's notch"
   homepage "https://github.com/ppazosp/gitisle"
 
-  depends_on macos: ">= :sonoma"
+  depends_on macos: :sonoma
   depends_on formula: "gh"
 
   app "GitIsle.app"

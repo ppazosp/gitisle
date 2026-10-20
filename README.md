@@ -54,6 +54,15 @@ brew install gh && gh auth login
 
 Then pick one:
 
+**Homebrew**
+
+```sh
+brew install --cask ppazosp/gitisle/gitisle
+```
+
+The cask lives in [ppazosp/homebrew-gitisle](https://github.com/ppazosp/homebrew-gitisle),
+and installs the GitHub CLI too if you don't have it.
+
 **Install script**
 
 ```sh
@@ -63,13 +72,6 @@ curl -fsSL https://gitisle.ppazosp.dev/install.sh | bash
 It downloads the latest release into Applications. The site serves
 [`scripts/install.sh`](scripts/install.sh) from this repository, so you can read
 exactly what runs.
-
-**Homebrew**
-
-```sh
-brew tap ppazosp/gitisle https://github.com/ppazosp/gitisle
-brew install --cask gitisle
-```
 
 **Download**
 
