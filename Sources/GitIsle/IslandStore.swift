@@ -1113,17 +1113,20 @@ final class IslandStore {
       })
   }
 
+  /// macOS turned system notifications down: refused when asked, or they're off for GitIsle
+  /// in System Settings, where macOS no longer asks.
+  private(set) var notificationsBlocked = false
+
   /// Turns system notifications on. The toggle answers at once; macOS may still ask for
   /// permission, and turning it down turns them back off.
   func requestNotifications() async {
     settings.notificationsEnabled = true
-    do {
-      settings.notificationsEnabled = try await UNUserNotificationCenter.current()
-        .requestAuthorization(options: [.alert, .sound])
-    } catch {
-      persistenceError = error.localizedDescription
-      settings.notificationsEnabled = false
-    }
+    notificationsBlocked = false
+    let granted =
+      (try? await UNUserNotificationCenter.current()
+        .requestAuthorization(options: [.alert, .sound])) ?? false
+    settings.notificationsEnabled = granted
+    notificationsBlocked = !granted
     saveSettings()
   }
 
