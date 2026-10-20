@@ -216,7 +216,7 @@ struct SettingsView: View {
   /// draft ready for review; "Failed" is checks failing on the PR or in the merge queue.
   private static let announcements: [(kinds: [PRStatus], glyph: Glyph, label: String)] = [
     ([.opened, .draft, .readyForReview], .pullRequest, "New PR"),
-    ([.ready], .checkFill, "Ready"), ([.previewReady], .linkExternal, "Preview"),
+    ([.ready], .checkFill, "Ready"), ([.previewReady], .globe, "Preview"),
     ([.queued], .mergeQueue, "Merging"),
     ([.merged], .merge, "Merged"), ([.failed, .mergeFailed], .failFill, "Failed"),
     ([.review], .eye, "Review"),

@@ -8,6 +8,8 @@ struct Dropdown {
     let id: String
     var title: String
     var systemImage: String?
+    /// One of the app's own glyphs, in place of a system image.
+    var glyph: Glyph?
     var selected = false
     var enabled = true
     let action: () -> Void
@@ -116,7 +118,10 @@ struct DropdownMenu: View {
         }
         ForEach(section.items) { item in
           PickerRow(selected: item.selected, checkable: dropdown.checkable) {
-            if let symbol = item.systemImage {
+            if let glyph = item.glyph {
+              GlyphView(glyph: glyph, size: 12).foregroundStyle(.white.opacity(0.6))
+                .frame(width: 16)
+            } else if let symbol = item.systemImage {
               Image(systemName: symbol).font(.system(size: 11, weight: .semibold))
                 .foregroundStyle(.white.opacity(0.6)).frame(width: 16)
             }
