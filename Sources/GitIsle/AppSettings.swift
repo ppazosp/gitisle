@@ -26,7 +26,7 @@ enum CostCurrency: String, Codable, CaseIterable {
 
 struct AppSettings: Codable, Equatable {
   var repositories = ""
-  var hoverDelay = 0.2
+  var hoverDelay = 0.12
   /// How often to look for new PRs and refresh the quiet ones.
   var githubRefreshSeconds = 60.0
   /// How often to refresh active PRs: checks running, merging, or just updated.
