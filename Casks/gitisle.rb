@@ -10,7 +10,7 @@ cask "gitisle" do
   desc "GitHub pull requests in your Mac's notch"
   homepage "https://github.com/ppazosp/gitisle"
 
-  depends_on macos: ">= :sonoma"
+  depends_on macos: :sonoma
   depends_on formula: "gh"
 
   app "GitIsle.app"
