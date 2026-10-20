@@ -430,8 +430,8 @@ private struct ScreenCard: View {
 private struct TuningStep: View {
   private let rows: [(symbol: String, title: String, detail: String)] = [
     (
-      "cursorarrow.motionlines", "Hover delay",
-      "How long the pointer rests on the notch before it opens."
+      "cursorarrow.motionlines", "Timing",
+      "How quickly it opens, also over a banner, and closes."
     ),
     (
       "bell.badge", "Announcements", "Which changes slide out as banners, and system notifications."

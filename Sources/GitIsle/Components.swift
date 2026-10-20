@@ -165,7 +165,7 @@ extension PRStatus {
     case .ready: .checkFill
     case .queued: .mergeQueue
     case .draft: .draft
-    case .previewReady: .linkExternal
+    case .previewReady: .globe
     default: .pullRequest
     }
   }
@@ -349,7 +349,7 @@ struct PreviewChip: View {
             id: "previews", title: nil,
             items: ready.compactMap { preview in
               preview.url.map { url in
-                Dropdown.Item(id: preview.name, title: preview.name, systemImage: "globe") {
+                Dropdown.Item(id: preview.name, title: preview.name, glyph: .globe) {
                   NSWorkspace.shared.open(url)
                 }
               }
@@ -373,7 +373,7 @@ struct PreviewChip: View {
   /// when several projects deployed.
   private func globe(_ color: Color, count: Int? = nil) -> some View {
     HStack(spacing: 2) {
-      Image(systemName: "globe").font(.system(size: 11, weight: .medium))
+      GlyphView(glyph: .globe, size: 11.5)
       if let count { Text("\(count)").font(.system(size: 10, weight: .semibold)).monospacedDigit() }
     }
     .foregroundStyle(color.opacity(hovered ? 1 : 0.85))
