@@ -459,18 +459,16 @@ struct PRRow: View {
   }
 }
 
-/// A PR's number, which links to it on GitHub: with the pointer on it, it brightens and shows
-/// where it goes.
+/// A PR's number after the GitHub mark, as a link to the PR on GitHub, the same mark that
+/// opens it from its page. Both brighten with the pointer on them.
 struct PRNumber: View {
   let number: Int
   let link: Bool
 
   var body: some View {
-    HStack(spacing: 2) {
+    HStack(spacing: 4) {
+      GlyphView(glyph: .github, size: 10.5)
       Text(verbatim: "#\(number)").monospacedDigit()
-      if link {
-        Image(systemName: "arrow.up.right").font(.system(size: 7.5, weight: .bold))
-      }
     }
     .foregroundStyle(.white.opacity(link ? 0.9 : 0.45))
     .anchorPreference(key: PRNumberBounds.self, value: .bounds) { $0 }
