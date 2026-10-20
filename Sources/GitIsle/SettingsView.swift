@@ -1,6 +1,5 @@
 import AppKit
 import IslandCore
-import ServiceManagement
 import SwiftUI
 
 /// Settings shown inside the expanded island. They save as they change, like System Settings:
@@ -17,8 +16,6 @@ struct SettingsView: View {
   @State private var claudeHomeText: String
   @FocusState private var focusedField: TextSetting?
   @State private var pendingApply: Task<Void, Never>?
-  @State private var loginItemError: String?
-  @State private var startAtLogin = SMAppService.mainApp.status == .enabled
   @State private var cardsHeight: CGFloat = 0
   @State private var footerHeight: CGFloat = 0
 
@@ -90,7 +87,7 @@ struct SettingsView: View {
         contentHeight = $0 + footerHeight
       }
       HStack(spacing: 12) {
-        if let error = store.persistenceError ?? loginItemError {
+        if let error = store.persistenceError ?? store.loginItemError {
           Text(error).font(.system(size: 11)).foregroundStyle(Palette.failed).lineLimit(2)
         } else {
           Text("Changes save automatically. GitIsle reads GitHub through your gh login.")
@@ -185,6 +182,7 @@ struct SettingsView: View {
         )
         .islandToggle()
       }
+      if store.notificationsBlocked { NotificationsBlockedNote() }
       SettingsRow("Sound") {
         Toggle("", isOn: $draft.notificationSound).islandToggle()
       }
@@ -243,17 +241,11 @@ struct SettingsView: View {
         Toggle("", isOn: $draft.showInFullscreen).islandToggle()
       }
       SettingsRow("Start at login") {
-        Toggle("", isOn: $startAtLogin).islandToggle()
-          .onChange(of: startAtLogin) { _, enabled in
-            do {
-              if enabled {
-                try SMAppService.mainApp.register()
-              } else {
-                try SMAppService.mainApp.unregister()
-              }
-              loginItemError = nil
-            } catch { loginItemError = error.localizedDescription }
-          }
+        Toggle(
+          "",
+          isOn: Binding(get: { store.startsAtLogin }, set: { store.setStartsAtLogin($0) })
+        )
+        .islandToggle()
       }
     }
   }
@@ -407,7 +399,54 @@ extension View {
   }
 
   func islandToggle() -> some View {
-    toggleStyle(.switch).controlSize(.mini).labelsHidden()
+    toggleStyle(IslandSwitchStyle()).labelsHidden()
+  }
+}
+
+/// The island's own switch: blue when on. A system switch turns grey in a panel that isn't
+/// the active window, which the island never is.
+struct IslandSwitchStyle: ToggleStyle {
+  @Environment(\.isEnabled) private var isEnabled
+
+  func makeBody(configuration: Configuration) -> some View {
+    Button {
+      withAnimation(Motion.snappy) { configuration.isOn.toggle() }
+    } label: {
+      Capsule()
+        .fill(configuration.isOn ? Color(nsColor: .systemBlue) : .white.opacity(0.16))
+        .frame(width: 30, height: 18)
+        .overlay(alignment: configuration.isOn ? .trailing : .leading) {
+          Circle().fill(.white).padding(2)
+            .shadow(color: .black.opacity(0.25), radius: 1, y: 0.5)
+        }
+        .opacity(isEnabled ? 1 : 0.45)
+        .contentShape(Capsule())
+    }
+    .buttonStyle(.plain)
+    .accessibilityRepresentation { Toggle(isOn: configuration.$isOn) { configuration.label } }
+  }
+}
+
+/// What to do when macOS won't let GitIsle send notifications.
+struct NotificationsBlockedNote: View {
+  var body: some View {
+    HStack(alignment: .firstTextBaseline, spacing: 10) {
+      Text("macOS didn't allow notifications. Turn them on for GitIsle in System Settings.")
+        .font(.system(size: 11)).foregroundStyle(Palette.attention)
+        .fixedSize(horizontal: false, vertical: true)
+      Spacer(minLength: 8)
+      Button("Open") {
+        let id = Bundle.main.bundleIdentifier ?? "dev.ppazosp.gitisle"
+        if let url = URL(
+          string: "x-apple.systempreferences:com.apple.Notifications-Settings.extension?id=\(id)")
+        {
+          NSWorkspace.shared.open(url)
+        }
+      }
+      .buttonStyle(.plain)
+      .font(.system(size: 11, weight: .semibold))
+      .foregroundStyle(.white.opacity(0.85))
+    }
   }
 }
 

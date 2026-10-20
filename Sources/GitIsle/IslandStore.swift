@@ -402,6 +402,11 @@ final class IslandStore {
   /// The PR the live state is about: the first one merging, else the first running checks.
   var livePullRequest: PullRequest? { merging.first ?? checking.first }
 
+  /// Stats is open in the expanded island, so its usage figures are on screen.
+  var showingStats: Bool {
+    expanded && tab == .stats && !showingSettings && !showingOnboarding
+  }
+
   var presentation: Presentation {
     if expanded { return .expanded }
     if recentEvent != nil { return .banner }
@@ -517,6 +522,7 @@ final class IslandStore {
     guard !isDemo, loops.isEmpty else { return }
     observeSystem()
     updater.start()
+    Task { await loadLoginItem() }
     // One loop for GitHub, so a full refresh and an active one never overlap. Discovery finds
     // new PRs and refreshes quiet ones; in between, active PRs refresh on their own schedule.
     loops.append(
@@ -545,13 +551,16 @@ final class IslandStore {
       Task { [weak self] in
         while !Task.isCancelled {
           guard let self else { return }
-          // A new day changes what "today" means, so refresh right after midnight too.
-          if Date().timeIntervalSince(lastUsageRefresh) > 120
-            || !Calendar.current.isDateInToday(lastUsageRefresh)
+          // Usage is read only while Stats is on screen: each read scans the agents' local
+          // history and rewrites its cache. A new day changes what "today" means, so it's
+          // stale after midnight too.
+          if showingStats,
+            Date().timeIntervalSince(lastUsageRefresh) > 120
+              || !Calendar.current.isDateInToday(lastUsageRefresh)
           {
             await refreshUsage()
           }
-          do { try await Task.sleep(for: .seconds(10)) } catch { return }
+          do { try await Task.sleep(for: .seconds(1)) } catch { return }
         }
       })
     loops.append(
@@ -1104,14 +1113,44 @@ final class IslandStore {
       })
   }
 
+  /// macOS turned system notifications down: refused when asked, or they're off for GitIsle
+  /// in System Settings, where macOS no longer asks.
+  private(set) var notificationsBlocked = false
+
+  /// Turns system notifications on. The toggle answers at once; macOS may still ask for
+  /// permission, and turning it down turns them back off.
   func requestNotifications() async {
-    do {
-      settings.notificationsEnabled = try await UNUserNotificationCenter.current()
-        .requestAuthorization(options: [.alert, .sound])
-      saveSettings()
-    } catch {
-      persistenceError = error.localizedDescription
-      settings.notificationsEnabled = false
+    settings.notificationsEnabled = true
+    notificationsBlocked = false
+    let granted =
+      (try? await UNUserNotificationCenter.current()
+        .requestAuthorization(options: [.alert, .sound])) ?? false
+    settings.notificationsEnabled = granted
+    notificationsBlocked = !granted
+    saveSettings()
+  }
+
+  /// Whether GitIsle opens at login, as macOS last reported it.
+  private(set) var startsAtLogin = false
+  /// Why macOS refused the last change to opening at login.
+  private(set) var loginItemError: String?
+
+  func loadLoginItem() async {
+    startsAtLogin = await LoginItem.isEnabled()
+  }
+
+  /// The toggle answers at once; macOS records the change in the background, and a refusal
+  /// puts the toggle back to what macOS reports.
+  func setStartsAtLogin(_ enabled: Bool) {
+    startsAtLogin = enabled
+    loginItemError = nil
+    Task {
+      do {
+        try await LoginItem.set(enabled)
+      } catch {
+        loginItemError = error.localizedDescription
+        startsAtLogin = await LoginItem.isEnabled()
+      }
     }
   }
 
