@@ -60,9 +60,9 @@ enum Palette {
 
 enum Motion {
   /// Shape morphs between compact, banner, and expanded.
-  static let morph = Animation.spring(response: 0.3, dampingFraction: 0.85)
+  static let morph = Animation.spring(response: 0.24, dampingFraction: 0.85)
   /// Shrinking must not overshoot: a bounce below the resting size exposes what is behind it.
-  static let collapse = Animation.spring(response: 0.26, dampingFraction: 1)
+  static let collapse = Animation.spring(response: 0.2, dampingFraction: 1)
   static let snappy = Animation.snappy(duration: 0.18)
 }
 
@@ -71,7 +71,7 @@ extension AnyTransition {
   static var islandContent: AnyTransition {
     .asymmetric(
       insertion: .opacity.combined(with: .scale(scale: 0.96, anchor: .top))
-        .animation(.smooth(duration: 0.2).delay(0.04)),
+        .animation(.smooth(duration: 0.16).delay(0.03)),
       removal: .opacity.animation(.easeOut(duration: 0.08)))
   }
 }

@@ -206,8 +206,8 @@ final class IslandPanel: NSPanel {
     {
       return screen
     }
-    return NSScreen.screens.first(where: { $0.safeAreaInsets.top > 0 }) ?? NSScreen.main
-      ?? NSScreen.screens.first
+    // Automatic: the main display, the one with the menu bar.
+    return NSScreen.screens.first ?? NSScreen.main
   }
 
   func reposition() {
