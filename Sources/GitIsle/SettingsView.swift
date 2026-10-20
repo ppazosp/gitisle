@@ -69,15 +69,14 @@ struct SettingsView: View {
     VStack(spacing: 0) {
       MeasuredColumn {
         VStack(spacing: 12) {
-          // Rows of equal-height cards, so no column leaves an empty block.
+          // Three columns, so Settings grows wider rather than taller.
           HStack(alignment: .top, spacing: 12) {
             github
             notifications
-          }
-          .fixedSize(horizontal: false, vertical: true)
-          HStack(alignment: .top, spacing: 12) {
-            island
-            usage
+            VStack(spacing: 12) {
+              island
+              usage
+            }
           }
           .fixedSize(horizontal: false, vertical: true)
         }

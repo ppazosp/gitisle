@@ -72,6 +72,8 @@ struct IslandMetrics: Equatable {
   var expandedWidth: CGFloat { 640 }
   /// A PR's page sets files beside checks, so it takes more room than the list.
   var detailsWidth: CGFloat { 820 }
+  /// Settings lays its cards out in three columns, so it fits without scrolling.
+  var settingsWidth: CGFloat { 960 }
   /// The board grows with its columns and never gets narrower than the list.
   func boardWidth(columns: Int) -> CGFloat {
     let column: CGFloat = 230

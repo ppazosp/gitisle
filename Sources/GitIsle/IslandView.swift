@@ -95,9 +95,11 @@ struct IslandView: View {
         store.tab == .activity && store.detailsPullRequest != nil && !store.showingSettings
         && !store.showingOnboarding
       let width =
-        board
-        ? metrics.boardWidth(columns: store.sections.count)
-        : details ? metrics.detailsWidth : metrics.expandedWidth
+        store.showingSettings && !store.showingOnboarding
+        ? metrics.settingsWidth
+        : board
+          ? metrics.boardWidth(columns: store.sections.count)
+          : details ? metrics.detailsWidth : metrics.expandedWidth
       // Stats and Settings grow with the screen, so their cards fit without scrolling.
       let tall =
         store.showingSettings
