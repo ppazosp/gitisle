@@ -870,7 +870,8 @@ final class IslandStore {
     let busy = presentation == .live || presentation == .banner
     // Leaving waits a moment, so overshooting the edge doesn't close the island.
     let delay =
-      inside ? (busy ? max(settings.hoverDelay + 0.6, 0.8) : settings.hoverDelay) : 0.4
+      inside
+      ? (busy ? settings.bannerHoverDelay : settings.hoverDelay) : settings.closeDelay
     hoverTask = Task { [weak self] in
       guard let self else { return }
       do { try await Task.sleep(for: .seconds(delay)) } catch { return }

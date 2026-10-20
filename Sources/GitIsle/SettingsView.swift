@@ -228,14 +228,14 @@ struct SettingsView: View {
       SettingsRow("Display") {
         DisplayPicker(displayID: $draft.displayID)
       }
-      SettingsRow("Hover delay") {
-        HStack(spacing: 8) {
-          Slider(value: $draft.hoverDelay, in: 0.05...0.9, step: 0.05).controlSize(.small)
-            .frame(minWidth: 60, maxWidth: 130)
-          Text("\(Int(draft.hoverDelay * 1000)) ms").monospacedDigit()
-            .font(.system(size: 11)).foregroundStyle(.white.opacity(0.6))
-            .frame(width: 50, alignment: .trailing)
-        }
+      SettingsRow("Open after") {
+        DelaySlider(value: $draft.hoverDelay, range: 0.05...0.9)
+      }
+      SettingsRow("Over a banner") {
+        DelaySlider(value: $draft.bannerHoverDelay, range: 0.2...2)
+      }
+      SettingsRow("Close after") {
+        DelaySlider(value: $draft.closeDelay, range: 0.1...1.5)
       }
       SettingsRow("Show in full screen") {
         Toggle("", isOn: $draft.showInFullscreen).islandToggle()
@@ -400,6 +400,22 @@ extension View {
 
   func islandToggle() -> some View {
     toggleStyle(IslandSwitchStyle()).labelsHidden()
+  }
+}
+
+/// A delay in milliseconds, picked on a slider.
+private struct DelaySlider: View {
+  @Binding var value: Double
+  let range: ClosedRange<Double>
+
+  var body: some View {
+    HStack(spacing: 8) {
+      Slider(value: $value, in: range, step: 0.05).controlSize(.small)
+        .frame(minWidth: 60, maxWidth: 130)
+      Text("\(Int((value * 1000).rounded())) ms").monospacedDigit()
+        .font(.system(size: 11)).foregroundStyle(.white.opacity(0.6))
+        .frame(width: 50, alignment: .trailing)
+    }
   }
 }
 

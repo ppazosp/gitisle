@@ -98,11 +98,14 @@ struct IslandView: View {
         board
         ? metrics.boardWidth(columns: store.sections.count)
         : details ? metrics.detailsWidth : metrics.expandedWidth
-      let stats = store.tab == .stats && !store.showingSettings && !store.showingOnboarding
+      // Stats and Settings grow with the screen, so their cards fit without scrolling.
+      let tall =
+        store.showingSettings
+        || (store.tab == .stats && !store.showingOnboarding)
       return CGSize(
         width: width + 2 * metrics.ear,
         height: min(
-          stats ? metrics.maxStatsHeight : metrics.maxExpandedHeight,
+          tall ? metrics.maxStatsHeight : metrics.maxExpandedHeight,
           chrome + max(contentHeight, ExpandedIsland.repositoryPickerHeight(store))))
     }
   }
