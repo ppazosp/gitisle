@@ -519,9 +519,9 @@ private struct ActivityInbox: View {
           if items.count > 1 {
             Text(verbatim: "\(items.count)")
               .font(.system(size: 9.5, weight: .bold)).monospacedDigit()
-              .foregroundStyle(.white)
+              .foregroundStyle(.white.opacity(0.9))
               .padding(.horizontal, 4).frame(minWidth: 15, minHeight: 15)
-              .background(Capsule().fill(Palette.update))
+              .background(Capsule().fill(Color(white: 0.3)))
               .overlay(Capsule().strokeBorder(.black, lineWidth: 1.5))
               .contentTransition(.numericText(value: Double(items.count)))
               .offset(x: 5, y: -4)

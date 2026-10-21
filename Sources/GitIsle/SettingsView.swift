@@ -171,11 +171,6 @@ struct SettingsView: View {
       }
       .disabled(!store.settings.bannersEnabled)
       .opacity(store.settings.bannersEnabled ? 1 : 0.45)
-      SettingsRow("Inbox") {
-        PillPicker(
-          options: [(10, "10"), (20, "20"), (50, "50")],
-          selection: $draft.inboxLimit, fontSize: 11)
-      }
       SettingsRow("System notifications") {
         Toggle(
           "",

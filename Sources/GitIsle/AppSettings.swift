@@ -45,9 +45,6 @@ struct AppSettings: Codable, Equatable {
   /// A banner shows its time running out: along the closed island's edge, and as a bar in the
   /// open island.
   var bannerTimer = true
-  /// How many notifications the inbox keeps until they're dismissed; the oldest go first.
-  /// 20 is about the PRs a busy day touches.
-  var inboxLimit = 20
   var notificationSound = true
   /// Which changes announce themselves, by `PRStatus` raw value.
   var announcedKinds: Set<String> = [
@@ -92,7 +89,6 @@ struct AppSettings: Codable, Equatable {
     claudeHome = value(.claudeHome, defaults.claudeHome)
     bannersEnabled = value(.bannersEnabled, defaults.bannersEnabled)
     bannerTimer = value(.bannerTimer, defaults.bannerTimer)
-    inboxLimit = value(.inboxLimit, defaults.inboxLimit)
     notificationSound = value(.notificationSound, defaults.notificationSound)
     announcedKinds = value(.announcedKinds, defaults.announcedKinds)
     // Settings saved before kinds were tracked had offered these.

@@ -411,11 +411,11 @@ final class IslandStore {
   var isLive: Bool { !merging.isEmpty || !checking.isEmpty }
 
   /// Notifications not yet dismissed, newest first: each PR once, with its latest change, in
-  /// the repositories shown, up to the inbox's size.
+  /// the repositories shown, up to `inboxLimit`.
   var inbox: [IslandEvent] {
     var seen = Set<String>()
     var items: [IslandEvent] = []
-    for event in events where items.count < settings.inboxLimit {
+    for event in events where items.count < Self.inboxLimit {
       guard settings.announcedKinds.contains(event.kind.rawValue), shows(event.repository),
         seen.insert(event.reference).inserted
       else { continue }
@@ -424,6 +424,9 @@ final class IslandStore {
     }
     return items
   }
+
+  /// How many notifications the inbox keeps until they're dismissed; the oldest go first.
+  static let inboxLimit = 99
 
   /// Takes a notification out of the inbox for good: dismissed, or opened.
   func dismiss(_ event: IslandEvent) {
