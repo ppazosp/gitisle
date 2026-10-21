@@ -89,6 +89,8 @@ struct IslandView: View {
     )
     .animation(reduceMotion ? nil : Motion.morph, value: contentHeight)
     .animation(reduceMotion ? nil : Motion.morph, value: liveSide)
+    // The activity row comes and goes with notifications.
+    .animation(reduceMotion ? nil : Motion.morph, value: ExpandedIsland.showsActivity(store))
     .padding(.top, metrics.topGap)
     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
   }
@@ -368,47 +370,26 @@ private struct BannerTime: View {
 
 // MARK: - Activity row
 
-/// The open island's row for what happened: a banner for its 5 seconds, else an inbox of recent
-/// changes, else a quiet note. It's always there, so nothing in the island moves.
+/// The open island's row for what happened: a banner for its 5 seconds, else the inbox of
+/// notifications not yet dismissed. It's there only while it has one to show.
 private struct ActivityRow: View {
   let store: IslandStore
 
   var body: some View {
     let inbox = store.inbox
-    HStack(spacing: 2) {
-      ZStack {
-        if let event = store.recentEvent {
-          RowBanner(
-            event: event, shownAt: store.bannerShownAt, timer: store.settings.bannerTimer
-          )
-          .id(event.id)
-          .transition(.liveTurn)
-        } else if !inbox.isEmpty {
-          ActivityInbox(store: store, items: inbox).transition(.opacity)
-        } else {
-          quiet.transition(.opacity)
-        }
+    ZStack {
+      if let event = store.recentEvent {
+        RowBanner(
+          event: event, shownAt: store.bannerShownAt, timer: store.settings.bannerTimer
+        )
+        .id(event.id)
+        .transition(.liveTurn)
+      } else if !inbox.isEmpty {
+        ActivityInbox(store: store, items: inbox).transition(.opacity)
       }
-      .frame(maxWidth: .infinity)
-      .clipped()
     }
-  }
-
-  /// A line across the row when the inbox is empty, so the row still spans the island.
-  private var quiet: some View {
-    HStack(spacing: 12) {
-      Rectangle().fill(Palette.hairline).frame(height: 1)
-      HStack(spacing: 7) {
-        GlyphView(glyph: .pullRequest, size: 12).foregroundStyle(.white.opacity(0.3))
-        Text("All caught up").font(.system(size: 12, weight: .semibold))
-          .foregroundStyle(.white.opacity(0.4))
-      }
-      .fixedSize()
-      Rectangle().fill(Palette.hairline).frame(height: 1)
-    }
-    .padding(.horizontal, 10).padding(.bottom, 6)
-    .accessibilityElement(children: .ignore)
-    .accessibilityLabel("All caught up: no notifications in the inbox")
+    .frame(maxWidth: .infinity)
+    .clipped()
   }
 
 }
@@ -635,9 +616,11 @@ private struct ExpandedIsland: View {
       + footerHeight(store) + 1
   }
 
-  /// Settings and setup have their own layout, without the activity row.
+  /// While there's a notification or anything in the inbox. Settings and setup have their own
+  /// layout, without the row.
   static func showsActivity(_ store: IslandStore) -> Bool {
     !store.showingSettings && !store.showingOnboarding
+      && (store.recentEvent != nil || !store.inbox.isEmpty)
   }
 
   /// State filters belong to Activity, in both layouts.
