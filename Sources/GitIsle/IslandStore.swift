@@ -718,6 +718,12 @@ final class IslandStore {
         pr.reviewRequested = fingerprint.found(pr.id, by: "reviews")
         byID[pr.id] = pr
       }
+      // GitHub no longer has a PR that left every search and can't be read: it was deleted, or
+      // access to it was lost. Kept, it would show as open and still lead its repository.
+      let read = Set(updated.map(\.id))
+      for id in changed where !read.contains(id) && fingerprint.entries[id] == nil {
+        byID[id] = nil
+      }
       var next = latest
       next.pullRequests = byID.values.sorted { $0.updatedAt > $1.updatedAt }
       next.fetchedAt = Date()
@@ -747,6 +753,12 @@ final class IslandStore {
       else { return }
       var byID = Dictionary(latest.pullRequests.map { ($0.id, $0) }) { first, _ in first }
       var changed = false
+      // An active PR GitHub can no longer read was deleted, or access to it was lost.
+      let read = Set(updated.map(\.id))
+      for id in ids where !read.contains(id) && byID[id] != nil {
+        byID[id] = nil
+        changed = true
+      }
       for var pr in updated {
         // Review requests come from search; keep what the last full refresh found.
         pr.reviewRequested = byID[pr.id]?.reviewRequested ?? false
