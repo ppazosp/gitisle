@@ -44,6 +44,16 @@ struct IslandView: View {
     }
     .padding(.horizontal, ear)
     .frame(width: size.width, height: size.height, alignment: .top)
+    .overlay {
+      if presentation == .banner, let event = store.recentEvent {
+        BannerTime(
+          color: event.kind.color, shownAt: store.bannerShownAt, ear: ear,
+          radius: metrics.cornerRadius(for: presentation), attached: metrics.hasNotch
+        )
+        .id(event.id)
+        .transition(.opacity)
+      }
+    }
     .background(.black)
     .clipShape(shape)
     .background {
@@ -295,6 +305,43 @@ extension IslandEvent {
   }
 }
 
+/// A banner's time on the closed island: its color traces the island's edge as the seconds pass,
+/// down both sides from the top and meeting in the middle of the bottom.
+private struct BannerTime: View {
+  let color: Color
+  let shownAt: Date
+  let ear: CGFloat
+  let radius: CGFloat
+  let attached: Bool
+  @State private var elapsed = 0.0
+
+  /// How much of a banner's time has passed, from 0 to 1.
+  static func elapsed(since shownAt: Date) -> Double {
+    1 - remaining(since: shownAt) / IslandStore.bannerSeconds
+  }
+
+  static func remaining(since shownAt: Date) -> Double {
+    max(0, IslandStore.bannerSeconds - Date().timeIntervalSince(shownAt))
+  }
+
+  var body: some View {
+    let edge = IslandEdge(ear: ear, radius: radius, attached: attached)
+      .trim(from: 0, to: elapsed)
+      // Twice the width shows, as the island clips the outer half.
+      .stroke(color, style: StrokeStyle(lineWidth: 4, lineCap: .round, lineJoin: .round))
+    ZStack {
+      edge
+      edge.scaleEffect(x: -1)
+    }
+    .allowsHitTesting(false)
+    .accessibilityHidden(true)
+    .onAppear {
+      elapsed = Self.elapsed(since: shownAt)
+      withAnimation(.linear(duration: Self.remaining(since: shownAt))) { elapsed = 1 }
+    }
+  }
+}
+
 // MARK: - Activity row
 
 /// The open island's row for what's happening: a banner for its 5 seconds, else the live PRs
@@ -375,8 +422,6 @@ private struct RowBanner: View {
   /// How much of its time has passed, from 0 to 1.
   @State private var elapsed = 0.0
 
-  static let duration = 5.0
-
   var body: some View {
     Button {
       NSWorkspace.shared.open(destination)
@@ -415,9 +460,8 @@ private struct RowBanner: View {
     .buttonStyle(.plain)
     .onAppear {
       // Picks up where the banner is in its time, if it was already showing.
-      let remaining = max(0, Self.duration - Date().timeIntervalSince(shownAt))
-      elapsed = 1 - remaining / Self.duration
-      withAnimation(.linear(duration: remaining)) { elapsed = 1 }
+      elapsed = BannerTime.elapsed(since: shownAt)
+      withAnimation(.linear(duration: BannerTime.remaining(since: shownAt))) { elapsed = 1 }
     }
     .accessibilityLabel("\(title): \(event.detail)")
     .accessibilityHint(action)

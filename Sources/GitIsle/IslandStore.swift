@@ -18,6 +18,8 @@ final class IslandStore {
   var usageRefreshing = false
   var events: [IslandEvent] = []
   var recentEvent: IslandEvent?
+  /// How long a banner shows.
+  static let bannerSeconds = 5.0
   /// When the banner showing now arrived, so the open island can show its time running out.
   private(set) var bannerShownAt = Date.distantPast
   var expanded = false {
@@ -987,7 +989,7 @@ final class IslandStore {
     notificationTask?.cancel()
     notificationTask = Task { [weak self] in
       do {
-        try await Task.sleep(for: .seconds(5))
+        try await Task.sleep(for: .seconds(Self.bannerSeconds))
         // The open island is always under the pointer, so there a banner keeps to its time.
         while self?.hovered == true, self?.expanded == false {
           try await Task.sleep(for: .seconds(0.5))
