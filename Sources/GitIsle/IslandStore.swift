@@ -26,12 +26,8 @@ final class IslandStore {
         dropdown = nil
         detailsID = nil
       }
-      // The open island shows every change, so banners showing or waiting have done their job;
-      // the newest is on top of its notification history.
-      if expanded {
-        clearBanners()
-        historyIndex = 0
-      }
+      // The live bar and the activity row swap places, so neither is under the pointer now.
+      liveHovered = false
     }
   }
   var tab: IslandTab = .activity
@@ -66,8 +62,6 @@ final class IslandStore {
   private var liveID: String?
   /// The pointer is on the live bar, which holds it still.
   var liveHovered = false
-  /// The past notification the open island shows, from 0 for the newest.
-  var historyIndex = 0
   private(set) var repositories: [RepoSection] = []
   /// State columns for the board layout, after the repository filter.
   private(set) var sections: [PRSection] = []
@@ -411,22 +405,6 @@ final class IslandStore {
   }
 
   var isLive: Bool { !merging.isEmpty || !checking.isEmpty }
-
-  /// Past notifications, newest first: the changes banners announce, in the repositories shown.
-  var notificationHistory: [IslandEvent] {
-    events.filter {
-      settings.announcedKinds.contains($0.kind.rawValue) && shows($0.repository)
-    }
-  }
-
-  /// Moves through the notification history; positive offsets go back in time.
-  func stepHistory(_ offset: Int) {
-    let count = notificationHistory.count
-    guard count > 0 else { return }
-    withAnimation(Motion.snappy) {
-      historyIndex = min(max(historyIndex + offset, 0), count - 1)
-    }
-  }
 
   /// Every live PR, merging first; the live bar cycles through them.
   var livePullRequests: [PullRequest] { merging + checking }
@@ -848,8 +826,6 @@ final class IslandStore {
     try JSONEncoder().encode(newEvents).write(to: AppFiles.events, options: .atomic)
     try JSONEncoder().encode(fresh).write(to: AppFiles.snapshot, options: .atomic)
     events = newEvents
-    // Something new goes on top of the history, in place of an older one being read.
-    if !changes.isEmpty { withAnimation(Motion.snappy) { historyIndex = 0 } }
     setGitHub(fresh)
     let announced = changes.filter {
       settings.announcedKinds.contains($0.kind.rawValue) && shows($0.repository)
@@ -990,11 +966,11 @@ final class IslandStore {
     expanded = false
   }
 
-  /// Shows a banner for 5 seconds, longer while the pointer rests on it. Banners arriving
-  /// meanwhile wait their turn, each with its full time; one about the same PR replaces the
-  /// waiting one. The open island already shows the change, so it gets no banner.
+  /// Shows a banner for 5 seconds; on the closed island, longer while the pointer rests on it.
+  /// Banners arriving meanwhile wait their turn, each with its full time; one about the same PR
+  /// replaces the waiting one. The open island shows them in its activity row.
   func showEvent(_ event: IslandEvent) {
-    guard shows(event.repository), !expanded else { return }
+    guard shows(event.repository) else { return }
     guard recentEvent != nil else { return present(event) }
     if let index = bannerQueue.firstIndex(where: { $0.reference == event.reference }) {
       bannerQueue[index] = event
@@ -1009,7 +985,10 @@ final class IslandStore {
     notificationTask = Task { [weak self] in
       do {
         try await Task.sleep(for: .seconds(5))
-        while self?.hovered == true { try await Task.sleep(for: .seconds(0.5)) }
+        // The open island is always under the pointer, so there a banner keeps to its time.
+        while self?.hovered == true, self?.expanded == false {
+          try await Task.sleep(for: .seconds(0.5))
+        }
       } catch { return }
       guard let self else { return }
       if bannerQueue.isEmpty {
@@ -1018,12 +997,6 @@ final class IslandStore {
         withAnimation(Motion.morph) { present(bannerQueue.removeFirst()) }
       }
     }
-  }
-
-  private func clearBanners() {
-    notificationTask?.cancel()
-    bannerQueue = []
-    recentEvent = nil
   }
 
   /// Every kind of announcement, in the order the showcase plays them.
@@ -1405,16 +1378,6 @@ final class IslandStore {
       return pr
     }
     setGitHub(GitHubSnapshot(login: "maya", pullRequests: branched))
-    // A few past notifications, newest first, for the open island's history.
-    let ages: [(PRStatus, Double)] = [
-      (.previewReady, 0.2), (.failed, 1), (.merged, 3), (.review, 20), (.opened, 26),
-    ]
-    events = ages.compactMap { kind, hours in
-      guard var event = demoEvent(kind) else { return nil }
-      event.id = "history-\(kind.rawValue)"
-      event.occurredAt = now.addingTimeInterval(-hours * hour)
-      return event
-    }
     let calendar = Calendar.current
     let formatter = DateFormatter()
     formatter.dateFormat = "yyyy-MM-dd"

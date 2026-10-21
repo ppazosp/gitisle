@@ -54,9 +54,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
       return
     }
     let arguments = CommandLine.arguments
-    if (arguments.contains("--expanded") || arguments.contains("--snapshot"))
-      && !arguments.contains("--collapsed") && !arguments.contains("--banner")
-      && !arguments.contains("--event") && !arguments.contains("--story")
+    // Snapshots open the island unless they show it closed; `--expanded` opens it anyway, for
+    // example to show a banner in its activity row.
+    if arguments.contains("--expanded")
+      || (arguments.contains("--snapshot") && !arguments.contains("--collapsed")
+        && !arguments.contains("--banner") && !arguments.contains("--event")
+        && !arguments.contains("--story"))
     {
       store.expanded = true
     }
