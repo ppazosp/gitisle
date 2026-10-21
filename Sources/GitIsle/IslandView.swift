@@ -553,14 +553,24 @@ private struct ActivityInbox: View {
         store.stepActivity(1)
       } label: {
         stack(Array(items.dropFirst(index).prefix(3)))
+          .overlay(alignment: .topTrailing) {
+            if items.indices.contains(index), store.isNew(items[index]) {
+              Circle().fill(Palette.update).frame(width: 8, height: 8)
+                .overlay(Circle().strokeBorder(.black, lineWidth: 1.5))
+                .offset(x: 1, y: -1)
+            }
+          }
       }
       .buttonStyle(.plain)
       .disabled(items.count < 2)
       .accessibilityLabel("Older activity")
       if items.indices.contains(index) {
-        card(items[index])
-          .id(items[index].id)
-          .transition(.liveTurn)
+        // Marked only while some are new, so "earlier" says where the new ones end.
+        card(
+          items[index], mark: items.contains(where: store.isNew) ? store.isNew(items[index]) : nil
+        )
+        .id(items[index].id)
+        .transition(.liveTurn)
       }
     }
     .padding(.leading, items.count > 1 ? 30 : 10).padding(.trailing, 10)
@@ -591,7 +601,8 @@ private struct ActivityInbox: View {
     .contentShape(Rectangle())
   }
 
-  private func card(_ event: IslandEvent) -> some View {
+  /// `mark` is true for a new change and false for an earlier one; nil leaves both unsaid.
+  private func card(_ event: IslandEvent, mark: Bool?) -> some View {
     Button {
       NSWorkspace.shared.open(event.url)
     } label: {
@@ -606,10 +617,18 @@ private struct ActivityInbox: View {
         }
         .lineLimit(1)
         Spacer(minLength: 6)
-        Text(Format.age(event.occurredAt) + (Format.age(event.occurredAt) == "now" ? "" : " ago"))
+        VStack(alignment: .trailing, spacing: 1) {
+          Text(
+            Format.age(event.occurredAt) + (Format.age(event.occurredAt) == "now" ? "" : " ago")
+          )
           .font(.system(size: 12, weight: .semibold))
           .foregroundStyle(.white.opacity(0.5))
-          .fixedSize()
+          if let mark {
+            Text(mark ? "new" : "earlier").font(.system(size: 10.5, weight: .semibold))
+              .foregroundStyle(mark ? Palette.update : .white.opacity(0.3))
+          }
+        }
+        .fixedSize()
       }
       .contentShape(Rectangle())
     }

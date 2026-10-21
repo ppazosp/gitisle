@@ -30,10 +30,32 @@ final class IslandStore {
         dropdown = nil
         detailsID = nil
       }
-      // The inbox opens on the newest change.
-      activityIndex = 0
+      // The inbox opens on the newest change; what came since the island was last closed is
+      // new.
+      if expanded != oldValue {
+        activityIndex = 0
+        if expanded { seenBefore = lookedAt } else { lookedAt = Date() }
+      }
     }
   }
+  /// When the island was last closed, kept across launches.
+  @ObservationIgnored private var lookedAt: Date {
+    get {
+      isDemo
+        ? demoLookedAt
+        : UserDefaults.standard.object(forKey: "inboxLookedAt") as? Date ?? .distantPast
+    }
+    set {
+      if isDemo {
+        demoLookedAt = newValue
+      } else {
+        UserDefaults.standard.set(newValue, forKey: "inboxLookedAt")
+      }
+    }
+  }
+  @ObservationIgnored private var demoLookedAt = Date.distantPast
+  /// The look before this one, while the island is open: changes after it are new.
+  private(set) var seenBefore = Date.distantPast
   var tab: IslandTab = .activity
   /// Settings replace the expanded content. They save as they change, so collapsing the island
   /// never loses an edit.
@@ -414,13 +436,22 @@ final class IslandStore {
 
   /// Recent changes a banner would announce, newest first, in the repositories shown: the open
   /// island's inbox for quiet moments.
+  /// Each PR once, with its latest change, as far back as the inbox setting reaches.
   var recentActivity: [IslandEvent] {
-    Array(
-      events.lazy.filter {
-        self.settings.announcedKinds.contains($0.kind.rawValue) && self.shows($0.repository)
-      }
-      .prefix(50))
+    var seen = Set<String>()
+    let latest = events.filter {
+      settings.announcedKinds.contains($0.kind.rawValue) && shows($0.repository)
+        && seen.insert($0.reference).inserted
+    }
+    switch settings.inboxScope {
+    case .new: return latest.filter(isNew)
+    case .day: return latest.filter { $0.occurredAt > Date().addingTimeInterval(-86_400) }
+    case .recent: return Array(latest.prefix(InboxScope.recentCount))
+    }
   }
+
+  /// Arrived since the island was last closed.
+  func isNew(_ event: IslandEvent) -> Bool { event.occurredAt > seenBefore }
 
   /// Moves through the recent activity; positive offsets go back in time, and past the oldest
   /// it starts again from the newest.
@@ -847,7 +878,8 @@ final class IslandStore {
     let changes = GitHubChanges.events(previous: github, current: fresh).filter {
       !known.contains($0.id)
     }
-    let newEvents = Array((changes + events).prefix(200))
+    // Enough for a busy day of changes, so the inbox's 24 hours are always there.
+    let newEvents = Array((changes + events).prefix(500))
     // Persist the notification ledger before emitting side effects; a restart never replays it.
     try JSONEncoder().encode(newEvents).write(to: AppFiles.events, options: .atomic)
     try JSONEncoder().encode(fresh).write(to: AppFiles.snapshot, options: .atomic)
@@ -1417,6 +1449,8 @@ final class IslandStore {
       event.occurredAt = now.addingTimeInterval(-hours * hour)
       return event
     }
+    // The island was last closed 4 hours ago, so the newest change is new.
+    demoLookedAt = now.addingTimeInterval(-4 * hour)
     let calendar = Calendar.current
     let formatter = DateFormatter()
     formatter.dateFormat = "yyyy-MM-dd"
