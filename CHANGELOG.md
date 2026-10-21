@@ -2,6 +2,18 @@
 
 Notable changes to GitIsle. Releases follow [semantic versioning](https://semver.org).
 
+## [0.3.0](https://github.com/ppazosp/gitisle/compare/v0.2.2...v0.3.0) (2026-10-21)
+
+
+### Features
+
+* an activity row and inbox in the open island, and a cycling live bar ([#54](https://github.com/ppazosp/gitisle/issues/54)) ([bd2766c](https://github.com/ppazosp/gitisle/commit/bd2766c27258cb075da10fb1fb0f6b7ca9b0eb4e))
+
+
+### Bug Fixes
+
+* repositories order by the PRs the filters show ([#55](https://github.com/ppazosp/gitisle/issues/55)) ([550762c](https://github.com/ppazosp/gitisle/commit/550762cf9aa5d755038dae785776f166ee4d05db))
+
 ## [0.2.2](https://github.com/ppazosp/gitisle/compare/v0.2.1...v0.2.2) (2026-10-20)
 
 
