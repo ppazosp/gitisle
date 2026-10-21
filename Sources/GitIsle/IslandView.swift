@@ -275,6 +275,8 @@ private struct CompactBar: View {
 
 private struct EventBanner: View {
   let event: IslandEvent
+  /// Shown at the end, such as how long ago a past notification arrived.
+  var trailing: String?
 
   var body: some View {
     Button {
@@ -294,6 +296,9 @@ private struct EventBanner: View {
         }
         .lineLimit(1)
         Spacer(minLength: 4)
+        if let trailing {
+          Text(trailing).font(.system(size: 11)).foregroundStyle(.white.opacity(0.4))
+        }
       }
       .padding(.horizontal, 16).padding(.top, 6).padding(.bottom, 10)
       .contentShape(Rectangle())
@@ -323,6 +328,57 @@ extension IslandEvent {
   }
 }
 
+// MARK: - History
+
+/// The open island's past notifications, one at a time, newest first: a banner that lands while
+/// it's open appears here, and the arrows step back through older ones.
+private struct NotificationHistory: View {
+  let store: IslandStore
+
+  var body: some View {
+    let history = store.notificationHistory
+    let index = min(store.historyIndex, max(history.count - 1, 0))
+    HStack(spacing: 4) {
+      arrow("chevron.left", label: "Older notification", enabled: index < history.count - 1) {
+        store.stepHistory(1)
+      }
+      if history.indices.contains(index) {
+        let event = history[index]
+        ZStack {
+          EventBanner(event: event, trailing: Format.age(event.occurredAt))
+            .padding(.horizontal, -6)
+            .id(event.id)
+            .transition(.liveTurn)
+        }
+        .frame(maxWidth: .infinity)
+        .clipped()
+      }
+      Text(verbatim: "\(index + 1)/\(history.count)")
+        .font(.system(size: 11, weight: .semibold)).monospacedDigit()
+        .foregroundStyle(.white.opacity(0.45))
+        .contentTransition(.numericText(value: Double(index)))
+        .padding(.bottom, 4)
+      arrow("chevron.right", label: "Newer notification", enabled: index > 0) {
+        store.stepHistory(-1)
+      }
+    }
+  }
+
+  private func arrow(
+    _ symbol: String, label: String, enabled: Bool, action: @escaping () -> Void
+  ) -> some View {
+    Button(action: action) {
+      Image(systemName: symbol).font(.system(size: 10, weight: .bold))
+        .foregroundStyle(.white.opacity(enabled ? 0.6 : 0.15))
+        .frame(width: 20, height: 32).contentShape(Rectangle())
+    }
+    .buttonStyle(.plain)
+    .disabled(!enabled)
+    .padding(.bottom, 4)
+    .accessibilityLabel(label)
+  }
+}
+
 // MARK: - Expanded
 
 private struct ExpandedIsland: View {
@@ -341,9 +397,18 @@ private struct ExpandedIsland: View {
     store.showingOnboarding ? onboardingFooterHeight : footerHeight
   }
 
+  static let historyHeight: CGFloat = 50
+
   static func chromeHeight(_ metrics: IslandMetrics, store: IslandStore) -> CGFloat {
     (store.isLive ? metrics.closedHeight : topInset(metrics, store: store)) + headerHeight
-      + (showsFilterBar(store) ? filterBarHeight : 0) + footerHeight(store) + 1
+      + (showsHistory(store) ? historyHeight : 0) + (showsFilterBar(store) ? filterBarHeight : 0)
+      + footerHeight(store) + 1
+  }
+
+  /// Past notifications sit on top, where banners land, so a new one never moves the island.
+  /// Settings and setup have their own layout.
+  static func showsHistory(_ store: IslandStore) -> Bool {
+    !store.showingSettings && !store.showingOnboarding && !store.notificationHistory.isEmpty
   }
 
   /// State filters belong to Activity, in both layouts.
@@ -358,10 +423,19 @@ private struct ExpandedIsland: View {
   }
 
   var body: some View {
+    let history = Self.showsHistory(store)
+    let inset = Self.topInset(metrics, store: store)
     VStack(spacing: 0) {
+      if history {
+        NotificationHistory(store: store)
+          .padding(.horizontal, 22)
+          .padding(.top, inset)
+          .frame(height: inset + Self.historyHeight, alignment: .bottom)
+          .transition(.opacity)
+      }
       header
-        .padding(.top, Self.topInset(metrics, store: store))
-        .frame(height: Self.topInset(metrics, store: store) + Self.headerHeight, alignment: .bottom)
+        .padding(.top, history ? 0 : inset)
+        .frame(height: (history ? 0 : inset) + Self.headerHeight, alignment: .bottom)
       if Self.showsFilterBar(store) {
         StateFilterBar(store: store)
           .padding(.horizontal, 28)
