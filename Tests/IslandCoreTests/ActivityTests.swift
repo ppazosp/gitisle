@@ -99,15 +99,41 @@ struct ActivityTests {
     // Counts ignore the state filter so other states can still be selected.
     #expect(drafts[0].counts.map(\.group) == [.open, .draft])
 
+    // With its review hidden, b no longer needs you here; a's draft is further along than
+    // b's merge.
     let combined = PRGrouping.repositories(
       [draft, open, review, merged, older], window: .month, states: [.draft, .merged], now: now,
       calendar: calendar)
-    #expect(combined.map(\.repository) == ["b/needs-you", "a/recent"])
+    #expect(combined.map(\.repository) == ["a/recent", "b/needs-you"])
 
     let waiting = PRGrouping.repositories(
       [draft, open, review, merged, older], window: .month, needsYouOnly: true, now: now,
       calendar: calendar)
     #expect(waiting.flatMap(\.pullRequests).map(\.id) == ["review"])
+  }
+
+  @Test func repositoryOrderFollowsTheFilters() {
+    func make(_ id: String, _ repository: String, updated: TimeInterval, draft: Bool) -> PullRequest
+    {
+      var request = pr(id, updated: updated)
+      request.repository = repository
+      request.isDraft = draft
+      return request
+    }
+    // a has the newest open PR, b the newest draft.
+    let prs = [
+      make("a-open", "a/open-first", updated: 60, draft: false),
+      make("a-draft", "a/open-first", updated: 1800, draft: true),
+      make("b-draft", "b/draft-first", updated: 600, draft: true),
+      make("b-open", "b/draft-first", updated: 3600, draft: false),
+    ]
+    let all = PRGrouping.repositories(prs, window: .month, now: now, calendar: calendar)
+    #expect(all.map(\.repository) == ["a/open-first", "b/draft-first"])
+    let drafts = PRGrouping.repositories(
+      prs, window: .month, states: [.draft], now: now, calendar: calendar)
+    #expect(drafts.map(\.repository) == ["b/draft-first", "a/open-first"])
+    // Counts still cover every state.
+    #expect(drafts[0].counts.map(\.group) == [.open, .draft])
   }
 
   @Test func prsWaitingOnYouLeadTheReadyForReviewColumn() {
