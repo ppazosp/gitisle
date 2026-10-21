@@ -18,6 +18,8 @@ final class IslandStore {
   var usageRefreshing = false
   var events: [IslandEvent] = []
   var recentEvent: IslandEvent?
+  /// When the banner showing now arrived, so the open island can show its time running out.
+  private(set) var bannerShownAt = Date.distantPast
   var expanded = false {
     didSet {
       if !expanded {
@@ -981,6 +983,7 @@ final class IslandStore {
 
   private func present(_ event: IslandEvent) {
     recentEvent = event
+    bannerShownAt = Date()
     notificationTask?.cancel()
     notificationTask = Task { [weak self] in
       do {

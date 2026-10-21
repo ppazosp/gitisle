@@ -306,14 +306,10 @@ private struct ActivityRow: View {
     let live = store.livePullRequests
     // Arrows only while several PRs are live and no banner has the row.
     let steps = store.recentEvent == nil && live.count > 1
-    HStack(spacing: 4) {
-      arrow("chevron.left", label: "Previous live pull request", shown: steps) {
-        store.stepLive(-1)
-      }
+    HStack(spacing: 2) {
       ZStack {
         if let event = store.recentEvent {
-          EventBanner(event: event)
-            .padding(.horizontal, -6)
+          RowBanner(event: event, shownAt: store.bannerShownAt)
             .id(event.id)
             .transition(.liveTurn)
         } else if let pr = store.livePullRequest {
@@ -326,52 +322,140 @@ private struct ActivityRow: View {
       }
       .frame(maxWidth: .infinity)
       .clipped()
+      // Together at the end, so the row starts where the island's other content does.
       if steps {
-        Text(verbatim: "\(store.liveIndex + 1)/\(live.count)")
-          .font(.system(size: 11, weight: .semibold)).monospacedDigit()
-          .foregroundStyle(.white.opacity(0.45))
-          .contentTransition(.numericText(value: Double(store.liveIndex)))
-          .padding(.leading, 6)
-          .padding(.bottom, 4)
-      }
-      arrow("chevron.right", label: "Next live pull request", shown: steps) {
-        store.stepLive(1)
+        HStack(spacing: 0) {
+          arrow("chevron.left", label: "Previous live pull request") { store.stepLive(-1) }
+          Text(verbatim: "\(store.liveIndex + 1)/\(live.count)")
+            .font(.system(size: 11, weight: .semibold)).monospacedDigit()
+            .foregroundStyle(.white.opacity(0.45))
+            .contentTransition(.numericText(value: Double(store.liveIndex)))
+          arrow("chevron.right", label: "Next live pull request") { store.stepLive(1) }
+        }
+        .padding(.bottom, 4)
+        .transition(.opacity)
       }
     }
     .onHover { store.liveHovered = $0 }
   }
 
+  /// A line across the row with a quiet label, so the empty row still spans the island.
   private var quiet: some View {
-    HStack(spacing: 11) {
-      GlyphView(glyph: .pullRequest, size: 16).foregroundStyle(.white.opacity(0.35))
-        .frame(width: 32, height: 32)
-        .background(Circle().fill(.white.opacity(0.06)))
-      VStack(alignment: .leading, spacing: 2) {
-        Text("No activity").font(.system(size: 13, weight: .semibold))
-          .foregroundStyle(.white.opacity(0.6))
-        Text("Nothing merging or running checks").font(.system(size: 12))
+    HStack(spacing: 12) {
+      Rectangle().fill(Palette.hairline).frame(height: 1)
+      HStack(spacing: 7) {
+        GlyphView(glyph: .pullRequest, size: 12).foregroundStyle(.white.opacity(0.3))
+        Text("No activity").font(.system(size: 12, weight: .semibold))
           .foregroundStyle(.white.opacity(0.4))
       }
-      Spacer(minLength: 0)
+      .fixedSize()
+      Rectangle().fill(Palette.hairline).frame(height: 1)
     }
-    .padding(.horizontal, 10).padding(.top, 6).padding(.bottom, 10)
+    .padding(.horizontal, 10).padding(.bottom, 6)
+    .accessibilityElement(children: .ignore)
+    .accessibilityLabel("No activity: nothing merging or running checks")
   }
 
-  /// Hidden arrows keep their room, so the row doesn't shift when they come and go.
-  private func arrow(
-    _ symbol: String, label: String, shown: Bool, action: @escaping () -> Void
-  ) -> some View {
+  private func arrow(_ symbol: String, label: String, action: @escaping () -> Void) -> some View {
     Button(action: action) {
       Image(systemName: symbol).font(.system(size: 10, weight: .bold))
         .foregroundStyle(.white.opacity(0.6))
-        .frame(width: 20, height: 32).contentShape(Rectangle())
+        .frame(width: 22, height: 32).contentShape(Rectangle())
     }
     .buttonStyle(.plain)
-    .opacity(shown ? 1 : 0)
-    .disabled(!shown)
-    .padding(.bottom, 4)
     .accessibilityLabel(label)
-    .accessibilityHidden(!shown)
+  }
+}
+
+/// A banner in the activity row: what you'd do next on the right, and a bar underneath that
+/// fills over its 5 seconds. A click does that next thing.
+private struct RowBanner: View {
+  let event: IslandEvent
+  let shownAt: Date
+  /// How much of its time has passed, from 0 to 1.
+  @State private var elapsed = 0.0
+
+  static let duration = 5.0
+
+  var body: some View {
+    Button {
+      NSWorkspace.shared.open(destination)
+    } label: {
+      VStack(spacing: 6) {
+        HStack(spacing: 11) {
+          GlyphView(glyph: event.kind.eventGlyph, size: 16)
+            .foregroundStyle(color)
+            .frame(width: 32, height: 32)
+            .background(Circle().fill(color.opacity(0.18)))
+          VStack(alignment: .leading, spacing: 2) {
+            HStack(spacing: 6) {
+              Text(title).font(.system(size: 13, weight: .semibold))
+              Text(event.reference).font(.system(size: 11)).foregroundStyle(.white.opacity(0.45))
+            }
+            Text(detail).font(.system(size: 12)).foregroundStyle(.white.opacity(0.7))
+          }
+          .lineLimit(1)
+          Spacer(minLength: 6)
+          Text(action).font(.system(size: 11, weight: .semibold)).foregroundStyle(color)
+            .padding(.horizontal, 10).padding(.vertical, 5)
+            .background(Capsule().fill(color.opacity(0.15)))
+        }
+        GeometryReader { proxy in
+          ZStack(alignment: .leading) {
+            Capsule().fill(.white.opacity(0.06))
+            Capsule().fill(color.opacity(0.7)).frame(width: proxy.size.width * elapsed)
+          }
+        }
+        .frame(height: 2)
+        .padding(.leading, 43)
+      }
+      .padding(.horizontal, 10).padding(.top, 4).padding(.bottom, 4)
+      .contentShape(Rectangle())
+    }
+    .buttonStyle(.plain)
+    .onAppear {
+      // Picks up where the banner is in its time, if it was already showing.
+      let remaining = max(0, Self.duration - Date().timeIntervalSince(shownAt))
+      elapsed = 1 - remaining / Self.duration
+      withAnimation(.linear(duration: remaining)) { elapsed = 1 }
+    }
+    .accessibilityLabel("\(title): \(event.detail)")
+    .accessibilityHint(action)
+  }
+
+  private var color: Color { event.kind.color }
+
+  /// "Checks failed: unit" when the failing checks are known.
+  private var title: String {
+    guard event.kind == .failed, let note = event.note else { return event.kind.eventTitle }
+    return "\(event.kind.eventTitle): \(note)"
+  }
+
+  private var detail: String {
+    guard event.kind != .failed, let note = event.note else { return event.detail }
+    return "\(note) · \(event.detail)"
+  }
+
+  private var action: String {
+    switch event.kind {
+    case .failed: "See checks"
+    case .mergeFailed: "See why"
+    case .previewReady: "Open preview"
+    case .review: "Review"
+    case .ready: "Merge"
+    case .draft: "View draft"
+    default: "View PR"
+    }
+  }
+
+  /// A failure opens the PR's checks and a review request its changes; the rest open the PR,
+  /// or the preview.
+  private var destination: URL {
+    switch event.kind {
+    case .failed: event.url.appending(path: "checks")
+    case .review: event.url.appending(path: "files")
+    default: event.url
+    }
   }
 }
 
