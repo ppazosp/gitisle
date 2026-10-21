@@ -26,17 +26,20 @@ struct IslandView: View {
           .accessibilityAddTraits(.isButton)
       } else {
         VStack(spacing: 0) {
-          // The live bar and a banner stay where they are when the island opens, and it grows
-          // under them, so they can still be clicked.
-          if presentation != .expanded || ExpandedIsland.showsBar(store) {
+          // The live bar stays where it is when the island opens, and the island grows under
+          // it, so it can still be clicked. Banners don't: the open island shows those changes.
+          if presentation != .expanded || store.isLive {
             VStack(spacing: 0) {
               CompactBar(store: store, metrics: metrics, side: $liveSide)
-              if let event = store.recentEvent {
-                EventBanner(event: event, extra: store.recentEventExtra)
+              if presentation != .expanded, let event = store.recentEvent {
+                EventBanner(event: event)
+                  .id(event.id)
                   .transition(.islandContent)
               }
             }
-            .frame(width: presentation == .expanded ? barWidth : nil)
+            .frame(
+              width: presentation == .expanded ? metrics.liveWidth(side: liveSide) : nil
+            )
             .transition(.islandContent)
           }
           if presentation == .expanded {
@@ -83,12 +86,6 @@ struct IslandView: View {
     .animation(reduceMotion ? nil : Motion.morph, value: liveSide)
     .padding(.top, metrics.topGap)
     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-  }
-
-  /// The live bar's or banner's width, as they were before the island opened.
-  private var barWidth: CGFloat {
-    let live = metrics.liveWidth(side: liveSide)
-    return store.recentEvent == nil ? live : metrics.bannerSize(liveWidth: live).width
   }
 
   private func size(for presentation: IslandStore.Presentation) -> CGSize {
@@ -278,7 +275,6 @@ private struct CompactBar: View {
 
 private struct EventBanner: View {
   let event: IslandEvent
-  let extra: Int
 
   var body: some View {
     Button {
@@ -292,17 +288,12 @@ private struct EventBanner: View {
         VStack(alignment: .leading, spacing: 2) {
           HStack(spacing: 6) {
             Text(title).font(.system(size: 13, weight: .semibold))
-            Text(reference).font(.system(size: 11)).foregroundStyle(.white.opacity(0.45))
+            Text(event.reference).font(.system(size: 11)).foregroundStyle(.white.opacity(0.45))
           }
           Text(detail).font(.system(size: 12)).foregroundStyle(.white.opacity(0.7))
         }
         .lineLimit(1)
         Spacer(minLength: 4)
-        if extra > 0 {
-          Text("+\(extra)").font(.system(size: 11, weight: .semibold)).monospacedDigit()
-            .padding(.horizontal, 7).padding(.vertical, 3)
-            .background(Capsule().fill(.white.opacity(0.1)))
-        }
       }
       .padding(.horizontal, 16).padding(.top, 6).padding(.bottom, 10)
       .contentShape(Rectangle())
@@ -323,10 +314,12 @@ private struct EventBanner: View {
     guard event.kind != .failed, let note = event.note else { return event.detail }
     return "\(note) · \(event.detail)"
   }
+}
 
-  /// "owner/repo #12" from the stored "owner/repo #12 · Merged" title.
-  private var reference: String {
-    event.title.components(separatedBy: " · ").first ?? event.title
+extension IslandEvent {
+  /// "owner/repo #12" from the stored "owner/repo #12 · Merged" title: the PR it is about.
+  var reference: String {
+    title.components(separatedBy: " · ").first ?? title
   }
 }
 
@@ -349,16 +342,8 @@ private struct ExpandedIsland: View {
   }
 
   static func chromeHeight(_ metrics: IslandMetrics, store: IslandStore) -> CGFloat {
-    topInset(metrics, store: store) + barHeight(metrics, store: store) + headerHeight
+    (store.isLive ? metrics.closedHeight : topInset(metrics, store: store)) + headerHeight
       + (showsFilterBar(store) ? filterBarHeight : 0) + footerHeight(store) + 1
-  }
-
-  /// Whether the island opened under the live bar or a banner, which stay on top.
-  static func showsBar(_ store: IslandStore) -> Bool { store.recentEvent != nil || store.isLive }
-
-  static func barHeight(_ metrics: IslandMetrics, store: IslandStore) -> CGFloat {
-    store.recentEvent != nil
-      ? metrics.bannerSize(liveWidth: 0).height : store.isLive ? metrics.closedHeight : 0
   }
 
   /// State filters belong to Activity, in both layouts.
@@ -367,9 +352,9 @@ private struct ExpandedIsland: View {
       && store.detailsPullRequest == nil
   }
 
-  /// Clears the notch; the live bar or a banner on top already does.
+  /// Clears the notch; the live bar on top already does.
   static func topInset(_ metrics: IslandMetrics, store: IslandStore) -> CGFloat {
-    showsBar(store) ? 0 : metrics.hasNotch ? metrics.notchHeight + 4 : 10
+    store.isLive ? 0 : metrics.hasNotch ? metrics.notchHeight + 4 : 10
   }
 
   var body: some View {

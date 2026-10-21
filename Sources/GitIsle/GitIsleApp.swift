@@ -54,11 +54,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
       return
     }
     let arguments = CommandLine.arguments
-    // Snapshots open the island unless they show it closed; `--expanded` opens it over a banner.
-    if arguments.contains("--expanded")
-      || (arguments.contains("--snapshot") && !arguments.contains("--collapsed")
-        && !arguments.contains("--banner") && !arguments.contains("--event")
-        && !arguments.contains("--story"))
+    if (arguments.contains("--expanded") || arguments.contains("--snapshot"))
+      && !arguments.contains("--collapsed") && !arguments.contains("--banner")
+      && !arguments.contains("--event") && !arguments.contains("--story")
     {
       store.expanded = true
     }
@@ -124,6 +122,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         store.openFile(arguments[file + 1])
       }
     }
+    // `--banner` previews two changes at once: the merge, then a failure in its turn.
     if arguments.contains("--banner"),
       let pr = store.github?.pullRequests.first(where: {
         $0.state == "MERGED"
@@ -132,7 +131,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
       store.showEvent(
         IslandEvent(
           id: "demo-banner", title: "\(pr.repository) #\(pr.number) · Merged", detail: pr.title,
-          url: pr.url, occurredAt: Date(), kind: .merged, repository: pr.repository), extra: 1)
+          url: pr.url, occurredAt: Date(), kind: .merged, repository: pr.repository))
+      store.previewEvent(.failed)
     }
     if arguments.contains("--update"), store.isDemo { store.updater.preview() }
     // `--story <kind>` is one PR's life for the website: the banner, with the live bar only

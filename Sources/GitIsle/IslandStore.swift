@@ -18,8 +18,6 @@ final class IslandStore {
   var usageRefreshing = false
   var events: [IslandEvent] = []
   var recentEvent: IslandEvent?
-  /// Other changes that arrived with `recentEvent`.
-  var recentEventExtra = 0
   var expanded = false {
     didSet {
       if !expanded {
@@ -28,12 +26,8 @@ final class IslandStore {
         dropdown = nil
         detailsID = nil
       }
-      // The open island keeps a banner on top; closing it after the banner's time is up
-      // takes the banner along, so the island doesn't fall back to it.
-      if !expanded, recentEvent != nil, Date() >= bannerEnds {
-        notificationTask?.cancel()
-        recentEvent = nil
-      }
+      // The open island shows every change, so banners showing or waiting have done their job.
+      if expanded { clearBanners() }
     }
   }
   var tab: IslandTab = .activity
@@ -324,9 +318,11 @@ final class IslandStore {
   /// Takes back what the filter now hides, and refreshes active PRs right away so the live bar
   /// is current. Every repository is already loaded, so nothing else needs reading.
   private func repositoryFilterChanged() {
+    bannerQueue.removeAll { !shows($0.repository) }
     if let event = recentEvent, !shows(event.repository) {
       notificationTask?.cancel()
       recentEvent = nil
+      if !bannerQueue.isEmpty { present(bannerQueue.removeFirst()) }
     }
     guard !isDemo else { return }
     let hidden = events.filter { !shows($0.repository) }.map(\.id)
@@ -377,9 +373,8 @@ final class IslandStore {
   @ObservationIgnored private var notificationTask: Task<Void, Never>?
   @ObservationIgnored private var liveCycle: Task<Void, Never>?
   @ObservationIgnored private var liveShownFor: TimeInterval = 0
-  /// When the banner's time is up; it stays longer while the pointer is on it or the island is
-  /// open.
-  @ObservationIgnored private var bannerEnds = Date.distantPast
+  /// Banners waiting for the one showing to finish, in turn.
+  @ObservationIgnored private var bannerQueue: [IslandEvent] = []
   @ObservationIgnored private var lastGitHubRefresh = Date.distantPast
   @ObservationIgnored private var lastActiveRefresh = Date.distantPast
   /// When every search last ran in full; between those, a one-point check finds what changed.
@@ -851,10 +846,10 @@ final class IslandStore {
       pullRequestDetails[pr.id] = details
       announced[index].note = details.failureNote
     }
-    if settings.bannersEnabled,
-      let latest = announced.min(by: { $0.kind.bannerPriority < $1.kind.bannerPriority })
-    {
-      showEvent(latest, extra: announced.count - 1)
+    if settings.bannersEnabled {
+      for event in announced.sorted(by: { $0.kind.bannerPriority < $1.kind.bannerPriority }) {
+        showEvent(event)
+      }
     }
     for event in announced { notify(event) }
   }
@@ -971,21 +966,40 @@ final class IslandStore {
     expanded = false
   }
 
-  func showEvent(_ event: IslandEvent, extra: Int = 0) {
-    guard shows(event.repository) else { return }
+  /// Shows a banner for 5 seconds, longer while the pointer rests on it. Banners arriving
+  /// meanwhile wait their turn, each with its full time; one about the same PR replaces the
+  /// waiting one. The open island already shows the change, so it gets no banner.
+  func showEvent(_ event: IslandEvent) {
+    guard shows(event.repository), !expanded else { return }
+    guard recentEvent != nil else { return present(event) }
+    if let index = bannerQueue.firstIndex(where: { $0.reference == event.reference }) {
+      bannerQueue[index] = event
+    } else {
+      bannerQueue.append(event)
+    }
+  }
+
+  private func present(_ event: IslandEvent) {
     recentEvent = event
-    recentEventExtra = extra
     notificationTask?.cancel()
-    bannerEnds = Date().addingTimeInterval(5)
     notificationTask = Task { [weak self] in
       do {
         try await Task.sleep(for: .seconds(5))
-        // Keep the banner while the pointer rests on it or the island is open; closing the
-        // island takes it along.
-        while let self, self.hovered || self.expanded { try await Task.sleep(for: .seconds(0.5)) }
+        while self?.hovered == true { try await Task.sleep(for: .seconds(0.5)) }
       } catch { return }
-      self?.recentEvent = nil
+      guard let self else { return }
+      if bannerQueue.isEmpty {
+        recentEvent = nil
+      } else {
+        withAnimation(Motion.morph) { present(bannerQueue.removeFirst()) }
+      }
     }
+  }
+
+  private func clearBanners() {
+    notificationTask?.cancel()
+    bannerQueue = []
+    recentEvent = nil
   }
 
   /// Every kind of announcement, in the order the showcase plays them.
