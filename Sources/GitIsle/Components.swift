@@ -68,6 +68,13 @@ enum Motion {
 
 extension AnyTransition {
   /// Content arrives after the shape has started growing and leaves before it shrinks.
+  /// The live bar's next PR rises in as the last one leaves upward.
+  static var liveTurn: AnyTransition {
+    .asymmetric(
+      insertion: .move(edge: .bottom).combined(with: .opacity),
+      removal: .move(edge: .top).combined(with: .opacity))
+  }
+
   static var islandContent: AnyTransition {
     .asymmetric(
       insertion: .opacity.combined(with: .scale(scale: 0.96, anchor: .top))

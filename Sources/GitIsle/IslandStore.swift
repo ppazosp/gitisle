@@ -64,6 +64,10 @@ final class IslandStore {
   /// Your PRs that are merging, and your PRs with checks running. These make the island live.
   private(set) var merging: [PullRequest] = []
   private(set) var checking: [PullRequest] = []
+  /// The live PR the bar shows, while more than one is live.
+  private var liveID: String?
+  /// The pointer is on the live bar, which holds it still.
+  var liveHovered = false
   private(set) var repositories: [RepoSection] = []
   /// State columns for the board layout, after the repository filter.
   private(set) var sections: [PRSection] = []
@@ -371,6 +375,8 @@ final class IslandStore {
   @ObservationIgnored private var loops: [Task<Void, Never>] = []
   @ObservationIgnored private var hoverTask: Task<Void, Never>?
   @ObservationIgnored private var notificationTask: Task<Void, Never>?
+  @ObservationIgnored private var liveCycle: Task<Void, Never>?
+  @ObservationIgnored private var liveShownFor: TimeInterval = 0
   /// When the banner's time is up; it stays longer while the pointer is on it or the island is
   /// open.
   @ObservationIgnored private var bannerEnds = Date.distantPast
@@ -405,8 +411,52 @@ final class IslandStore {
 
   var isLive: Bool { !merging.isEmpty || !checking.isEmpty }
 
-  /// The PR the live state is about: the first one merging, else the first running checks.
-  var livePullRequest: PullRequest? { merging.first ?? checking.first }
+  /// Every live PR, merging first; the live bar cycles through them.
+  var livePullRequests: [PullRequest] { merging + checking }
+
+  /// The PR the live bar shows now.
+  var livePullRequest: PullRequest? {
+    let live = livePullRequests
+    return live.first { $0.id == liveID } ?? live.first
+  }
+
+  /// Where the live bar is in its cycle, from 0.
+  var liveIndex: Int {
+    livePullRequests.firstIndex { $0.id == livePullRequest?.id } ?? 0
+  }
+
+  /// Moves the live bar by `offset` PRs, around the cycle.
+  func stepLive(_ offset: Int) { showLive(at: liveIndex + offset) }
+
+  func showLive(at index: Int) {
+    let live = livePullRequests
+    guard live.count > 1 else { return }
+    liveShownFor = 0
+    withAnimation(Motion.snappy) {
+      liveID = live[(index % live.count + live.count) % live.count].id
+    }
+  }
+
+  /// With more than one PR live, the bar moves to the next every 5 seconds, holding still while
+  /// the pointer is on it.
+  private func cycleLive() {
+    guard livePullRequests.count > 1 else {
+      liveCycle?.cancel()
+      liveCycle = nil
+      return
+    }
+    guard liveCycle == nil else { return }
+    liveShownFor = 0
+    liveCycle = Task { [weak self] in
+      while true {
+        do { try await Task.sleep(for: .seconds(0.5)) } catch { return }
+        guard let self else { return }
+        if liveHovered { continue }
+        liveShownFor += 0.5
+        if liveShownFor >= 5 { stepLive(1) }
+      }
+    }
+  }
 
   /// Stats is open in the expanded island, so its usage figures are on screen.
   var showingStats: Bool {
@@ -466,6 +516,7 @@ final class IslandStore {
         && ((pr.checkSummary?.pending ?? 0) > 0 || pr.checks == "PENDING")
     }
     .sorted { $0.updatedAt > $1.updatedAt }
+    cycleLive()
     var avatars: [String: URL] = [:]
     for pr in all where pr.group != nil {
       if avatars[pr.repository] == nil || pr.ownerAvatar != nil {
@@ -646,6 +697,8 @@ final class IslandStore {
     systemObservers = []
     hoverTask?.cancel()
     notificationTask?.cancel()
+    liveCycle?.cancel()
+    liveCycle = nil
   }
 
   func refreshStats() async {

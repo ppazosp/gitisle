@@ -137,104 +137,138 @@ private struct CompactBar: View {
   @Binding var side: CGFloat
   @State private var leadingWidth: CGFloat = 0
   @State private var trailingWidth: CGFloat = 0
+  /// The open island has room for arrows to move between live PRs.
+  private var showsArrows: Bool { store.expanded && store.livePullRequests.count > 1 }
 
   var body: some View {
-    Button {
-      // The top row is about one PR; clicking opens it. A long hover opens the island.
+    HStack(spacing: 0) {
+      HStack(spacing: 6) {
+        if showsArrows { chevron("chevron.left", -1) }
+        leading
+      }
+      .fixedSize()
+      .onGeometryChange(for: CGFloat.self) {
+        $0.size.width
+      } action: { width in
+        leadingWidth = width
+        side = max(leadingWidth, trailingWidth)
+      }
+      .frame(maxWidth: .infinity, alignment: .leading)
+      // Reserved for the camera housing: content is never laid out under the notch.
+      Color.clear.frame(width: metrics.liveGap)
+      HStack(spacing: 6) {
+        trailing
+        if showsArrows { chevron("chevron.right", 1) }
+      }
+      .fixedSize()
+      .onGeometryChange(for: CGFloat.self) {
+        $0.size.width
+      } action: { width in
+        trailingWidth = width
+        side = max(leadingWidth, trailingWidth)
+      }
+      .frame(maxWidth: .infinity, alignment: .trailing)
+    }
+    .font(.system(size: 13, weight: .semibold))
+    .monospacedDigit()
+    .lineLimit(1)
+    .padding(.horizontal, metrics.livePadding)
+    .frame(maxWidth: .infinity, minHeight: metrics.closedHeight, maxHeight: metrics.closedHeight)
+    .contentShape(Rectangle())
+    // The top row is about one PR; clicking opens it. A hover opens the island under it.
+    .onTapGesture {
       if let pr = store.livePullRequest {
         NSWorkspace.shared.open(pr.url)
       } else {
         store.expanded = true
       }
-    } label: {
-      HStack(spacing: 0) {
-        HStack(spacing: 6) { leading }
-          .fixedSize()
-          .onGeometryChange(for: CGFloat.self) {
-            $0.size.width
-          } action: { width in
-            leadingWidth = width
-            side = max(leadingWidth, trailingWidth)
-          }
-          .frame(maxWidth: .infinity, alignment: .leading)
-        // Reserved for the camera housing: content is never laid out under the notch.
-        Color.clear.frame(width: metrics.liveGap)
-        trailing
-          .fixedSize()
-          .onGeometryChange(for: CGFloat.self) {
-            $0.size.width
-          } action: { width in
-            trailingWidth = width
-            side = max(leadingWidth, trailingWidth)
-          }
-          .frame(maxWidth: .infinity, alignment: .trailing)
-      }
-      .font(.system(size: 13, weight: .semibold))
-      .monospacedDigit()
-      .lineLimit(1)
-      .padding(.horizontal, metrics.livePadding)
-      .frame(maxWidth: .infinity, minHeight: metrics.closedHeight, maxHeight: metrics.closedHeight)
-      .contentShape(Rectangle())
     }
-    .buttonStyle(.plain)
+    .onHover { store.liveHovered = $0 }
+    .accessibilityElement(children: .contain)
     .accessibilityLabel(accessibilityText)
+    .accessibilityAddTraits(.isButton)
     .accessibilityHint(
       store.livePullRequest == nil ? "Expands the island" : "Opens the pull request on GitHub")
   }
 
   // Icons and numbers only: the closed island is too small for sentences.
   @ViewBuilder private var leading: some View {
-    if let first = store.merging.first {
-      GlyphView(glyph: .mergeQueue, size: 15).foregroundStyle(Palette.merging)
-        .phaseAnimator([1.0, 0.45]) { glyph, opacity in
-          glyph.opacity(opacity)
-        } animation: { _ in
-          .easeInOut(duration: 1.1)
+    if let pr = store.livePullRequest {
+      HStack(spacing: 6) {
+        if pr.isMerging {
+          GlyphView(glyph: .mergeQueue, size: 15).foregroundStyle(Palette.merging)
+            .phaseAnimator([1.0, 0.45]) { glyph, opacity in
+              glyph.opacity(opacity)
+            } animation: { _ in
+              .easeInOut(duration: 1.1)
+            }
+        } else if let summary = pr.checkSummary {
+          CheckRing(summary: summary, size: 14, lineWidth: 2.2)
+        } else {
+          GlyphView(glyph: .clock, size: 14).foregroundStyle(Palette.merging)
         }
-      number(first, more: store.merging.count - 1)
-    } else if let first = store.checking.first {
-      if let summary = first.checkSummary {
-        CheckRing(summary: summary, size: 14, lineWidth: 2.2)
-      } else {
-        GlyphView(glyph: .clock, size: 14).foregroundStyle(Palette.merging)
+        Text(verbatim: "#\(pr.number)")
       }
-      number(first, more: store.checking.count - 1)
-    }
-  }
-
-  @ViewBuilder private func number(_ pr: PullRequest, more: Int) -> some View {
-    Text(verbatim: "#\(pr.number)")
-    if more > 0 {
-      Text(verbatim: "+\(more)").foregroundStyle(.white.opacity(0.45))
+      .id(pr.id)
+      .transition(.liveTurn)
+      if store.livePullRequests.count > 1 {
+        Text(verbatim: "\(store.liveIndex + 1)/\(store.livePullRequests.count)")
+          .font(.system(size: 11, weight: .semibold))
+          .foregroundStyle(.white.opacity(0.45))
+          .contentTransition(.numericText(value: Double(store.liveIndex)))
+      }
     }
   }
 
   @ViewBuilder private var trailing: some View {
-    if let first = store.merging.first {
-      HStack(spacing: 6) {
-        // The merge queue's checks, as the ring shows the PR's own while they run.
-        if let queue = first.queueChecks { CheckRing(summary: queue, size: 14, lineWidth: 2.2) }
-        if let since = first.mergingSince {
-          // How long the PR has been merging; the system updates the timer without polling.
-          Text(since, style: .timer)
-            .foregroundStyle(Palette.merging)
-            .multilineTextAlignment(.trailing)
-            .fixedSize()
-        } else if let queue = first.queueChecks {
-          Text(verbatim: "\(queue.passed)/\(queue.total)").foregroundStyle(.white.opacity(0.6))
+    if let pr = store.livePullRequest {
+      Group {
+        if pr.isMerging {
+          HStack(spacing: 6) {
+            // The merge queue's checks, as the ring shows the PR's own while they run.
+            if let queue = pr.queueChecks { CheckRing(summary: queue, size: 14, lineWidth: 2.2) }
+            if let since = pr.mergingSince {
+              // How long the PR has been merging; the system updates the timer without polling.
+              Text(since, style: .timer)
+                .foregroundStyle(Palette.merging)
+                .multilineTextAlignment(.trailing)
+                .fixedSize()
+            } else if let queue = pr.queueChecks {
+              Text(verbatim: "\(queue.passed)/\(queue.total)").foregroundStyle(.white.opacity(0.6))
+            }
+          }
+        } else if let summary = pr.checkSummary {
+          Text(verbatim: "\(summary.passed)/\(summary.total)")
+            .foregroundStyle(.white.opacity(0.6))
+            .contentTransition(.numericText(value: Double(summary.passed)))
         }
       }
-    } else if store.merging.isEmpty, let summary = store.checking.first?.checkSummary {
-      Text(verbatim: "\(summary.passed)/\(summary.total)")
-        .foregroundStyle(.white.opacity(0.6))
-        .contentTransition(.numericText(value: Double(summary.passed)))
+      .id(pr.id)
+      .transition(.liveTurn)
     }
+  }
+
+  private func chevron(_ symbol: String, _ offset: Int) -> some View {
+    Button {
+      store.stepLive(offset)
+    } label: {
+      Image(systemName: symbol).font(.system(size: 9, weight: .bold))
+        .foregroundStyle(.white.opacity(0.6))
+        .frame(width: 14, height: 18).contentShape(Rectangle())
+    }
+    .buttonStyle(.plain)
+    .accessibilityLabel(offset < 0 ? "Previous live pull request" : "Next live pull request")
   }
 
   private var accessibilityText: String {
     var parts = ["GitIsle"]
-    if let pr = store.merging.first { parts.append("pull request \(pr.number) merging") }
-    if let pr = store.checking.first { parts.append("checks running on \(pr.number)") }
+    if let pr = store.livePullRequest {
+      parts.append(
+        pr.isMerging ? "pull request \(pr.number) merging" : "checks running on \(pr.number)")
+    }
+    if store.livePullRequests.count > 1 {
+      parts.append("\(store.liveIndex + 1) of \(store.livePullRequests.count) live")
+    }
     return parts.joined(separator: ", ")
   }
 
