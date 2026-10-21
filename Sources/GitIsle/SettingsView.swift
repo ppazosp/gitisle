@@ -233,10 +233,10 @@ struct SettingsView: View {
         DisplayPicker(displayID: $draft.displayID)
       }
       SettingsRow("Open after") {
-        DelaySlider(value: $draft.hoverDelay, range: 0.05...0.9)
+        DelaySlider(value: $draft.hoverDelay)
       }
       SettingsRow("Close after") {
-        DelaySlider(value: $draft.closeDelay, range: 0.1...1.5)
+        DelaySlider(value: $draft.closeDelay)
       }
       SettingsRow("Show in full screen") {
         Toggle("", isOn: $draft.showInFullscreen).islandToggle()
@@ -404,10 +404,11 @@ extension View {
   }
 }
 
-/// A delay in milliseconds, picked on a slider.
+/// A delay in milliseconds, picked on a slider in 50 ms steps. Every delay shares one range,
+/// so their sliders line up.
 private struct DelaySlider: View {
   @Binding var value: Double
-  let range: ClosedRange<Double>
+  let range: ClosedRange<Double> = 0.05...1
 
   var body: some View {
     HStack(spacing: 8) {
