@@ -42,6 +42,9 @@ struct AppSettings: Codable, Equatable {
     ProcessInfo.processInfo.environment["CLAUDE_CONFIG_DIR"] ?? NSHomeDirectory() + "/.claude"
   /// Island banners for changes, separate from system notifications.
   var bannersEnabled = true
+  /// A banner shows its time running out: along the closed island's edge, and as a bar in the
+  /// open island.
+  var bannerTimer = true
   var notificationSound = true
   /// Which changes announce themselves, by `PRStatus` raw value.
   var announcedKinds: Set<String> = [
@@ -85,6 +88,7 @@ struct AppSettings: Codable, Equatable {
     codexHome = value(.codexHome, defaults.codexHome)
     claudeHome = value(.claudeHome, defaults.claudeHome)
     bannersEnabled = value(.bannersEnabled, defaults.bannersEnabled)
+    bannerTimer = value(.bannerTimer, defaults.bannerTimer)
     notificationSound = value(.notificationSound, defaults.notificationSound)
     announcedKinds = value(.announcedKinds, defaults.announcedKinds)
     // Settings saved before kinds were tracked had offered these.

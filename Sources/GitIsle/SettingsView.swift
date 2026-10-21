@@ -166,6 +166,11 @@ struct SettingsView: View {
       SettingsRow("Island banner") {
         Toggle("", isOn: $draft.bannersEnabled).islandToggle()
       }
+      SettingsRow("Banner timer") {
+        Toggle("", isOn: $draft.bannerTimer).islandToggle()
+      }
+      .disabled(!store.settings.bannersEnabled)
+      .opacity(store.settings.bannersEnabled ? 1 : 0.45)
       SettingsRow("System notifications") {
         Toggle(
           "",

@@ -45,7 +45,7 @@ struct IslandView: View {
     .padding(.horizontal, ear)
     .frame(width: size.width, height: size.height, alignment: .top)
     .overlay {
-      if presentation == .banner, let event = store.recentEvent {
+      if presentation == .banner, store.settings.bannerTimer, let event = store.recentEvent {
         BannerTime(
           color: event.kind.color, shownAt: store.bannerShownAt, ear: ear,
           radius: metrics.cornerRadius(for: presentation), attached: metrics.hasNotch
@@ -356,9 +356,11 @@ private struct ActivityRow: View {
     HStack(spacing: 2) {
       ZStack {
         if let event = store.recentEvent {
-          RowBanner(event: event, shownAt: store.bannerShownAt)
-            .id(event.id)
-            .transition(.liveTurn)
+          RowBanner(
+            event: event, shownAt: store.bannerShownAt, timer: store.settings.bannerTimer
+          )
+          .id(event.id)
+          .transition(.liveTurn)
         } else if let pr = store.livePullRequest {
           LiveCard(pr: pr)
             .id(pr.id)
@@ -419,6 +421,8 @@ private struct ActivityRow: View {
 private struct RowBanner: View {
   let event: IslandEvent
   let shownAt: Date
+  /// Shows the bar; without it, the bar's room stays empty so the row keeps its layout.
+  let timer: Bool
   /// How much of its time has passed, from 0 to 1.
   @State private var elapsed = 0.0
 
@@ -453,6 +457,7 @@ private struct RowBanner: View {
         }
         .frame(height: 2)
         .padding(.leading, 43)
+        .opacity(timer ? 1 : 0)
       }
       .padding(.horizontal, 10).padding(.top, 4).padding(.bottom, 4)
       .contentShape(Rectangle())
