@@ -140,7 +140,7 @@ struct DropdownMenu: View {
     }
     .padding(Dropdown.padding)
     .fixedSize()
-    .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color(white: 0.1)))
+    .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Palette.popover))
     .overlay(
       RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Palette.hairline)
     )

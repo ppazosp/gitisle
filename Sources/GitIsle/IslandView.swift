@@ -1027,7 +1027,7 @@ struct RepositoryPicker: View {
     }
     .padding(Self.padding)
     .frame(width: Self.width)
-    .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color(white: 0.1)))
+    .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Palette.popover))
     .overlay(
       RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Palette.hairline)
     )

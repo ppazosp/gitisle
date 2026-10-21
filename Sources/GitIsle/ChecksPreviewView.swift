@@ -38,22 +38,23 @@ struct ChecksPopover: View {
   let preview: ChecksPreview
 
   static let width: CGFloat = 300
-  /// More would cover too much of the island; the PR's page lists them all.
-  static let rows = 8
+  /// More scroll, so the preview never covers too much of the island.
+  static let rows = 10
 
   var body: some View {
     let checks = store.checkLists[preview.key]
     VStack(alignment: .leading, spacing: 0) {
       header(checks)
       if let checks, !checks.isEmpty {
-        ForEach(Array(checks.prefix(Self.rows).enumerated()), id: \.offset) { _, check in
-          CheckLine(check: check)
+        ScrollView {
+          VStack(spacing: 0) {
+            ForEach(Array(checks.enumerated()), id: \.offset) { _, check in
+              CheckLine(check: check)
+            }
+          }
         }
-        if checks.count > Self.rows {
-          Text("\(checks.count - Self.rows) more on the PR's page")
-            .font(.system(size: 11)).foregroundStyle(.white.opacity(0.4))
-            .padding(.horizontal, 8).padding(.vertical, 6)
-        }
+        .scrollIndicators(.automatic)
+        .frame(height: CGFloat(min(checks.count, Self.rows)) * CheckLine.height)
       } else {
         HStack(spacing: 8) {
           if checks == nil && !store.checkListErrors.contains(preview.key) {
@@ -70,7 +71,7 @@ struct ChecksPopover: View {
     }
     .padding(Dropdown.padding)
     .frame(width: Self.width, alignment: .leading)
-    .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color(white: 0.1)))
+    .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Palette.popover))
     .overlay(
       RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Palette.hairline)
     )
@@ -93,8 +94,7 @@ struct ChecksPopover: View {
       }
     }
     .padding(.horizontal, 8)
-    .frame(height: Dropdown.headerHeight, alignment: .bottom)
-    .padding(.bottom, 2)
+    .frame(height: 22)
   }
 }
 
@@ -102,6 +102,8 @@ struct ChecksPopover: View {
 private struct CheckLine: View {
   let check: Check
   @State private var hovered = false
+
+  static let height: CGFloat = 26
 
   var body: some View {
     Button {
@@ -132,7 +134,7 @@ private struct CheckLine: View {
         }
       }
       .padding(.horizontal, 8)
-      .frame(height: 26)
+      .frame(height: Self.height)
       .background(
         RoundedRectangle(cornerRadius: 7).fill(
           .white.opacity(hovered && check.url != nil ? 0.07 : 0))

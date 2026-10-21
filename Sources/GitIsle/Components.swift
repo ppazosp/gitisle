@@ -103,6 +103,8 @@ enum Palette {
   static let update = Color(red: 0.24, green: 0.56, blue: 1.0)
   static let surface = Color.white.opacity(0.055)
   static let hairline = Color.white.opacity(0.09)
+  /// Dropdowns and previews over the island: a shade off its black, edged with a hairline.
+  static let popover = Color(white: 0.06)
 }
 
 enum Motion {
