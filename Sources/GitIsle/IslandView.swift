@@ -351,8 +351,11 @@ private struct ActivityRow: View {
 
   var body: some View {
     let live = store.livePullRequests
-    // Arrows only while several PRs are live and no banner has the row.
+    let recent = store.recentActivity
+    // Arrows only while several PRs are live and no banner has the row, or, with nothing live,
+    // to look back through recent activity.
     let steps = store.recentEvent == nil && live.count > 1
+    let browses = store.recentEvent == nil && live.isEmpty && recent.count > 1
     HStack(spacing: 2) {
       ZStack {
         if let event = store.recentEvent {
@@ -365,10 +368,8 @@ private struct ActivityRow: View {
           LiveCard(pr: pr)
             .id(pr.id)
             .transition(.liveTurn)
-        } else if let event = store.lastActivity {
-          LastActivity(event: event)
-            .id(event.id)
-            .transition(.liveTurn)
+        } else if !store.recentActivity.isEmpty {
+          ActivityInbox(store: store).transition(.opacity)
         } else {
           quiet.transition(.opacity)
         }
@@ -384,6 +385,20 @@ private struct ActivityRow: View {
             .foregroundStyle(.white.opacity(0.45))
             .contentTransition(.numericText(value: Double(store.liveIndex)))
           arrow("chevron.right", label: "Next live pull request") { store.stepLive(1) }
+        }
+        .padding(.bottom, 4)
+        .transition(.opacity)
+      } else if browses {
+        let index = min(store.activityIndex, recent.count - 1)
+        HStack(spacing: 0) {
+          arrow("chevron.left", label: "Older activity") { store.stepActivity(1) }
+            .disabled(index == recent.count - 1)
+          Text(verbatim: "\(index + 1)/\(recent.count)")
+            .font(.system(size: 11, weight: .semibold)).monospacedDigit()
+            .foregroundStyle(.white.opacity(0.45))
+            .contentTransition(.numericText(value: Double(index)))
+          arrow("chevron.right", label: "Newer activity") { store.stepActivity(-1) }
+            .disabled(index == 0)
         }
         .padding(.bottom, 4)
         .transition(.opacity)
@@ -412,11 +427,19 @@ private struct ActivityRow: View {
   private func arrow(_ symbol: String, label: String, action: @escaping () -> Void) -> some View {
     Button(action: action) {
       Image(systemName: symbol).font(.system(size: 10, weight: .bold))
-        .foregroundStyle(.white.opacity(0.6))
         .frame(width: 22, height: 32).contentShape(Rectangle())
     }
-    .buttonStyle(.plain)
+    .buttonStyle(ArrowStyle())
     .accessibilityLabel(label)
+  }
+}
+
+/// Dims an arrow that has nowhere to go.
+private struct ArrowStyle: ButtonStyle {
+  @Environment(\.isEnabled) private var enabled
+
+  func makeBody(configuration: Configuration) -> some View {
+    configuration.label.foregroundStyle(.white.opacity(enabled ? 0.6 : 0.15))
   }
 }
 
@@ -512,47 +535,82 @@ private struct RowBanner: View {
   }
 }
 
-/// The latest change, quiet, when nothing is happening: what it was, and how long ago on the
-/// right. A click opens it.
-private struct LastActivity: View {
-  let event: IslandEvent
+/// The open island's inbox for quiet moments: recent changes as a stack, newest in front. The
+/// stack steps back through them; the rest of the card opens the one in front.
+private struct ActivityInbox: View {
+  let store: IslandStore
 
   var body: some View {
+    let items = store.recentActivity
+    let index = min(store.activityIndex, max(items.count - 1, 0))
+    HStack(spacing: 11) {
+      Button {
+        store.stepActivity(1)
+      } label: {
+        stack(Array(items.dropFirst(index).prefix(3)))
+      }
+      .buttonStyle(.plain)
+      .disabled(items.count < 2)
+      .accessibilityLabel("Older activity")
+      if items.indices.contains(index) {
+        card(items[index])
+          .id(items[index].id)
+          .transition(.liveTurn)
+      }
+    }
+    .padding(.leading, items.count > 1 ? 30 : 10).padding(.trailing, 10)
+    .padding(.top, 6).padding(.bottom, 10)
+  }
+
+  /// The one in front and up to two behind it, peeking out to the left.
+  private func stack(_ events: [IslandEvent]) -> some View {
+    ZStack {
+      ForEach(Array(events.enumerated()).reversed(), id: \.element.id) { depth, event in
+        let color = event.kind.color
+        GlyphView(glyph: event.kind.eventGlyph, size: 16)
+          .foregroundStyle(color.opacity(depth == 0 ? 0.9 : 0.75))
+          .frame(width: 32, height: 32)
+          .background(Circle().fill(color.opacity(0.2)))
+          // Opaque underneath, so the circles behind don't show through.
+          .background(Circle().fill(Color(white: 0.05)))
+          .overlay(Circle().strokeBorder(.black, lineWidth: 2))
+          .scaleEffect(1 - 0.12 * CGFloat(depth))
+          .offset(x: -12 * CGFloat(depth))
+          .opacity(1 - 0.2 * Double(depth))
+          .zIndex(-Double(depth))
+          .transition(
+            .asymmetric(insertion: .opacity, removal: .scale(scale: 1.2).combined(with: .opacity)))
+      }
+    }
+    .frame(width: 32, height: 32)
+    .contentShape(Rectangle())
+  }
+
+  private func card(_ event: IslandEvent) -> some View {
     Button {
       NSWorkspace.shared.open(event.url)
     } label: {
       HStack(spacing: 11) {
-        GlyphView(glyph: event.kind.eventGlyph, size: 16)
-          .foregroundStyle(event.kind.color.opacity(0.7))
-          .frame(width: 32, height: 32)
-          .background(Circle().fill(event.kind.color.opacity(0.1)))
         VStack(alignment: .leading, spacing: 2) {
           HStack(spacing: 6) {
             Text(event.kind.eventTitle).font(.system(size: 13, weight: .semibold))
-              .foregroundStyle(.white.opacity(0.65))
+              .foregroundStyle(.white.opacity(0.7))
             Text(event.reference).font(.system(size: 11)).foregroundStyle(.white.opacity(0.35))
           }
-          Text(event.detail).font(.system(size: 12)).foregroundStyle(.white.opacity(0.45))
+          Text(event.detail).font(.system(size: 12)).foregroundStyle(.white.opacity(0.5))
         }
         .lineLimit(1)
         Spacer(minLength: 6)
-        VStack(alignment: .trailing, spacing: 1) {
-          Text(
-            Format.age(event.occurredAt)
-              + (event.occurredAt.timeIntervalSinceNow > -60 ? "" : " ago")
-          )
+        Text(Format.age(event.occurredAt) + (Format.age(event.occurredAt) == "now" ? "" : " ago"))
           .font(.system(size: 12, weight: .semibold))
-          .foregroundStyle(.white.opacity(0.55))
-          Text("last activity").font(.system(size: 10.5)).foregroundStyle(.white.opacity(0.35))
-        }
-        .fixedSize()
+          .foregroundStyle(.white.opacity(0.5))
+          .fixedSize()
       }
-      .padding(.horizontal, 10).padding(.top, 6).padding(.bottom, 10)
       .contentShape(Rectangle())
     }
     .buttonStyle(.plain)
     .accessibilityLabel(
-      "Last activity, \(Format.age(event.occurredAt)): \(event.kind.eventTitle), \(event.detail)"
+      "\(event.kind.eventTitle), \(Format.age(event.occurredAt)): \(event.detail)"
     )
     .accessibilityHint("Opens the pull request on GitHub")
   }

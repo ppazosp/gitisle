@@ -32,6 +32,8 @@ final class IslandStore {
       }
       // The live bar and the activity row swap places, so neither is under the pointer now.
       liveHovered = false
+      // The inbox opens on the newest change.
+      activityIndex = 0
     }
   }
   var tab: IslandTab = .activity
@@ -66,6 +68,8 @@ final class IslandStore {
   private var liveID: String?
   /// The pointer is on the live bar, which holds it still.
   var liveHovered = false
+  /// The recent change the open island's inbox shows, from 0 for the newest.
+  var activityIndex = 0
   private(set) var repositories: [RepoSection] = []
   /// State columns for the board layout, after the repository filter.
   private(set) var sections: [PRSection] = []
@@ -410,11 +414,23 @@ final class IslandStore {
 
   var isLive: Bool { !merging.isEmpty || !checking.isEmpty }
 
-  /// The latest change a banner would announce, in the repositories shown, for the open
-  /// island's quiet moments.
-  var lastActivity: IslandEvent? {
-    events.first {
-      settings.announcedKinds.contains($0.kind.rawValue) && shows($0.repository)
+  /// Recent changes a banner would announce, newest first, in the repositories shown: the open
+  /// island's inbox for quiet moments.
+  var recentActivity: [IslandEvent] {
+    Array(
+      events.lazy.filter {
+        self.settings.announcedKinds.contains($0.kind.rawValue) && self.shows($0.repository)
+      }
+      .prefix(50))
+  }
+
+  /// Moves through the recent activity; positive offsets go back in time, and past the oldest
+  /// it starts again from the newest.
+  func stepActivity(_ offset: Int) {
+    let count = recentActivity.count
+    guard count > 1 else { return }
+    withAnimation(Motion.snappy) {
+      activityIndex = ((activityIndex + offset) % count + count) % count
     }
   }
 
@@ -838,6 +854,8 @@ final class IslandStore {
     try JSONEncoder().encode(newEvents).write(to: AppFiles.events, options: .atomic)
     try JSONEncoder().encode(fresh).write(to: AppFiles.snapshot, options: .atomic)
     events = newEvents
+    // Something new goes on top of the inbox, in place of an older change being read.
+    if !changes.isEmpty { withAnimation(Motion.snappy) { activityIndex = 0 } }
     setGitHub(fresh)
     let announced = changes.filter {
       settings.announcedKinds.contains($0.kind.rawValue) && shows($0.repository)
@@ -1391,11 +1409,15 @@ final class IslandStore {
       return pr
     }
     setGitHub(GitHubSnapshot(login: "maya", pullRequests: branched))
-    // The latest change, for the open island's quiet moments.
-    if var merged = demoEvent(.merged) {
-      merged.id = "demo-last"
-      merged.occurredAt = now.addingTimeInterval(-3 * hour)
-      events = [merged]
+    // Recent changes, newest first, for the open island's inbox.
+    let recent: [(PRStatus, Double)] = [
+      (.merged, 3), (.failed, 5), (.previewReady, 7), (.review, 20), (.opened, 26),
+    ]
+    events = recent.compactMap { kind, hours in
+      guard var event = demoEvent(kind) else { return nil }
+      event.id = "demo-\(kind.rawValue)"
+      event.occurredAt = now.addingTimeInterval(-hours * hour)
+      return event
     }
     let calendar = Calendar.current
     let formatter = DateFormatter()
