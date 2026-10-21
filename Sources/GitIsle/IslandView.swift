@@ -486,6 +486,52 @@ private struct RowBanner: View {
   }
 }
 
+/// Dismisses the notification in front. Like Notification Center, resting on it while there are
+/// more turns it into "Clear all", so a quick click never clears everything.
+private struct DismissButton: View {
+  let count: Int
+  let label: String
+  let dismiss: () -> Void
+  let clearAll: () -> Void
+  @State private var hovered = false
+  @State private var clears = false
+
+  var body: some View {
+    Button {
+      if clears { clearAll() } else { dismiss() }
+    } label: {
+      HStack(spacing: 5) {
+        Image(systemName: "xmark").font(.system(size: clears ? 9 : 10, weight: .bold))
+        if clears {
+          Text(verbatim: "Clear all \(count)").font(.system(size: 11, weight: .semibold))
+            .monospacedDigit()
+            .fixedSize()
+            .transition(.opacity)
+        }
+      }
+      .foregroundStyle(.white.opacity(clears ? 0.75 : 0.5))
+      .padding(.horizontal, clears ? 10 : 0)
+      .frame(minWidth: 24, minHeight: 24)
+      .background(Capsule().fill(.white.opacity(clears ? 0.14 : 0.08)))
+      .contentShape(Capsule())
+    }
+    .buttonStyle(.plain)
+    .onHover { inside in
+      hovered = inside
+      if !inside { withAnimation(Motion.snappy) { clears = false } }
+    }
+    .task(id: hovered) {
+      guard hovered, count > 1 else { return }
+      try? await Task.sleep(for: .seconds(0.6))
+      if !Task.isCancelled, hovered { withAnimation(Motion.snappy) { clears = true } }
+    }
+    .onChange(of: count) { if count < 2 { clears = false } }
+    .help(clears ? "Clear all notifications" : "Dismiss")
+    .accessibilityLabel(clears ? "Clear all \(count) notifications" : "Dismiss \(label)")
+    .accessibilityAction(named: "Clear all") { clearAll() }
+  }
+}
+
 /// The open island's inbox for quiet moments: notifications you haven't dismissed, stacked
 /// newest in front, with a count of how many. The one in front opens with a click, or goes with
 /// its ✕, and the next comes forward.
@@ -513,18 +559,9 @@ private struct ActivityInbox: View {
         card(event)
           .id(event.id)
           .transition(.liveTurn)
-        Button {
-          store.dismiss(event)
-        } label: {
-          Image(systemName: "xmark").font(.system(size: 10, weight: .bold))
-            .foregroundStyle(.white.opacity(0.5))
-            .frame(width: 24, height: 24)
-            .background(Circle().fill(.white.opacity(0.08)))
-            .contentShape(Circle())
-        }
-        .buttonStyle(.plain)
-        .help("Dismiss")
-        .accessibilityLabel("Dismiss \(event.kind.eventTitle), \(event.reference)")
+        DismissButton(
+          count: items.count, label: "\(event.kind.eventTitle), \(event.reference)",
+          dismiss: { store.dismiss(event) }, clearAll: { store.dismissAll() })
       }
     }
     .padding(.leading, items.count > 1 ? 30 : 10).padding(.trailing, 10)

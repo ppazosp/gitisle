@@ -431,6 +431,19 @@ final class IslandStore {
   /// Takes a notification out of the inbox for good: dismissed, or opened.
   func dismiss(_ event: IslandEvent) {
     withAnimation(Motion.snappy) { _ = dismissed.insert(event.id) }
+    saveDismissed()
+  }
+
+  /// Empties the inbox, including what's past its size, so nothing older moves up in its place.
+  func dismissAll() {
+    let shown = events.filter {
+      settings.announcedKinds.contains($0.kind.rawValue) && shows($0.repository)
+    }
+    withAnimation(Motion.snappy) { dismissed.formUnion(shown.map(\.id)) }
+    saveDismissed()
+  }
+
+  private func saveDismissed() {
     guard !isDemo else { return }
     // The ledger keeps 500 changes, so older dismissals can go with them.
     let kept = Set(events.map(\.id))
