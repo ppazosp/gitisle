@@ -173,11 +173,8 @@ struct SettingsView: View {
       .opacity(store.settings.bannersEnabled ? 1 : 0.45)
       SettingsRow("Inbox") {
         PillPicker(
-          options: [
-            (InboxScope.new, "New"), (.day, "24 hours"),
-            (.recent, "Last \(InboxScope.recentCount)"),
-          ],
-          selection: $draft.inboxScope, fontSize: 11)
+          options: [(10, "10"), (20, "20"), (50, "50")],
+          selection: $draft.inboxLimit, fontSize: 11)
       }
       SettingsRow("System notifications") {
         Toggle(

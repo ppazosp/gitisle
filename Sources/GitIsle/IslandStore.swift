@@ -30,32 +30,8 @@ final class IslandStore {
         dropdown = nil
         detailsID = nil
       }
-      // The inbox opens on the newest change; what came since the island was last closed is
-      // new.
-      if expanded != oldValue {
-        activityIndex = 0
-        if expanded { seenBefore = lookedAt } else { lookedAt = Date() }
-      }
     }
   }
-  /// When the island was last closed, kept across launches.
-  @ObservationIgnored private var lookedAt: Date {
-    get {
-      isDemo
-        ? demoLookedAt
-        : UserDefaults.standard.object(forKey: "inboxLookedAt") as? Date ?? .distantPast
-    }
-    set {
-      if isDemo {
-        demoLookedAt = newValue
-      } else {
-        UserDefaults.standard.set(newValue, forKey: "inboxLookedAt")
-      }
-    }
-  }
-  @ObservationIgnored private var demoLookedAt = Date.distantPast
-  /// The look before this one, while the island is open: changes after it are new.
-  private(set) var seenBefore = Date.distantPast
   var tab: IslandTab = .activity
   /// Settings replace the expanded content. They save as they change, so collapsing the island
   /// never loses an edit.
@@ -88,8 +64,8 @@ final class IslandStore {
   private var liveID: String?
   /// The pointer is on the live bar, which holds it still.
   var liveHovered = false
-  /// The recent change the open island's inbox shows, from 0 for the newest.
-  var activityIndex = 0
+  /// Notifications taken out of the inbox, by ID.
+  private var dismissed = Set(UserDefaults.standard.stringArray(forKey: "inboxDismissed") ?? [])
   private(set) var repositories: [RepoSection] = []
   /// State columns for the board layout, after the repository filter.
   private(set) var sections: [PRSection] = []
@@ -434,33 +410,28 @@ final class IslandStore {
 
   var isLive: Bool { !merging.isEmpty || !checking.isEmpty }
 
-  /// Recent changes a banner would announce, newest first, in the repositories shown: the open
-  /// island's inbox for quiet moments.
-  /// Each PR once, with its latest change, as far back as the inbox setting reaches.
-  var recentActivity: [IslandEvent] {
+  /// Notifications not yet dismissed, newest first: each PR once, with its latest change, in
+  /// the repositories shown, up to the inbox's size.
+  var inbox: [IslandEvent] {
     var seen = Set<String>()
-    let latest = events.filter {
-      settings.announcedKinds.contains($0.kind.rawValue) && shows($0.repository)
-        && seen.insert($0.reference).inserted
+    var items: [IslandEvent] = []
+    for event in events where items.count < settings.inboxLimit {
+      guard settings.announcedKinds.contains(event.kind.rawValue), shows(event.repository),
+        seen.insert(event.reference).inserted
+      else { continue }
+      // A PR's newer change comes back after an older one was dismissed.
+      if !dismissed.contains(event.id) { items.append(event) }
     }
-    switch settings.inboxScope {
-    case .new: return latest.filter(isNew)
-    case .day: return latest.filter { $0.occurredAt > Date().addingTimeInterval(-86_400) }
-    case .recent: return Array(latest.prefix(InboxScope.recentCount))
-    }
+    return items
   }
 
-  /// Arrived since the island was last closed.
-  func isNew(_ event: IslandEvent) -> Bool { event.occurredAt > seenBefore }
-
-  /// Moves through the recent activity; positive offsets go back in time, and past the oldest
-  /// it starts again from the newest.
-  func stepActivity(_ offset: Int) {
-    let count = recentActivity.count
-    guard count > 1 else { return }
-    withAnimation(Motion.snappy) {
-      activityIndex = ((activityIndex + offset) % count + count) % count
-    }
+  /// Takes a notification out of the inbox for good: dismissed, or opened.
+  func dismiss(_ event: IslandEvent) {
+    withAnimation(Motion.snappy) { _ = dismissed.insert(event.id) }
+    guard !isDemo else { return }
+    // The ledger keeps 500 changes, so older dismissals can go with them.
+    let kept = Set(events.map(\.id))
+    UserDefaults.standard.set(Array(dismissed.intersection(kept)), forKey: "inboxDismissed")
   }
 
   /// Every live PR, merging first; the live bar cycles through them.
@@ -884,8 +855,6 @@ final class IslandStore {
     try JSONEncoder().encode(newEvents).write(to: AppFiles.events, options: .atomic)
     try JSONEncoder().encode(fresh).write(to: AppFiles.snapshot, options: .atomic)
     events = newEvents
-    // Something new goes on top of the inbox, in place of an older change being read.
-    if !changes.isEmpty { withAnimation(Motion.snappy) { activityIndex = 0 } }
     setGitHub(fresh)
     let announced = changes.filter {
       settings.announcedKinds.contains($0.kind.rawValue) && shows($0.repository)
@@ -1439,7 +1408,7 @@ final class IslandStore {
       return pr
     }
     setGitHub(GitHubSnapshot(login: "maya", pullRequests: branched))
-    // Recent changes, newest first, for the open island's inbox.
+    // Recent notifications, newest first, for the open island's inbox.
     let recent: [(PRStatus, Double)] = [
       (.merged, 3), (.failed, 5), (.previewReady, 7), (.review, 20), (.opened, 26),
     ]
@@ -1449,8 +1418,7 @@ final class IslandStore {
       event.occurredAt = now.addingTimeInterval(-hours * hour)
       return event
     }
-    // The island was last closed 4 hours ago, so the newest change is new.
-    demoLookedAt = now.addingTimeInterval(-4 * hour)
+    dismissed = []
     let calendar = Calendar.current
     let formatter = DateFormatter()
     formatter.dateFormat = "yyyy-MM-dd"

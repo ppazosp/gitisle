@@ -374,9 +374,7 @@ private struct ActivityRow: View {
   let store: IslandStore
 
   var body: some View {
-    let recent = store.recentActivity
-    // Arrows to look back through recent activity, while no banner has the row.
-    let browses = store.recentEvent == nil && recent.count > 1
+    let inbox = store.inbox
     HStack(spacing: 2) {
       ZStack {
         if let event = store.recentEvent {
@@ -385,40 +383,24 @@ private struct ActivityRow: View {
           )
           .id(event.id)
           .transition(.liveTurn)
-        } else if !recent.isEmpty {
-          ActivityInbox(store: store).transition(.opacity)
+        } else if !inbox.isEmpty {
+          ActivityInbox(store: store, items: inbox).transition(.opacity)
         } else {
           quiet.transition(.opacity)
         }
       }
       .frame(maxWidth: .infinity)
       .clipped()
-      // At the end, so the row starts where the island's other content does.
-      if browses {
-        let index = min(store.activityIndex, recent.count - 1)
-        HStack(spacing: 0) {
-          arrow("chevron.left", label: "Older activity") { store.stepActivity(1) }
-            .disabled(index == recent.count - 1)
-          Text(verbatim: "\(index + 1)/\(recent.count)")
-            .font(.system(size: 11, weight: .semibold)).monospacedDigit()
-            .foregroundStyle(.white.opacity(0.45))
-            .contentTransition(.numericText(value: Double(index)))
-          arrow("chevron.right", label: "Newer activity") { store.stepActivity(-1) }
-            .disabled(index == 0)
-        }
-        .padding(.bottom, 4)
-        .transition(.opacity)
-      }
     }
   }
 
-  /// A line across the row with a quiet label, so the empty row still spans the island.
+  /// A line across the row when the inbox is empty, so the row still spans the island.
   private var quiet: some View {
     HStack(spacing: 12) {
       Rectangle().fill(Palette.hairline).frame(height: 1)
       HStack(spacing: 7) {
         GlyphView(glyph: .pullRequest, size: 12).foregroundStyle(.white.opacity(0.3))
-        Text("No activity").font(.system(size: 12, weight: .semibold))
+        Text("All caught up").font(.system(size: 12, weight: .semibold))
           .foregroundStyle(.white.opacity(0.4))
       }
       .fixedSize()
@@ -426,26 +408,9 @@ private struct ActivityRow: View {
     }
     .padding(.horizontal, 10).padding(.bottom, 6)
     .accessibilityElement(children: .ignore)
-    .accessibilityLabel("No activity: nothing merging or running checks")
+    .accessibilityLabel("All caught up: no notifications in the inbox")
   }
 
-  private func arrow(_ symbol: String, label: String, action: @escaping () -> Void) -> some View {
-    Button(action: action) {
-      Image(systemName: symbol).font(.system(size: 10, weight: .bold))
-        .frame(width: 22, height: 32).contentShape(Rectangle())
-    }
-    .buttonStyle(ArrowStyle())
-    .accessibilityLabel(label)
-  }
-}
-
-/// Dims an arrow that has nowhere to go.
-private struct ArrowStyle: ButtonStyle {
-  @Environment(\.isEnabled) private var enabled
-
-  func makeBody(configuration: Configuration) -> some View {
-    configuration.label.foregroundStyle(.white.opacity(enabled ? 0.6 : 0.15))
-  }
 }
 
 /// A banner in the activity row: what you'd do next on the right, and a bar underneath that
@@ -540,41 +505,51 @@ private struct RowBanner: View {
   }
 }
 
-/// The open island's inbox for quiet moments: recent changes as a stack, newest in front. The
-/// stack steps back through them; the rest of the card opens the one in front.
+/// The open island's inbox for quiet moments: notifications you haven't dismissed, stacked
+/// newest in front, with a count of how many. The one in front opens with a click, or goes with
+/// its ✕, and the next comes forward.
 private struct ActivityInbox: View {
   let store: IslandStore
+  let items: [IslandEvent]
 
   var body: some View {
-    let items = store.recentActivity
-    let index = min(store.activityIndex, max(items.count - 1, 0))
     HStack(spacing: 11) {
-      Button {
-        store.stepActivity(1)
-      } label: {
-        stack(Array(items.dropFirst(index).prefix(3)))
-          .overlay(alignment: .topTrailing) {
-            if items.indices.contains(index), store.isNew(items[index]) {
-              Circle().fill(Palette.update).frame(width: 8, height: 8)
-                .overlay(Circle().strokeBorder(.black, lineWidth: 1.5))
-                .offset(x: 1, y: -1)
-            }
+      stack(Array(items.prefix(3)))
+        .overlay(alignment: .topTrailing) {
+          if items.count > 1 {
+            Text(verbatim: "\(items.count)")
+              .font(.system(size: 9.5, weight: .bold)).monospacedDigit()
+              .foregroundStyle(.white)
+              .padding(.horizontal, 4).frame(minWidth: 15, minHeight: 15)
+              .background(Capsule().fill(Palette.update))
+              .overlay(Capsule().strokeBorder(.black, lineWidth: 1.5))
+              .contentTransition(.numericText(value: Double(items.count)))
+              .offset(x: 5, y: -4)
           }
-      }
-      .buttonStyle(.plain)
-      .disabled(items.count < 2)
-      .accessibilityLabel("Older activity")
-      if items.indices.contains(index) {
-        // Marked only while some are new, so "earlier" says where the new ones end.
-        card(
-          items[index], mark: items.contains(where: store.isNew) ? store.isNew(items[index]) : nil
-        )
-        .id(items[index].id)
-        .transition(.liveTurn)
+        }
+        .accessibilityHidden(true)
+      if let event = items.first {
+        card(event)
+          .id(event.id)
+          .transition(.liveTurn)
+        Button {
+          store.dismiss(event)
+        } label: {
+          Image(systemName: "xmark").font(.system(size: 10, weight: .bold))
+            .foregroundStyle(.white.opacity(0.5))
+            .frame(width: 24, height: 24)
+            .background(Circle().fill(.white.opacity(0.08)))
+            .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .help("Dismiss")
+        .accessibilityLabel("Dismiss \(event.kind.eventTitle), \(event.reference)")
       }
     }
     .padding(.leading, items.count > 1 ? 30 : 10).padding(.trailing, 10)
     .padding(.top, 6).padding(.bottom, 10)
+    .accessibilityElement(children: .contain)
+    .accessibilityLabel("\(items.count) unread")
   }
 
   /// The one in front and up to two behind it, peeking out to the left.
@@ -598,36 +573,30 @@ private struct ActivityInbox: View {
       }
     }
     .frame(width: 32, height: 32)
-    .contentShape(Rectangle())
   }
 
-  /// `mark` is true for a new change and false for an earlier one; nil leaves both unsaid.
-  private func card(_ event: IslandEvent, mark: Bool?) -> some View {
+  /// Opening a notification counts as reading it, so it leaves the inbox too.
+  private func card(_ event: IslandEvent) -> some View {
     Button {
       NSWorkspace.shared.open(event.url)
+      store.dismiss(event)
     } label: {
       HStack(spacing: 11) {
         VStack(alignment: .leading, spacing: 2) {
           HStack(spacing: 6) {
             Text(event.kind.eventTitle).font(.system(size: 13, weight: .semibold))
-              .foregroundStyle(.white.opacity(0.7))
-            Text(event.reference).font(.system(size: 11)).foregroundStyle(.white.opacity(0.35))
+              .foregroundStyle(.white.opacity(0.85))
+            Text(event.reference).font(.system(size: 11)).foregroundStyle(.white.opacity(0.4))
           }
-          Text(event.detail).font(.system(size: 12)).foregroundStyle(.white.opacity(0.5))
+          Text(event.detail).font(.system(size: 12)).foregroundStyle(.white.opacity(0.6))
         }
         .lineLimit(1)
         Spacer(minLength: 6)
-        VStack(alignment: .trailing, spacing: 1) {
-          Text(
-            Format.age(event.occurredAt) + (Format.age(event.occurredAt) == "now" ? "" : " ago")
-          )
-          .font(.system(size: 12, weight: .semibold))
-          .foregroundStyle(.white.opacity(0.5))
-          if let mark {
-            Text(mark ? "new" : "earlier").font(.system(size: 10.5, weight: .semibold))
-              .foregroundStyle(mark ? Palette.update : .white.opacity(0.3))
-          }
-        }
+        Text(
+          Format.age(event.occurredAt) + (Format.age(event.occurredAt) == "now" ? "" : " ago")
+        )
+        .font(.system(size: 12, weight: .semibold))
+        .foregroundStyle(.white.opacity(0.5))
         .fixedSize()
       }
       .contentShape(Rectangle())
@@ -636,7 +605,7 @@ private struct ActivityInbox: View {
     .accessibilityLabel(
       "\(event.kind.eventTitle), \(Format.age(event.occurredAt)): \(event.detail)"
     )
-    .accessibilityHint("Opens the pull request on GitHub")
+    .accessibilityHint("Opens the pull request on GitHub and dismisses it")
   }
 }
 
