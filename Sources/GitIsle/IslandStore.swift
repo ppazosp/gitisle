@@ -18,20 +18,18 @@ final class IslandStore {
   var usageRefreshing = false
   var events: [IslandEvent] = []
   var recentEvent: IslandEvent?
-  /// Other changes that arrived with `recentEvent`.
-  var recentEventExtra = 0
+  /// How long a banner shows.
+  static let bannerSeconds = 5.0
+  /// When the banner showing now arrived, so the open island can show its time running out.
+  private(set) var bannerShownAt = Date.distantPast
   var expanded = false {
     didSet {
       if !expanded {
+        checksPreview = nil
         showingSettings = false
         repositoryPickerOpen = false
         dropdown = nil
         detailsID = nil
-      }
-      // Expanding shows the full context, so a pending banner has done its job.
-      if expanded, recentEvent != nil {
-        notificationTask?.cancel()
-        recentEvent = nil
       }
     }
   }
@@ -63,6 +61,19 @@ final class IslandStore {
   /// Your PRs that are merging, and your PRs with checks running. These make the island live.
   private(set) var merging: [PullRequest] = []
   private(set) var checking: [PullRequest] = []
+  /// The live PR the bar shows, while more than one is live.
+  private var liveID: String?
+  /// The pointer is on the live bar, which holds it still.
+  var liveHovered = false
+  /// The checks a hovered ring shows, and the lists read so far, by `ChecksPreview.key`.
+  var checksPreview: ChecksPreview?
+  private(set) var checkLists: [String: [Check]] = [:]
+  private(set) var checkListErrors: Set<String> = []
+  @ObservationIgnored private var checkListTimes: [String: Date] = [:]
+  @ObservationIgnored private var checksHoverTask: Task<Void, Never>?
+  @ObservationIgnored private var checksRefresh: Task<Void, Never>?
+  /// Notifications taken out of the inbox, by ID.
+  private var dismissed = Set(UserDefaults.standard.stringArray(forKey: "inboxDismissed") ?? [])
   private(set) var repositories: [RepoSection] = []
   /// State columns for the board layout, after the repository filter.
   private(set) var sections: [PRSection] = []
@@ -88,6 +99,10 @@ final class IslandStore {
   var dropdown: Dropdown?
   /// Example data only: a dropdown to open once its control is laid out, for captures.
   @ObservationIgnored var pendingDropdown: String?
+  /// Example data only: a tour opens the live bar's checks preview for this
+  /// `ChecksPreview.key`, and shows the inbox's ✕ as "Clear all".
+  var pendingChecks: String?
+  var tourClearAll = false
   /// Example data only: a PR whose row and card show as hovered, for captures.
   @ObservationIgnored var previewHover: String?
   /// The PR whose page replaces Activity, by ID.
@@ -319,9 +334,11 @@ final class IslandStore {
   /// Takes back what the filter now hides, and refreshes active PRs right away so the live bar
   /// is current. Every repository is already loaded, so nothing else needs reading.
   private func repositoryFilterChanged() {
+    bannerQueue.removeAll { !shows($0.repository) }
     if let event = recentEvent, !shows(event.repository) {
       notificationTask?.cancel()
       recentEvent = nil
+      if !bannerQueue.isEmpty { present(bannerQueue.removeFirst()) }
     }
     guard !isDemo else { return }
     let hidden = events.filter { !shows($0.repository) }.map(\.id)
@@ -370,6 +387,10 @@ final class IslandStore {
   @ObservationIgnored private var loops: [Task<Void, Never>] = []
   @ObservationIgnored private var hoverTask: Task<Void, Never>?
   @ObservationIgnored private var notificationTask: Task<Void, Never>?
+  @ObservationIgnored private var liveCycle: Task<Void, Never>?
+  @ObservationIgnored private var liveShownFor: TimeInterval = 0
+  /// Banners waiting for the one showing to finish, in turn.
+  @ObservationIgnored private var bannerQueue: [IslandEvent] = []
   @ObservationIgnored private var lastGitHubRefresh = Date.distantPast
   @ObservationIgnored private var lastActiveRefresh = Date.distantPast
   /// When every search last ran in full; between those, a one-point check finds what changed.
@@ -401,8 +422,149 @@ final class IslandStore {
 
   var isLive: Bool { !merging.isEmpty || !checking.isEmpty }
 
-  /// The PR the live state is about: the first one merging, else the first running checks.
-  var livePullRequest: PullRequest? { merging.first ?? checking.first }
+  /// Notifications not yet dismissed, newest first: each PR once, with its latest change, in
+  /// the repositories shown, up to `inboxLimit`.
+  var inbox: [IslandEvent] {
+    var seen = Set<String>()
+    var items: [IslandEvent] = []
+    for event in events where items.count < Self.inboxLimit {
+      guard settings.announcedKinds.contains(event.kind.rawValue), shows(event.repository),
+        seen.insert(event.reference).inserted
+      else { continue }
+      // A PR's newer change comes back after an older one was dismissed.
+      if !dismissed.contains(event.id) { items.append(event) }
+    }
+    return items
+  }
+
+  /// How many notifications the inbox keeps until they're dismissed; the oldest go first.
+  static let inboxLimit = 99
+
+  /// Takes a notification out of the inbox for good: dismissed, or opened.
+  func dismiss(_ event: IslandEvent) {
+    withAnimation(Motion.snappy) { _ = dismissed.insert(event.id) }
+    saveDismissed()
+  }
+
+  /// Empties the inbox, including what's past its size, so nothing older moves up in its place.
+  func dismissAll() {
+    let shown = events.filter {
+      settings.announcedKinds.contains($0.kind.rawValue) && shows($0.repository)
+    }
+    withAnimation(Motion.snappy) { dismissed.formUnion(shown.map(\.id)) }
+    saveDismissed()
+  }
+
+  private func saveDismissed() {
+    guard !isDemo else { return }
+    // The ledger keeps 500 changes, so older dismissals can go with them.
+    let kept = Set(events.map(\.id))
+    UserDefaults.standard.set(Array(dismissed.intersection(kept)), forKey: "inboxDismissed")
+  }
+
+  /// Shows the checks behind a hovered ring after a short rest, and hides them a moment after
+  /// the pointer leaves, so it can move from the ring onto the preview.
+  func hoverChecks(_ pr: PullRequest, queue: Bool, anchor: CGRect, inside: Bool) {
+    checksHoverTask?.cancel()
+    guard inside else { return hideChecksSoon() }
+    checksHoverTask = Task { [weak self] in
+      do { try await Task.sleep(for: .seconds(0.3)) } catch { return }
+      guard let self else { return }
+      withAnimation(Motion.snappy) {
+        checksPreview = ChecksPreview(prID: pr.id, queue: queue, anchor: anchor)
+      }
+      loadChecks(pr, queue: queue)
+    }
+  }
+
+  /// The pointer on the preview keeps it open.
+  func hoverChecksPreview(_ inside: Bool) {
+    checksHoverTask?.cancel()
+    if !inside { hideChecksSoon() }
+  }
+
+  private func hideChecksSoon() {
+    checksHoverTask = Task { [weak self] in
+      do { try await Task.sleep(for: .seconds(0.25)) } catch { return }
+      withAnimation(Motion.snappy) { self?.checksPreview = nil }
+      self?.checksRefresh?.cancel()
+    }
+  }
+
+  /// Reads the checks unless they were read moments ago, and again every 10 seconds while the
+  /// preview is open and some still run.
+  private func loadChecks(_ pr: PullRequest, queue: Bool) {
+    let key = ChecksPreview.key(pr.id, queue: queue)
+    checksRefresh?.cancel()
+    checksRefresh = Task { [weak self] in
+      while !Task.isCancelled {
+        guard let self else { return }
+        if isDemo {
+          checkLists[key] = demoDetails(pr.id).map { Check.sorted($0.checks) } ?? []
+          return
+        }
+        if Date().timeIntervalSince(checkListTimes[key] ?? .distantPast) > 10 {
+          do {
+            let checks = try await githubService.checks(of: pr, queue: queue)
+            withAnimation(Motion.snappy) { checkLists[key] = checks }
+            checkListTimes[key] = Date()
+            checkListErrors.remove(key)
+          } catch {
+            if checkLists[key] == nil { checkListErrors.insert(key) }
+          }
+        }
+        guard checkLists[key]?.contains(where: { $0.outcome == .running }) == true else { return }
+        do { try await Task.sleep(for: .seconds(10)) } catch { return }
+      }
+    }
+  }
+
+  /// Every live PR, merging first; the live bar cycles through them.
+  var livePullRequests: [PullRequest] { merging + checking }
+
+  /// The PR the live bar shows now.
+  var livePullRequest: PullRequest? {
+    let live = livePullRequests
+    return live.first { $0.id == liveID } ?? live.first
+  }
+
+  /// Where the live bar is in its cycle, from 0.
+  var liveIndex: Int {
+    livePullRequests.firstIndex { $0.id == livePullRequest?.id } ?? 0
+  }
+
+  /// Moves the live bar by `offset` PRs, around the cycle.
+  func stepLive(_ offset: Int) { showLive(at: liveIndex + offset) }
+
+  func showLive(at index: Int) {
+    let live = livePullRequests
+    guard live.count > 1 else { return }
+    liveShownFor = 0
+    withAnimation(Motion.snappy) {
+      liveID = live[(index % live.count + live.count) % live.count].id
+    }
+  }
+
+  /// With more than one PR live, the bar moves to the next every 5 seconds, holding still while
+  /// the pointer is on it.
+  private func cycleLive() {
+    guard livePullRequests.count > 1 else {
+      liveCycle?.cancel()
+      liveCycle = nil
+      return
+    }
+    guard liveCycle == nil else { return }
+    liveShownFor = 0
+    liveCycle = Task { [weak self] in
+      while true {
+        do { try await Task.sleep(for: .seconds(0.5)) } catch { return }
+        guard let self else { return }
+        if liveHovered { continue }
+        liveShownFor += 0.5
+        if liveShownFor >= 5 { stepLive(1) }
+      }
+    }
+  }
 
   /// Stats is open in the expanded island, so its usage figures are on screen.
   var showingStats: Bool {
@@ -462,6 +624,7 @@ final class IslandStore {
         && ((pr.checkSummary?.pending ?? 0) > 0 || pr.checks == "PENDING")
     }
     .sorted { $0.updatedAt > $1.updatedAt }
+    cycleLive()
     var avatars: [String: URL] = [:]
     for pr in all where pr.group != nil {
       if avatars[pr.repository] == nil || pr.ownerAvatar != nil {
@@ -642,6 +805,8 @@ final class IslandStore {
     systemObservers = []
     hoverTask?.cancel()
     notificationTask?.cancel()
+    liveCycle?.cancel()
+    liveCycle = nil
   }
 
   func refreshStats() async {
@@ -781,7 +946,8 @@ final class IslandStore {
     let changes = GitHubChanges.events(previous: github, current: fresh).filter {
       !known.contains($0.id)
     }
-    let newEvents = Array((changes + events).prefix(200))
+    // Enough for a busy day of changes, so the inbox's 24 hours are always there.
+    let newEvents = Array((changes + events).prefix(500))
     // Persist the notification ledger before emitting side effects; a restart never replays it.
     try JSONEncoder().encode(newEvents).write(to: AppFiles.events, options: .atomic)
     try JSONEncoder().encode(fresh).write(to: AppFiles.snapshot, options: .atomic)
@@ -806,10 +972,10 @@ final class IslandStore {
       pullRequestDetails[pr.id] = details
       announced[index].note = details.failureNote
     }
-    if settings.bannersEnabled,
-      let latest = announced.min(by: { $0.kind.bannerPriority < $1.kind.bannerPriority })
-    {
-      showEvent(latest, extra: announced.count - 1)
+    if settings.bannersEnabled {
+      for event in announced.sorted(by: { $0.kind.bannerPriority < $1.kind.bannerPriority }) {
+        showEvent(event)
+      }
     }
     for event in announced { notify(event) }
   }
@@ -879,13 +1045,10 @@ final class IslandStore {
     hovered = inside
     if touring { return }
     hoverTask?.cancel()
-    // While something is live or announced, a click opens that PR, so expanding needs a
-    // longer, deliberate hover; otherwise it would replace the island under the click.
-    let busy = presentation == .live || presentation == .banner
-    // Leaving waits a moment, so overshooting the edge doesn't close the island.
-    let delay =
-      inside
-      ? (busy ? settings.bannerHoverDelay : settings.hoverDelay) : settings.closeDelay
+    // The live bar and a banner stay on top when the island opens, so they can still be clicked
+    // and opening needs no longer hover. Leaving waits a moment, so overshooting the edge
+    // doesn't close it.
+    let delay = inside ? settings.hoverDelay : settings.closeDelay
     hoverTask = Task { [weak self] in
       guard let self else { return }
       do { try await Task.sleep(for: .seconds(delay)) } catch { return }
@@ -929,18 +1092,37 @@ final class IslandStore {
     expanded = false
   }
 
-  func showEvent(_ event: IslandEvent, extra: Int = 0) {
+  /// Shows a banner for 5 seconds; on the closed island, longer while the pointer rests on it.
+  /// Banners arriving meanwhile wait their turn, each with its full time; one about the same PR
+  /// replaces the waiting one. The open island shows them in its activity row.
+  func showEvent(_ event: IslandEvent) {
     guard shows(event.repository) else { return }
+    guard recentEvent != nil else { return present(event) }
+    if let index = bannerQueue.firstIndex(where: { $0.reference == event.reference }) {
+      bannerQueue[index] = event
+    } else {
+      bannerQueue.append(event)
+    }
+  }
+
+  private func present(_ event: IslandEvent) {
     recentEvent = event
-    recentEventExtra = extra
+    bannerShownAt = Date()
     notificationTask?.cancel()
     notificationTask = Task { [weak self] in
       do {
-        try await Task.sleep(for: .seconds(5))
-        // Keep the banner while the pointer rests on it.
-        while self?.hovered == true { try await Task.sleep(for: .seconds(0.5)) }
+        try await Task.sleep(for: .seconds(Self.bannerSeconds))
+        // The open island is always under the pointer, so there a banner keeps to its time.
+        while self?.hovered == true, self?.expanded == false {
+          try await Task.sleep(for: .seconds(0.5))
+        }
       } catch { return }
-      self?.recentEvent = nil
+      guard let self else { return }
+      if bannerQueue.isEmpty {
+        recentEvent = nil
+      } else {
+        withAnimation(Motion.morph) { present(bannerQueue.removeFirst()) }
+      }
     }
   }
 
@@ -1124,6 +1306,58 @@ final class IslandStore {
           try await step(4.4) { self?.recentEvent = nil }
         } catch {}
         defaults.set(layout, forKey: "diffLayout")
+        self?.touring = false
+      })
+  }
+
+  /// Example data only: the tour of what happens in the island (`--tour activity`), for
+  /// recording a product video. Two changes arrive together and take turns on the closed
+  /// island; it opens on the inbox; a failure lands in the activity row; the merge queue's
+  /// checks preview from the live bar; the inbox is dismissed and cleared. About 31 seconds.
+  func runActivityTour() {
+    guard isDemo else { return }
+    func arrive(_ kind: PRStatus) {
+      guard var event = demoEvent(kind) else { return }
+      event.id = "tour-\(kind.rawValue)"
+      event.occurredAt = Date()
+      events.insert(event, at: 0)
+      showEvent(event)
+    }
+    touring = true
+    loops.append(
+      Task { [weak self] in
+        @MainActor func step(_ seconds: Double, _ change: () -> Void) async throws {
+          try await Task.sleep(for: .seconds(seconds))
+          withAnimation(Motion.morph, change)
+        }
+        do {
+          // The live bar cycles; a preview and a merge arrive at once and take turns.
+          try await step(2.5) {
+            arrive(.previewReady)
+            arrive(.merged)
+          }
+          // Open on the inbox, then a failure lands in the activity row.
+          try await step(10.5) {
+            self?.tab = .activity
+            self?.activityLayout = .list
+            self?.expanded = true
+          }
+          try await step(2.0) { arrive(.failed) }
+          // The merge queue's checks, from the live bar's ring: #433 first comes round.
+          try await step(5.0) { self?.showLive(at: 0) }
+          try await step(0.6) { self?.pendingChecks = ChecksPreview.key("demo3", queue: true) }
+          try await step(4.0) { self?.checksPreview = nil }
+          // Dismiss one, then clear the rest.
+          try await step(0.8) {
+            if let front = self?.inbox.first { self?.dismiss(front) }
+          }
+          try await step(1.2) { self?.tourClearAll = true }
+          try await step(1.4) {
+            self?.dismissAll()
+            self?.tourClearAll = false
+          }
+          try await step(1.6) { self?.expanded = false }
+        } catch {}
         self?.touring = false
       })
   }
@@ -1323,6 +1557,17 @@ final class IslandStore {
       return pr
     }
     setGitHub(GitHubSnapshot(login: "maya", pullRequests: branched))
+    // Recent notifications, newest first, for the open island's inbox.
+    let recent: [(PRStatus, Double)] = [
+      (.merged, 3), (.failed, 5), (.previewReady, 7), (.review, 20), (.opened, 26),
+    ]
+    events = recent.compactMap { kind, hours in
+      guard var event = demoEvent(kind) else { return nil }
+      event.id = "demo-\(kind.rawValue)"
+      event.occurredAt = now.addingTimeInterval(-hours * hour)
+      return event
+    }
+    dismissed = []
     let calendar = Calendar.current
     let formatter = DateFormatter()
     formatter.dateFormat = "yyyy-MM-dd"
@@ -1370,4 +1615,19 @@ final class IslandStore {
       ],
       daily: series(4.2).map { DailyValue(day: $0.day, value: ($0.value / 120_000).rounded()) })
   }
+}
+
+/// A hovered check ring: whose checks it previews, and where the ring is in the island.
+struct ChecksPreview: Equatable {
+  let prID: String
+  /// The merge queue run's checks, rather than the PR's own.
+  let queue: Bool
+  let anchor: CGRect
+
+  var key: String { Self.key(prID, queue: queue) }
+
+  static func key(_ id: String, queue: Bool) -> String { queue ? "\(id)/queue" : id }
+
+  /// The island's coordinate space, where rings are measured.
+  static let space = "island"
 }

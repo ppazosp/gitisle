@@ -17,10 +17,7 @@ struct IslandView: View {
     let shape = IslandShape(
       ear: ear, radius: metrics.cornerRadius(for: presentation), attached: metrics.hasNotch)
     ZStack(alignment: .top) {
-      if presentation == .expanded {
-        ExpandedIsland(store: store, metrics: metrics, contentHeight: $contentHeight)
-          .transition(.islandContent)
-      } else if presentation == .idle {
+      if presentation == .idle {
         // Nothing to show; the island is still a hover and click target.
         Color.clear.contentShape(Rectangle()).onTapGesture { store.expanded = true }
           .accessibilityElement()
@@ -28,18 +25,57 @@ struct IslandView: View {
           .accessibilityHint("Expands the island")
           .accessibilityAddTraits(.isButton)
       } else {
-        VStack(spacing: 0) {
-          CompactBar(store: store, metrics: metrics, side: $liveSide)
-          if presentation == .banner, let event = store.recentEvent {
-            EventBanner(event: event, extra: store.recentEventExtra)
-              .transition(.islandContent)
-          }
+        if presentation == .expanded {
+          ExpandedIsland(store: store, metrics: metrics, contentHeight: $contentHeight)
+            .transition(.islandContent)
         }
-        .transition(.islandContent)
+        // The live bar stays where it is when the island opens, beside the notch, so it can still
+        // be clicked; banners move to the open island's activity row.
+        if presentation != .expanded || store.isLive {
+          VStack(spacing: 0) {
+            CompactBar(store: store, metrics: metrics, side: $liveSide)
+            if presentation == .banner, let event = store.recentEvent {
+              EventBanner(event: event)
+                .id(event.id)
+                .transition(.islandContent)
+            }
+          }
+          .frame(width: presentation == .expanded ? metrics.liveWidth(side: liveSide) : nil)
+          .transition(.islandContent)
+        }
       }
     }
+    .coordinateSpace(.named(ChecksPreview.space))
+    .overlay {
+      // Over everything in the island, so it can preview the live bar's rings too.
+      GeometryReader { proxy in
+        if presentation == .expanded, let preview = store.checksPreview {
+          let placement = Dropdown.Placement(
+            anchor: preview.anchor, trailing: preview.anchor.midX > proxy.size.width / 2)
+          let size = proxy.size
+          ZStack(alignment: .topLeading) {
+            Color.clear
+            ChecksPopover(store: store, preview: preview)
+              .alignmentGuide(.leading) { -placement.x(width: $0.width, in: size) }
+              .alignmentGuide(.top) { -placement.y(height: $0.height, in: size) }
+              .transition(.scale(scale: 0.96, anchor: .top).combined(with: .opacity))
+          }
+        }
+      }
+    }
+    .environment(store)
     .padding(.horizontal, ear)
     .frame(width: size.width, height: size.height, alignment: .top)
+    .overlay {
+      if presentation == .banner, store.settings.bannerTimer, let event = store.recentEvent {
+        BannerTime(
+          color: event.kind.color, shownAt: store.bannerShownAt, ear: ear,
+          radius: metrics.cornerRadius(for: presentation), attached: metrics.hasNotch
+        )
+        .id(event.id)
+        .transition(.opacity)
+      }
+    }
     .background(.black)
     .clipShape(shape)
     .background {
@@ -72,6 +108,8 @@ struct IslandView: View {
     )
     .animation(reduceMotion ? nil : Motion.morph, value: contentHeight)
     .animation(reduceMotion ? nil : Motion.morph, value: liveSide)
+    // The activity row comes and goes with notifications.
+    .animation(reduceMotion ? nil : Motion.morph, value: ExpandedIsland.showsActivity(store))
     .padding(.top, metrics.topGap)
     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
   }
@@ -123,103 +161,142 @@ private struct CompactBar: View {
   @State private var leadingWidth: CGFloat = 0
   @State private var trailingWidth: CGFloat = 0
 
+  /// The open island has room for arrows to move between live PRs.
+  private var showsArrows: Bool { store.expanded && store.livePullRequests.count > 1 }
+
   var body: some View {
-    Button {
-      // The top row is about one PR; clicking opens it. A long hover opens the island.
+    HStack(spacing: 0) {
+      HStack(spacing: 6) {
+        if showsArrows { chevron("chevron.left", -1) }
+        leading
+      }
+      .fixedSize()
+      .onGeometryChange(for: CGFloat.self) {
+        $0.size.width
+      } action: { width in
+        leadingWidth = width
+        side = max(leadingWidth, trailingWidth)
+      }
+      .frame(maxWidth: .infinity, alignment: .leading)
+      // Reserved for the camera housing: content is never laid out under the notch.
+      Color.clear.frame(width: metrics.liveGap)
+      HStack(spacing: 6) {
+        trailing
+        if showsArrows { chevron("chevron.right", 1) }
+      }
+      .fixedSize()
+      .onGeometryChange(for: CGFloat.self) {
+        $0.size.width
+      } action: { width in
+        trailingWidth = width
+        side = max(leadingWidth, trailingWidth)
+      }
+      .frame(maxWidth: .infinity, alignment: .trailing)
+    }
+    .font(.system(size: 13, weight: .semibold))
+    .monospacedDigit()
+    .lineLimit(1)
+    .padding(.horizontal, metrics.livePadding)
+    .frame(maxWidth: .infinity, minHeight: metrics.closedHeight, maxHeight: metrics.closedHeight)
+    .contentShape(Rectangle())
+    // The top row is about one PR; clicking opens it. A hover opens the island under it.
+    .onTapGesture {
       if let pr = store.livePullRequest {
         NSWorkspace.shared.open(pr.url)
       } else {
         store.expanded = true
       }
-    } label: {
-      HStack(spacing: 0) {
-        HStack(spacing: 6) { leading }
-          .fixedSize()
-          .onGeometryChange(for: CGFloat.self) {
-            $0.size.width
-          } action: { width in
-            leadingWidth = width
-            side = max(leadingWidth, trailingWidth)
-          }
-          .frame(maxWidth: .infinity, alignment: .leading)
-        // Reserved for the camera housing: content is never laid out under the notch.
-        Color.clear.frame(width: metrics.liveGap)
-        trailing
-          .fixedSize()
-          .onGeometryChange(for: CGFloat.self) {
-            $0.size.width
-          } action: { width in
-            trailingWidth = width
-            side = max(leadingWidth, trailingWidth)
-          }
-          .frame(maxWidth: .infinity, alignment: .trailing)
-      }
-      .font(.system(size: 13, weight: .semibold))
-      .monospacedDigit()
-      .lineLimit(1)
-      .padding(.horizontal, metrics.livePadding)
-      .frame(maxWidth: .infinity, minHeight: metrics.closedHeight, maxHeight: metrics.closedHeight)
-      .contentShape(Rectangle())
     }
-    .buttonStyle(.plain)
+    .onHover { store.liveHovered = $0 }
+    .accessibilityElement(children: .contain)
     .accessibilityLabel(accessibilityText)
+    .accessibilityAddTraits(.isButton)
     .accessibilityHint(
       store.livePullRequest == nil ? "Expands the island" : "Opens the pull request on GitHub")
   }
 
   // Icons and numbers only: the closed island is too small for sentences.
   @ViewBuilder private var leading: some View {
-    if let first = store.merging.first {
-      GlyphView(glyph: .mergeQueue, size: 15).foregroundStyle(Palette.merging)
-        .phaseAnimator([1.0, 0.45]) { glyph, opacity in
-          glyph.opacity(opacity)
-        } animation: { _ in
-          .easeInOut(duration: 1.1)
+    if let pr = store.livePullRequest {
+      HStack(spacing: 6) {
+        if pr.isMerging {
+          GlyphView(glyph: .mergeQueue, size: 15).foregroundStyle(Palette.merging)
+            .phaseAnimator([1.0, 0.45]) { glyph, opacity in
+              glyph.opacity(opacity)
+            } animation: { _ in
+              .easeInOut(duration: 1.1)
+            }
+        } else if let summary = pr.checkSummary {
+          CheckRing(summary: summary, size: 14, lineWidth: 2.2)
+            .checksHover(pr, queue: false, liveBar: true)
+        } else {
+          GlyphView(glyph: .clock, size: 14).foregroundStyle(Palette.merging)
         }
-      number(first, more: store.merging.count - 1)
-    } else if let first = store.checking.first {
-      if let summary = first.checkSummary {
-        CheckRing(summary: summary, size: 14, lineWidth: 2.2)
-      } else {
-        GlyphView(glyph: .clock, size: 14).foregroundStyle(Palette.merging)
+        Text(verbatim: "#\(pr.number)")
       }
-      number(first, more: store.checking.count - 1)
-    }
-  }
-
-  @ViewBuilder private func number(_ pr: PullRequest, more: Int) -> some View {
-    Text(verbatim: "#\(pr.number)")
-    if more > 0 {
-      Text(verbatim: "+\(more)").foregroundStyle(.white.opacity(0.45))
+      .id(pr.id)
+      .transition(.liveTurn)
+      if store.livePullRequests.count > 1 {
+        Text(verbatim: "\(store.liveIndex + 1)/\(store.livePullRequests.count)")
+          .font(.system(size: 11, weight: .semibold))
+          .foregroundStyle(.white.opacity(0.45))
+          .contentTransition(.numericText(value: Double(store.liveIndex)))
+      }
     }
   }
 
   @ViewBuilder private var trailing: some View {
-    if let first = store.merging.first {
-      HStack(spacing: 6) {
-        // The merge queue's checks, as the ring shows the PR's own while they run.
-        if let queue = first.queueChecks { CheckRing(summary: queue, size: 14, lineWidth: 2.2) }
-        if let since = first.mergingSince {
-          // How long the PR has been merging; the system updates the timer without polling.
-          Text(since, style: .timer)
-            .foregroundStyle(Palette.merging)
-            .multilineTextAlignment(.trailing)
-            .fixedSize()
-        } else if let queue = first.queueChecks {
-          Text(verbatim: "\(queue.passed)/\(queue.total)").foregroundStyle(.white.opacity(0.6))
+    if let pr = store.livePullRequest {
+      Group {
+        if pr.isMerging {
+          HStack(spacing: 6) {
+            // The merge queue's checks, as the ring shows the PR's own while they run.
+            if let queue = pr.queueChecks {
+              CheckRing(summary: queue, size: 14, lineWidth: 2.2)
+                .checksHover(pr, queue: true, liveBar: true)
+            }
+            if let since = pr.mergingSince {
+              // How long the PR has been merging; the system updates the timer without polling.
+              Text(since, style: .timer)
+                .foregroundStyle(Palette.merging)
+                .multilineTextAlignment(.trailing)
+                .fixedSize()
+            } else if let queue = pr.queueChecks {
+              Text(verbatim: "\(queue.passed)/\(queue.total)").foregroundStyle(.white.opacity(0.6))
+            }
+          }
+        } else if let summary = pr.checkSummary {
+          Text(verbatim: "\(summary.passed)/\(summary.total)")
+            .foregroundStyle(.white.opacity(0.6))
+            .contentTransition(.numericText(value: Double(summary.passed)))
         }
       }
-    } else if store.merging.isEmpty, let summary = store.checking.first?.checkSummary {
-      Text(verbatim: "\(summary.passed)/\(summary.total)")
-        .foregroundStyle(.white.opacity(0.6))
-        .contentTransition(.numericText(value: Double(summary.passed)))
+      .id(pr.id)
+      .transition(.liveTurn)
     }
+  }
+
+  private func chevron(_ symbol: String, _ offset: Int) -> some View {
+    Button {
+      store.stepLive(offset)
+    } label: {
+      Image(systemName: symbol).font(.system(size: 9, weight: .bold))
+        .foregroundStyle(.white.opacity(0.6))
+        .frame(width: 14, height: 18).contentShape(Rectangle())
+    }
+    .buttonStyle(.plain)
+    .accessibilityLabel(offset < 0 ? "Previous live pull request" : "Next live pull request")
   }
 
   private var accessibilityText: String {
     var parts = ["GitIsle"]
-    if let pr = store.merging.first { parts.append("pull request \(pr.number) merging") }
-    if let pr = store.checking.first { parts.append("checks running on \(pr.number)") }
+    if let pr = store.livePullRequest {
+      parts.append(
+        pr.isMerging ? "pull request \(pr.number) merging" : "checks running on \(pr.number)")
+    }
+    if store.livePullRequests.count > 1 {
+      parts.append("\(store.liveIndex + 1) of \(store.livePullRequests.count) live")
+    }
     return parts.joined(separator: ", ")
   }
 
@@ -229,7 +306,6 @@ private struct CompactBar: View {
 
 private struct EventBanner: View {
   let event: IslandEvent
-  let extra: Int
 
   var body: some View {
     Button {
@@ -243,17 +319,12 @@ private struct EventBanner: View {
         VStack(alignment: .leading, spacing: 2) {
           HStack(spacing: 6) {
             Text(title).font(.system(size: 13, weight: .semibold))
-            Text(reference).font(.system(size: 11)).foregroundStyle(.white.opacity(0.45))
+            Text(event.reference).font(.system(size: 11)).foregroundStyle(.white.opacity(0.45))
           }
           Text(detail).font(.system(size: 12)).foregroundStyle(.white.opacity(0.7))
         }
         .lineLimit(1)
         Spacer(minLength: 4)
-        if extra > 0 {
-          Text("+\(extra)").font(.system(size: 11, weight: .semibold)).monospacedDigit()
-            .padding(.horizontal, 7).padding(.vertical, 3)
-            .background(Capsule().fill(.white.opacity(0.1)))
-        }
       }
       .padding(.horizontal, 16).padding(.top, 6).padding(.bottom, 10)
       .contentShape(Rectangle())
@@ -274,10 +345,312 @@ private struct EventBanner: View {
     guard event.kind != .failed, let note = event.note else { return event.detail }
     return "\(note) · \(event.detail)"
   }
+}
 
-  /// "owner/repo #12" from the stored "owner/repo #12 · Merged" title.
-  private var reference: String {
-    event.title.components(separatedBy: " · ").first ?? event.title
+extension IslandEvent {
+  /// "owner/repo #12" from the stored "owner/repo #12 · Merged" title: the PR it is about.
+  var reference: String {
+    title.components(separatedBy: " · ").first ?? title
+  }
+}
+
+/// A banner's time on the closed island: its color traces the island's edge as the seconds pass,
+/// down both sides from the top and meeting in the middle of the bottom.
+private struct BannerTime: View {
+  let color: Color
+  let shownAt: Date
+  let ear: CGFloat
+  let radius: CGFloat
+  let attached: Bool
+  @State private var elapsed = 0.0
+
+  /// How much of a banner's time has passed, from 0 to 1.
+  static func elapsed(since shownAt: Date) -> Double {
+    1 - remaining(since: shownAt) / IslandStore.bannerSeconds
+  }
+
+  static func remaining(since shownAt: Date) -> Double {
+    max(0, IslandStore.bannerSeconds - Date().timeIntervalSince(shownAt))
+  }
+
+  var body: some View {
+    let edge = IslandEdge(ear: ear, radius: radius, attached: attached)
+      .trim(from: 0, to: elapsed)
+      // Twice the width shows, as the island clips the outer half.
+      .stroke(color, style: StrokeStyle(lineWidth: 4, lineCap: .round, lineJoin: .round))
+    ZStack {
+      edge
+      edge.scaleEffect(x: -1)
+    }
+    .allowsHitTesting(false)
+    .accessibilityHidden(true)
+    .onAppear {
+      elapsed = Self.elapsed(since: shownAt)
+      withAnimation(.linear(duration: Self.remaining(since: shownAt))) { elapsed = 1 }
+    }
+  }
+}
+
+// MARK: - Activity row
+
+/// The open island's row for what happened: a banner for its 5 seconds, else the inbox of
+/// notifications not yet dismissed. It's there only while it has one to show.
+private struct ActivityRow: View {
+  let store: IslandStore
+
+  var body: some View {
+    let inbox = store.inbox
+    ZStack {
+      if let event = store.recentEvent {
+        RowBanner(
+          event: event, shownAt: store.bannerShownAt, timer: store.settings.bannerTimer
+        )
+        .id(event.id)
+        .transition(.liveTurn)
+      } else if !inbox.isEmpty {
+        ActivityInbox(store: store, items: inbox).transition(.opacity)
+      }
+    }
+    .frame(maxWidth: .infinity)
+    .clipped()
+  }
+
+}
+
+/// A banner in the activity row: what you'd do next on the right, and a bar underneath that
+/// fills over its 5 seconds. A click does that next thing.
+private struct RowBanner: View {
+  let event: IslandEvent
+  let shownAt: Date
+  /// Shows the bar; without it, the bar's room stays empty so the row keeps its layout.
+  let timer: Bool
+  /// How much of its time has passed, from 0 to 1.
+  @State private var elapsed = 0.0
+
+  var body: some View {
+    Button {
+      NSWorkspace.shared.open(destination)
+    } label: {
+      VStack(spacing: 6) {
+        HStack(spacing: 11) {
+          GlyphView(glyph: event.kind.eventGlyph, size: 16)
+            .foregroundStyle(color)
+            .frame(width: 32, height: 32)
+            .background(Circle().fill(color.opacity(0.18)))
+          VStack(alignment: .leading, spacing: 2) {
+            HStack(spacing: 6) {
+              Text(title).font(.system(size: 13, weight: .semibold))
+              Text(event.reference).font(.system(size: 11)).foregroundStyle(.white.opacity(0.45))
+            }
+            Text(detail).font(.system(size: 12)).foregroundStyle(.white.opacity(0.7))
+          }
+          .lineLimit(1)
+          Spacer(minLength: 6)
+          Text(action).font(.system(size: 11, weight: .semibold)).foregroundStyle(color)
+            .padding(.horizontal, 10).padding(.vertical, 5)
+            .background(Capsule().fill(color.opacity(0.15)))
+        }
+        GeometryReader { proxy in
+          ZStack(alignment: .leading) {
+            Capsule().fill(.white.opacity(0.06))
+            Capsule().fill(color.opacity(0.7)).frame(width: proxy.size.width * elapsed)
+          }
+        }
+        .frame(height: 2)
+        .padding(.leading, 43)
+        .opacity(timer ? 1 : 0)
+      }
+      .padding(.horizontal, 10).padding(.top, 4).padding(.bottom, 4)
+      .contentShape(Rectangle())
+    }
+    .buttonStyle(.plain)
+    .onAppear {
+      // Picks up where the banner is in its time, if it was already showing.
+      elapsed = BannerTime.elapsed(since: shownAt)
+      withAnimation(.linear(duration: BannerTime.remaining(since: shownAt))) { elapsed = 1 }
+    }
+    .accessibilityLabel("\(title): \(event.detail)")
+    .accessibilityHint(action)
+  }
+
+  private var color: Color { event.kind.color }
+
+  /// "Checks failed: unit" when the failing checks are known.
+  private var title: String {
+    guard event.kind == .failed, let note = event.note else { return event.kind.eventTitle }
+    return "\(event.kind.eventTitle): \(note)"
+  }
+
+  private var detail: String {
+    guard event.kind != .failed, let note = event.note else { return event.detail }
+    return "\(note) · \(event.detail)"
+  }
+
+  private var action: String {
+    switch event.kind {
+    case .failed: "See checks"
+    case .mergeFailed: "See why"
+    case .previewReady: "Open preview"
+    case .review: "Review"
+    case .ready: "Merge"
+    case .draft: "View draft"
+    default: "View PR"
+    }
+  }
+
+  /// A failure opens the PR's checks and a review request its changes; the rest open the PR,
+  /// or the preview.
+  private var destination: URL {
+    switch event.kind {
+    case .failed: event.url.appending(path: "checks")
+    case .review: event.url.appending(path: "files")
+    default: event.url
+    }
+  }
+}
+
+/// Dismisses the notification in front. Like Notification Center, resting on it while there are
+/// more turns it into "Clear all", so a quick click never clears everything.
+private struct DismissButton: View {
+  let count: Int
+  let label: String
+  /// Shows "Clear all" without the wait, for a tour.
+  var shows = false
+  let dismiss: () -> Void
+  let clearAll: () -> Void
+  @State private var hovered = false
+  @State private var clears = false
+
+  var body: some View {
+    Button {
+      if clears { clearAll() } else { dismiss() }
+    } label: {
+      HStack(spacing: 5) {
+        Image(systemName: "xmark").font(.system(size: clears ? 9 : 10, weight: .bold))
+        if clears {
+          Text(verbatim: "Clear all \(count)").font(.system(size: 11, weight: .semibold))
+            .monospacedDigit()
+            .fixedSize()
+            .transition(.opacity)
+        }
+      }
+      .foregroundStyle(.white.opacity(clears ? 0.75 : 0.5))
+      .padding(.horizontal, clears ? 10 : 0)
+      .frame(minWidth: 24, minHeight: 24)
+      .background(Capsule().fill(.white.opacity(clears ? 0.14 : 0.08)))
+      .contentShape(Capsule())
+    }
+    .buttonStyle(.plain)
+    .onHover { inside in
+      hovered = inside
+      if !inside { withAnimation(Motion.snappy) { clears = false } }
+    }
+    .task(id: hovered) {
+      guard hovered, count > 1 else { return }
+      try? await Task.sleep(for: .seconds(0.6))
+      if !Task.isCancelled, hovered { withAnimation(Motion.snappy) { clears = true } }
+    }
+    .onChange(of: count) { if count < 2 { clears = false } }
+    .onChange(of: shows) { withAnimation(Motion.snappy) { clears = shows && count > 1 } }
+    .help(clears ? "Clear all notifications" : "Dismiss")
+    .accessibilityLabel(clears ? "Clear all \(count) notifications" : "Dismiss \(label)")
+    .accessibilityAction(named: "Clear all") { clearAll() }
+  }
+}
+
+/// The open island's inbox for quiet moments: notifications you haven't dismissed, stacked
+/// newest in front, with a count of how many. The one in front opens with a click, or goes with
+/// its ✕, and the next comes forward.
+private struct ActivityInbox: View {
+  let store: IslandStore
+  let items: [IslandEvent]
+
+  var body: some View {
+    HStack(spacing: 11) {
+      stack(Array(items.prefix(3)))
+        .overlay(alignment: .topTrailing) {
+          if items.count > 1 {
+            Text(verbatim: "\(items.count)")
+              .font(.system(size: 9.5, weight: .bold)).monospacedDigit()
+              .foregroundStyle(.white.opacity(0.9))
+              .padding(.horizontal, 4).frame(minWidth: 15, minHeight: 15)
+              .background(Capsule().fill(Color(white: 0.3)))
+              .overlay(Capsule().strokeBorder(.black, lineWidth: 1.5))
+              .contentTransition(.numericText(value: Double(items.count)))
+              .offset(x: 5, y: -4)
+          }
+        }
+        .accessibilityHidden(true)
+      if let event = items.first {
+        card(event)
+          .id(event.id)
+          .transition(.liveTurn)
+        DismissButton(
+          count: items.count, label: "\(event.kind.eventTitle), \(event.reference)",
+          shows: store.tourClearAll, dismiss: { store.dismiss(event) },
+          clearAll: { store.dismissAll() })
+      }
+    }
+    .padding(.leading, items.count > 1 ? 30 : 10).padding(.trailing, 10)
+    .padding(.top, 6).padding(.bottom, 10)
+    .accessibilityElement(children: .contain)
+    .accessibilityLabel("\(items.count) unread")
+  }
+
+  /// The one in front and up to two behind it, peeking out to the left.
+  private func stack(_ events: [IslandEvent]) -> some View {
+    ZStack {
+      ForEach(Array(events.enumerated()).reversed(), id: \.element.id) { depth, event in
+        let color = event.kind.color
+        GlyphView(glyph: event.kind.eventGlyph, size: 16)
+          .foregroundStyle(color.opacity(depth == 0 ? 0.9 : 0.75))
+          .frame(width: 32, height: 32)
+          .background(Circle().fill(color.opacity(0.2)))
+          // Opaque underneath, so the circles behind don't show through.
+          .background(Circle().fill(Color(white: 0.05)))
+          .overlay(Circle().strokeBorder(.black, lineWidth: 2))
+          .scaleEffect(1 - 0.12 * CGFloat(depth))
+          .offset(x: -12 * CGFloat(depth))
+          .opacity(1 - 0.2 * Double(depth))
+          .zIndex(-Double(depth))
+          .transition(
+            .asymmetric(insertion: .opacity, removal: .scale(scale: 1.2).combined(with: .opacity)))
+      }
+    }
+    .frame(width: 32, height: 32)
+  }
+
+  /// Opening a notification counts as reading it, so it leaves the inbox too.
+  private func card(_ event: IslandEvent) -> some View {
+    Button {
+      NSWorkspace.shared.open(event.url)
+      store.dismiss(event)
+    } label: {
+      HStack(spacing: 11) {
+        VStack(alignment: .leading, spacing: 2) {
+          HStack(spacing: 6) {
+            Text(event.kind.eventTitle).font(.system(size: 13, weight: .semibold))
+              .foregroundStyle(.white.opacity(0.85))
+            Text(event.reference).font(.system(size: 11)).foregroundStyle(.white.opacity(0.4))
+          }
+          Text(event.detail).font(.system(size: 12)).foregroundStyle(.white.opacity(0.6))
+        }
+        .lineLimit(1)
+        Spacer(minLength: 6)
+        Text(
+          Format.age(event.occurredAt) + (Format.age(event.occurredAt) == "now" ? "" : " ago")
+        )
+        .font(.system(size: 12, weight: .semibold))
+        .foregroundStyle(.white.opacity(0.5))
+        .fixedSize()
+      }
+      .contentShape(Rectangle())
+    }
+    .buttonStyle(.plain)
+    .accessibilityLabel(
+      "\(event.kind.eventTitle), \(Format.age(event.occurredAt)): \(event.detail)"
+    )
+    .accessibilityHint("Opens the pull request on GitHub and dismisses it")
   }
 }
 
@@ -299,9 +672,19 @@ private struct ExpandedIsland: View {
     store.showingOnboarding ? onboardingFooterHeight : footerHeight
   }
 
+  static let activityHeight: CGFloat = 50
+
   static func chromeHeight(_ metrics: IslandMetrics, store: IslandStore) -> CGFloat {
-    topInset(metrics) + headerHeight + (showsFilterBar(store) ? filterBarHeight : 0)
+    topInset(metrics, store: store) + headerHeight + (showsActivity(store) ? activityHeight : 0)
+      + (showsFilterBar(store) ? filterBarHeight : 0)
       + footerHeight(store) + 1
+  }
+
+  /// While there's a notification or anything in the inbox. Settings and setup have their own
+  /// layout, without the row.
+  static func showsActivity(_ store: IslandStore) -> Bool {
+    !store.showingSettings && !store.showingOnboarding
+      && (store.recentEvent != nil || !store.inbox.isEmpty)
   }
 
   /// State filters belong to Activity, in both layouts.
@@ -310,15 +693,32 @@ private struct ExpandedIsland: View {
       && store.detailsPullRequest == nil
   }
 
-  static func topInset(_ metrics: IslandMetrics) -> CGFloat {
-    metrics.hasNotch ? metrics.notchHeight + 4 : 10
+  /// Clears the notch, with the live bar beside it. A notch leaves room for the bar either way,
+  /// so the bar coming or going moves nothing.
+  static func topInset(_ metrics: IslandMetrics, store: IslandStore) -> CGFloat {
+    metrics.hasNotch
+      ? max(metrics.notchHeight + 4, metrics.closedHeight)
+      : store.isLive ? metrics.closedHeight : 10
   }
 
   var body: some View {
+    let activity = Self.showsActivity(store)
+    let inset = Self.topInset(metrics, store: store)
     VStack(spacing: 0) {
+      if activity {
+        // As wide as the default island at most, centered under the notch, so a wide board or
+        // PR page doesn't spread a notification across the screen.
+        ActivityRow(store: store)
+          .frame(maxWidth: metrics.expandedWidth - 44)
+          .frame(maxWidth: .infinity)
+          .padding(.horizontal, 22)
+          .padding(.top, inset)
+          .frame(height: inset + Self.activityHeight, alignment: .bottom)
+          .transition(.opacity)
+      }
       header
-        .padding(.top, Self.topInset(metrics))
-        .frame(height: Self.topInset(metrics) + Self.headerHeight, alignment: .bottom)
+        .padding(.top, activity ? 0 : inset)
+        .frame(height: (activity ? 0 : inset) + Self.headerHeight, alignment: .bottom)
       if Self.showsFilterBar(store) {
         StateFilterBar(store: store)
           .padding(.horizontal, 28)
@@ -633,7 +1033,7 @@ struct RepositoryPicker: View {
     }
     .padding(Self.padding)
     .frame(width: Self.width)
-    .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color(white: 0.1)))
+    .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Palette.popover))
     .overlay(
       RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Palette.hairline)
     )

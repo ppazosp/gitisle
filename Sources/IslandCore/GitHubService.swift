@@ -584,6 +584,43 @@ extension GitHubService {
     return result
   }
 
+  /// A PR's checks, or its merge queue run's, for a preview while they run: about a point.
+  public func checks(of pr: PullRequest, queue: Bool) async throws -> [Check] {
+    let rollup = """
+      statusCheckRollup { contexts(first: 100) { nodes {
+        __typename
+        ... on CheckRun {
+          name status conclusion detailsUrl startedAt completedAt
+          checkSuite { workflowRun { workflow { name } } }
+        }
+        ... on StatusContext { context state targetUrl description }
+      } } }
+      """
+    let commit =
+      queue
+      ? "mergeQueueEntry { headCommit { \(rollup) } }"
+      : "commits(last: 1) { nodes { commit { \(rollup) } } }"
+    let response = try await request(
+      query: """
+        query($id: ID!) {
+          rateLimit { remaining resetAt }
+          node(id: $id) { ... on PullRequest { \(commit) } }
+        }
+        """,
+      variables: ["id": pr.id])
+    guard let node = (response["data"] as? [String: Any])?["node"] as? [String: Any] else {
+      throw ProcessFailure.failed("GitHub could not find this pull request.")
+    }
+    let head =
+      queue
+      ? (node["mergeQueueEntry"] as? [String: Any])?["headCommit"] as? [String: Any]
+      : (((node["commits"] as? [String: Any])?["nodes"] as? [[String: Any]])?.last)?["commit"]
+        as? [String: Any]
+    let contexts = (head?["statusCheckRollup"] as? [String: Any])?["contexts"] as? [String: Any]
+    let nodes = contexts?["nodes"] as? [[String: Any]] ?? []
+    return Check.sorted(nodes.compactMap(Self.decodeCheck))
+  }
+
   static func decodeCheck(_ node: [String: Any]) -> Check? {
     func link(_ value: Any?) -> URL? {
       guard let text = value as? String, let url = URL(string: text), url.scheme == "https"

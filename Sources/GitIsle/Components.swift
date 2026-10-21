@@ -45,6 +45,53 @@ struct IslandShape: Shape {
   }
 }
 
+/// The left half of the island's visible edge, from where it meets the top of the screen down
+/// to the middle of its bottom; mirrored, it is the right half. A detached island starts from
+/// the middle of its top.
+struct IslandEdge: Shape {
+  var ear: CGFloat
+  var radius: CGFloat
+  var attached: Bool
+
+  var animatableData: AnimatablePair<CGFloat, CGFloat> {
+    get { AnimatablePair(ear, radius) }
+    set {
+      ear = newValue.first
+      radius = newValue.second
+    }
+  }
+
+  func path(in rect: CGRect) -> Path {
+    var path = Path()
+    guard attached else {
+      let radius = max(0, min(radius, rect.height / 2, rect.width / 2))
+      path.move(to: CGPoint(x: rect.midX, y: rect.minY))
+      path.addArc(
+        tangent1End: CGPoint(x: rect.minX, y: rect.minY),
+        tangent2End: CGPoint(x: rect.minX, y: rect.maxY), radius: radius)
+      path.addArc(
+        tangent1End: CGPoint(x: rect.minX, y: rect.maxY),
+        tangent2End: CGPoint(x: rect.maxX, y: rect.maxY), radius: radius)
+      path.addLine(to: CGPoint(x: rect.midX, y: rect.maxY))
+      return path
+    }
+    // The same curves as `IslandShape`'s left side, without its top along the screen's edge.
+    let ear = min(ear, rect.width / 4, rect.height / 2)
+    let radius = max(0, min(radius, rect.height - ear, (rect.width - 2 * ear) / 2))
+    path.move(to: CGPoint(x: rect.minX, y: rect.minY))
+    path.addQuadCurve(
+      to: CGPoint(x: rect.minX + ear, y: rect.minY + ear),
+      control: CGPoint(x: rect.minX + ear, y: rect.minY))
+    path.addLine(to: CGPoint(x: rect.minX + ear, y: rect.maxY - radius))
+    path.addCurve(
+      to: CGPoint(x: rect.minX + ear + radius, y: rect.maxY),
+      control1: CGPoint(x: rect.minX + ear, y: rect.maxY - radius * 0.45),
+      control2: CGPoint(x: rect.minX + ear + radius * 0.45, y: rect.maxY))
+    path.addLine(to: CGPoint(x: rect.midX, y: rect.maxY))
+    return path
+  }
+}
+
 enum Palette {
   static let open = Color(red: 0.25, green: 0.73, blue: 0.31)
   static let draft = Color(red: 0.55, green: 0.58, blue: 0.62)
@@ -56,6 +103,8 @@ enum Palette {
   static let update = Color(red: 0.24, green: 0.56, blue: 1.0)
   static let surface = Color.white.opacity(0.055)
   static let hairline = Color.white.opacity(0.09)
+  /// Dropdowns and previews over the island: a shade off its black, edged with a hairline.
+  static let popover = Color(white: 0.06)
 }
 
 enum Motion {
@@ -68,6 +117,13 @@ enum Motion {
 
 extension AnyTransition {
   /// Content arrives after the shape has started growing and leaves before it shrinks.
+  /// The live bar's next PR rises in as the last one leaves upward.
+  static var liveTurn: AnyTransition {
+    .asymmetric(
+      insertion: .move(edge: .bottom).combined(with: .opacity),
+      removal: .move(edge: .top).combined(with: .opacity))
+  }
+
   static var islandContent: AnyTransition {
     .asymmetric(
       insertion: .opacity.combined(with: .scale(scale: 0.96, anchor: .top))
@@ -311,9 +367,7 @@ struct CheckBadge: View {
         }
       }
       .font(.system(size: 10.5, weight: .medium)).monospacedDigit()
-      .help(
-        (pr.queueChecks == nil ? "" : "Merge queue: ")
-          + "\(summary.passed) passed · \(summary.failed) failed · \(summary.pending) running")
+      .checksHover(pr, queue: pr.queuePosition != nil && pr.queueChecks != nil)
     } else if let checks = pr.checks {
       switch checks {
       case "SUCCESS": GlyphView(glyph: .checkFill, size: 13).foregroundStyle(Palette.open)

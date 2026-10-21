@@ -431,7 +431,7 @@ private struct TuningStep: View {
   private let rows: [(symbol: String, title: String, detail: String)] = [
     (
       "cursorarrow.motionlines", "Timing",
-      "How quickly it opens, also over a banner, and closes."
+      "How quickly it opens and closes."
     ),
     (
       "bell.badge", "Announcements", "Which changes slide out as banners, and system notifications."
