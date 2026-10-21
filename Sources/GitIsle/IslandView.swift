@@ -365,6 +365,10 @@ private struct ActivityRow: View {
           LiveCard(pr: pr)
             .id(pr.id)
             .transition(.liveTurn)
+        } else if let event = store.lastActivity {
+          LastActivity(event: event)
+            .id(event.id)
+            .transition(.liveTurn)
         } else {
           quiet.transition(.opacity)
         }
@@ -505,6 +509,52 @@ private struct RowBanner: View {
     case .review: event.url.appending(path: "files")
     default: event.url
     }
+  }
+}
+
+/// The latest change, quiet, when nothing is happening: what it was, and how long ago on the
+/// right. A click opens it.
+private struct LastActivity: View {
+  let event: IslandEvent
+
+  var body: some View {
+    Button {
+      NSWorkspace.shared.open(event.url)
+    } label: {
+      HStack(spacing: 11) {
+        GlyphView(glyph: event.kind.eventGlyph, size: 16)
+          .foregroundStyle(event.kind.color.opacity(0.7))
+          .frame(width: 32, height: 32)
+          .background(Circle().fill(event.kind.color.opacity(0.1)))
+        VStack(alignment: .leading, spacing: 2) {
+          HStack(spacing: 6) {
+            Text(event.kind.eventTitle).font(.system(size: 13, weight: .semibold))
+              .foregroundStyle(.white.opacity(0.65))
+            Text(event.reference).font(.system(size: 11)).foregroundStyle(.white.opacity(0.35))
+          }
+          Text(event.detail).font(.system(size: 12)).foregroundStyle(.white.opacity(0.45))
+        }
+        .lineLimit(1)
+        Spacer(minLength: 6)
+        VStack(alignment: .trailing, spacing: 1) {
+          Text(
+            Format.age(event.occurredAt)
+              + (event.occurredAt.timeIntervalSinceNow > -60 ? "" : " ago")
+          )
+          .font(.system(size: 12, weight: .semibold))
+          .foregroundStyle(.white.opacity(0.55))
+          Text("last activity").font(.system(size: 10.5)).foregroundStyle(.white.opacity(0.35))
+        }
+        .fixedSize()
+      }
+      .padding(.horizontal, 10).padding(.top, 6).padding(.bottom, 10)
+      .contentShape(Rectangle())
+    }
+    .buttonStyle(.plain)
+    .accessibilityLabel(
+      "Last activity, \(Format.age(event.occurredAt)): \(event.kind.eventTitle), \(event.detail)"
+    )
+    .accessibilityHint("Opens the pull request on GitHub")
   }
 }
 

@@ -410,6 +410,14 @@ final class IslandStore {
 
   var isLive: Bool { !merging.isEmpty || !checking.isEmpty }
 
+  /// The latest change a banner would announce, in the repositories shown, for the open
+  /// island's quiet moments.
+  var lastActivity: IslandEvent? {
+    events.first {
+      settings.announcedKinds.contains($0.kind.rawValue) && shows($0.repository)
+    }
+  }
+
   /// Every live PR, merging first; the live bar cycles through them.
   var livePullRequests: [PullRequest] { merging + checking }
 
@@ -1383,6 +1391,12 @@ final class IslandStore {
       return pr
     }
     setGitHub(GitHubSnapshot(login: "maya", pullRequests: branched))
+    // The latest change, for the open island's quiet moments.
+    if var merged = demoEvent(.merged) {
+      merged.id = "demo-last"
+      merged.occurredAt = now.addingTimeInterval(-3 * hour)
+      events = [merged]
+    }
     let calendar = Calendar.current
     let formatter = DateFormatter()
     formatter.dateFormat = "yyyy-MM-dd"
