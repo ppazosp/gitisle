@@ -99,6 +99,10 @@ final class IslandStore {
   var dropdown: Dropdown?
   /// Example data only: a dropdown to open once its control is laid out, for captures.
   @ObservationIgnored var pendingDropdown: String?
+  /// Example data only: a tour opens the live bar's checks preview for this
+  /// `ChecksPreview.key`, and shows the inbox's ✕ as "Clear all".
+  var pendingChecks: String?
+  var tourClearAll = false
   /// Example data only: a PR whose row and card show as hovered, for captures.
   @ObservationIgnored var previewHover: String?
   /// The PR whose page replaces Activity, by ID.
@@ -1290,6 +1294,58 @@ final class IslandStore {
           try await step(4.4) { self?.recentEvent = nil }
         } catch {}
         defaults.set(layout, forKey: "diffLayout")
+        self?.touring = false
+      })
+  }
+
+  /// Example data only: the tour of what happens in the island (`--tour activity`), for
+  /// recording a product video. Two changes arrive together and take turns on the closed
+  /// island; it opens on the inbox; a failure lands in the activity row; the merge queue's
+  /// checks preview from the live bar; the inbox is dismissed and cleared. About 31 seconds.
+  func runActivityTour() {
+    guard isDemo else { return }
+    func arrive(_ kind: PRStatus) {
+      guard var event = demoEvent(kind) else { return }
+      event.id = "tour-\(kind.rawValue)"
+      event.occurredAt = Date()
+      events.insert(event, at: 0)
+      showEvent(event)
+    }
+    touring = true
+    loops.append(
+      Task { [weak self] in
+        @MainActor func step(_ seconds: Double, _ change: () -> Void) async throws {
+          try await Task.sleep(for: .seconds(seconds))
+          withAnimation(Motion.morph, change)
+        }
+        do {
+          // The live bar cycles; a preview and a merge arrive at once and take turns.
+          try await step(2.5) {
+            arrive(.previewReady)
+            arrive(.merged)
+          }
+          // Open on the inbox, then a failure lands in the activity row.
+          try await step(10.5) {
+            self?.tab = .activity
+            self?.activityLayout = .list
+            self?.expanded = true
+          }
+          try await step(2.0) { arrive(.failed) }
+          // The merge queue's checks, from the live bar's ring: #433 first comes round.
+          try await step(5.0) { self?.showLive(at: 0) }
+          try await step(0.6) { self?.pendingChecks = ChecksPreview.key("demo3", queue: true) }
+          try await step(4.0) { self?.checksPreview = nil }
+          // Dismiss one, then clear the rest.
+          try await step(0.8) {
+            if let front = self?.inbox.first { self?.dismiss(front) }
+          }
+          try await step(1.2) { self?.tourClearAll = true }
+          try await step(1.4) {
+            self?.dismissAll()
+            self?.tourClearAll = false
+          }
+          try await step(1.6) { self?.expanded = false }
+        } catch {}
         self?.touring = false
       })
   }

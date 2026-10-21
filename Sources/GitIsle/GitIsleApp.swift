@@ -152,10 +152,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
       store.previewEvent(kind)
     }
     if arguments.contains("--showcase") { store.runShowcase() }
-    // `--tour` plays every state of the island; `--tour pages` plays a PR's page.
+    // `--tour` plays every state of the island; `--tour pages` plays a PR's page, and
+    // `--tour activity` the banners, the inbox and a checks preview.
     if let index = arguments.firstIndex(of: "--tour") {
       if arguments.count > index + 1, arguments[index + 1] == "pages" {
         store.runPagesTour()
+      } else if arguments.count > index + 1, arguments[index + 1] == "activity" {
+        store.runActivityTour()
       } else {
         store.runTour()
       }

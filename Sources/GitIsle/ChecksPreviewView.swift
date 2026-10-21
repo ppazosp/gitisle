@@ -5,14 +5,16 @@ import SwiftUI
 extension View {
   /// Previews `pr`'s checks, or its merge queue run's, while the pointer rests here in the open
   /// island.
-  func checksHover(_ pr: PullRequest, queue: Bool) -> some View {
-    modifier(ChecksHover(pr: pr, queue: queue))
+  /// `liveBar` marks the live bar's rings, which a tour previews.
+  func checksHover(_ pr: PullRequest, queue: Bool, liveBar: Bool = false) -> some View {
+    modifier(ChecksHover(pr: pr, queue: queue, liveBar: liveBar))
   }
 }
 
 private struct ChecksHover: ViewModifier {
   let pr: PullRequest
   let queue: Bool
+  let liveBar: Bool
   @Environment(IslandStore.self) private var store
   @State private var frame: CGRect = .zero
 
@@ -22,12 +24,23 @@ private struct ChecksHover: ViewModifier {
         $0.frame(in: .named(ChecksPreview.space))
       } action: {
         frame = $0
+        openPending()
       }
       .onHover { inside in
         // The closed island opens on hover; the preview belongs to the open one.
         guard store.expanded else { return }
         store.hoverChecks(pr, queue: queue, anchor: frame, inside: inside)
       }
+      .onChange(of: store.pendingChecks) { openPending() }
+  }
+
+  /// Opens the preview a tour asked for, once this ring is laid out.
+  private func openPending() {
+    guard liveBar, frame != .zero,
+      store.pendingChecks == ChecksPreview.key(pr.id, queue: queue)
+    else { return }
+    store.pendingChecks = nil
+    store.hoverChecks(pr, queue: queue, anchor: frame, inside: true)
   }
 }
 

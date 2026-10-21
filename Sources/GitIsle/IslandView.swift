@@ -227,7 +227,8 @@ private struct CompactBar: View {
               .easeInOut(duration: 1.1)
             }
         } else if let summary = pr.checkSummary {
-          CheckRing(summary: summary, size: 14, lineWidth: 2.2).checksHover(pr, queue: false)
+          CheckRing(summary: summary, size: 14, lineWidth: 2.2)
+            .checksHover(pr, queue: false, liveBar: true)
         } else {
           GlyphView(glyph: .clock, size: 14).foregroundStyle(Palette.merging)
         }
@@ -251,7 +252,8 @@ private struct CompactBar: View {
           HStack(spacing: 6) {
             // The merge queue's checks, as the ring shows the PR's own while they run.
             if let queue = pr.queueChecks {
-              CheckRing(summary: queue, size: 14, lineWidth: 2.2).checksHover(pr, queue: true)
+              CheckRing(summary: queue, size: 14, lineWidth: 2.2)
+                .checksHover(pr, queue: true, liveBar: true)
             }
             if let since = pr.mergingSince {
               // How long the PR has been merging; the system updates the timer without polling.
@@ -512,6 +514,8 @@ private struct RowBanner: View {
 private struct DismissButton: View {
   let count: Int
   let label: String
+  /// Shows "Clear all" without the wait, for a tour.
+  var shows = false
   let dismiss: () -> Void
   let clearAll: () -> Void
   @State private var hovered = false
@@ -547,6 +551,7 @@ private struct DismissButton: View {
       if !Task.isCancelled, hovered { withAnimation(Motion.snappy) { clears = true } }
     }
     .onChange(of: count) { if count < 2 { clears = false } }
+    .onChange(of: shows) { withAnimation(Motion.snappy) { clears = shows && count > 1 } }
     .help(clears ? "Clear all notifications" : "Dismiss")
     .accessibilityLabel(clears ? "Clear all \(count) notifications" : "Dismiss \(label)")
     .accessibilityAction(named: "Clear all") { clearAll() }
@@ -582,7 +587,8 @@ private struct ActivityInbox: View {
           .transition(.liveTurn)
         DismissButton(
           count: items.count, label: "\(event.kind.eventTitle), \(event.reference)",
-          dismiss: { store.dismiss(event) }, clearAll: { store.dismissAll() })
+          shows: store.tourClearAll, dismiss: { store.dismiss(event) },
+          clearAll: { store.dismissAll() })
       }
     }
     .padding(.leading, items.count > 1 ? 30 : 10).padding(.trailing, 10)
