@@ -17,10 +17,7 @@ struct IslandView: View {
     let shape = IslandShape(
       ear: ear, radius: metrics.cornerRadius(for: presentation), attached: metrics.hasNotch)
     ZStack(alignment: .top) {
-      if presentation == .expanded {
-        ExpandedIsland(store: store, metrics: metrics, contentHeight: $contentHeight)
-          .transition(.islandContent)
-      } else if presentation == .idle {
+      if presentation == .idle {
         // Nothing to show; the island is still a hover and click target.
         Color.clear.contentShape(Rectangle()).onTapGesture { store.expanded = true }
           .accessibilityElement()
@@ -29,9 +26,21 @@ struct IslandView: View {
           .accessibilityAddTraits(.isButton)
       } else {
         VStack(spacing: 0) {
-          CompactBar(store: store, metrics: metrics, side: $liveSide)
-          if presentation == .banner, let event = store.recentEvent {
-            EventBanner(event: event, extra: store.recentEventExtra)
+          // The live bar and a banner stay where they are when the island opens, and it grows
+          // under them, so they can still be clicked.
+          if presentation != .expanded || ExpandedIsland.showsBar(store) {
+            VStack(spacing: 0) {
+              CompactBar(store: store, metrics: metrics, side: $liveSide)
+              if let event = store.recentEvent {
+                EventBanner(event: event, extra: store.recentEventExtra)
+                  .transition(.islandContent)
+              }
+            }
+            .frame(width: presentation == .expanded ? barWidth : nil)
+            .transition(.islandContent)
+          }
+          if presentation == .expanded {
+            ExpandedIsland(store: store, metrics: metrics, contentHeight: $contentHeight)
               .transition(.islandContent)
           }
         }
@@ -74,6 +83,12 @@ struct IslandView: View {
     .animation(reduceMotion ? nil : Motion.morph, value: liveSide)
     .padding(.top, metrics.topGap)
     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+  }
+
+  /// The live bar's or banner's width, as they were before the island opened.
+  private var barWidth: CGFloat {
+    let live = metrics.liveWidth(side: liveSide)
+    return store.recentEvent == nil ? live : metrics.bannerSize(liveWidth: live).width
   }
 
   private func size(for presentation: IslandStore.Presentation) -> CGSize {
@@ -300,8 +315,16 @@ private struct ExpandedIsland: View {
   }
 
   static func chromeHeight(_ metrics: IslandMetrics, store: IslandStore) -> CGFloat {
-    topInset(metrics) + headerHeight + (showsFilterBar(store) ? filterBarHeight : 0)
-      + footerHeight(store) + 1
+    topInset(metrics, store: store) + barHeight(metrics, store: store) + headerHeight
+      + (showsFilterBar(store) ? filterBarHeight : 0) + footerHeight(store) + 1
+  }
+
+  /// Whether the island opened under the live bar or a banner, which stay on top.
+  static func showsBar(_ store: IslandStore) -> Bool { store.recentEvent != nil || store.isLive }
+
+  static func barHeight(_ metrics: IslandMetrics, store: IslandStore) -> CGFloat {
+    store.recentEvent != nil
+      ? metrics.bannerSize(liveWidth: 0).height : store.isLive ? metrics.closedHeight : 0
   }
 
   /// State filters belong to Activity, in both layouts.
@@ -310,15 +333,16 @@ private struct ExpandedIsland: View {
       && store.detailsPullRequest == nil
   }
 
-  static func topInset(_ metrics: IslandMetrics) -> CGFloat {
-    metrics.hasNotch ? metrics.notchHeight + 4 : 10
+  /// Clears the notch; the live bar or a banner on top already does.
+  static func topInset(_ metrics: IslandMetrics, store: IslandStore) -> CGFloat {
+    showsBar(store) ? 0 : metrics.hasNotch ? metrics.notchHeight + 4 : 10
   }
 
   var body: some View {
     VStack(spacing: 0) {
       header
-        .padding(.top, Self.topInset(metrics))
-        .frame(height: Self.topInset(metrics) + Self.headerHeight, alignment: .bottom)
+        .padding(.top, Self.topInset(metrics, store: store))
+        .frame(height: Self.topInset(metrics, store: store) + Self.headerHeight, alignment: .bottom)
       if Self.showsFilterBar(store) {
         StateFilterBar(store: store)
           .padding(.horizontal, 28)

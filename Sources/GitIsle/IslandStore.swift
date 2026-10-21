@@ -28,8 +28,9 @@ final class IslandStore {
         dropdown = nil
         detailsID = nil
       }
-      // Expanding shows the full context, so a pending banner has done its job.
-      if expanded, recentEvent != nil {
+      // The open island keeps a banner on top; closing it after the banner's time is up
+      // takes the banner along, so the island doesn't fall back to it.
+      if !expanded, recentEvent != nil, Date() >= bannerEnds {
         notificationTask?.cancel()
         recentEvent = nil
       }
@@ -370,6 +371,9 @@ final class IslandStore {
   @ObservationIgnored private var loops: [Task<Void, Never>] = []
   @ObservationIgnored private var hoverTask: Task<Void, Never>?
   @ObservationIgnored private var notificationTask: Task<Void, Never>?
+  /// When the banner's time is up; it stays longer while the pointer is on it or the island is
+  /// open.
+  @ObservationIgnored private var bannerEnds = Date.distantPast
   @ObservationIgnored private var lastGitHubRefresh = Date.distantPast
   @ObservationIgnored private var lastActiveRefresh = Date.distantPast
   /// When every search last ran in full; between those, a one-point check finds what changed.
@@ -867,13 +871,10 @@ final class IslandStore {
     hovered = inside
     if touring { return }
     hoverTask?.cancel()
-    // While something is live or announced, a click opens that PR, so expanding needs a
-    // longer, deliberate hover; otherwise it would replace the island under the click.
-    let busy = presentation == .live || presentation == .banner
-    // Leaving waits a moment, so overshooting the edge doesn't close the island.
-    let delay =
-      inside
-      ? (busy ? settings.bannerHoverDelay : settings.hoverDelay) : settings.closeDelay
+    // The live bar and a banner stay on top when the island opens, so they can still be clicked
+    // and opening needs no longer hover. Leaving waits a moment, so overshooting the edge
+    // doesn't close it.
+    let delay = inside ? settings.hoverDelay : settings.closeDelay
     hoverTask = Task { [weak self] in
       guard let self else { return }
       do { try await Task.sleep(for: .seconds(delay)) } catch { return }
@@ -922,11 +923,13 @@ final class IslandStore {
     recentEvent = event
     recentEventExtra = extra
     notificationTask?.cancel()
+    bannerEnds = Date().addingTimeInterval(5)
     notificationTask = Task { [weak self] in
       do {
         try await Task.sleep(for: .seconds(5))
-        // Keep the banner while the pointer rests on it.
-        while self?.hovered == true { try await Task.sleep(for: .seconds(0.5)) }
+        // Keep the banner while the pointer rests on it or the island is open; closing the
+        // island takes it along.
+        while let self, self.hovered || self.expanded { try await Task.sleep(for: .seconds(0.5)) }
       } catch { return }
       self?.recentEvent = nil
     }

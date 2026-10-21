@@ -230,9 +230,6 @@ struct SettingsView: View {
       SettingsRow("Open after") {
         DelaySlider(value: $draft.hoverDelay, range: 0.05...0.9)
       }
-      SettingsRow("Over a banner") {
-        DelaySlider(value: $draft.bannerHoverDelay, range: 0.2...2)
-      }
       SettingsRow("Close after") {
         DelaySlider(value: $draft.closeDelay, range: 0.1...1.5)
       }
