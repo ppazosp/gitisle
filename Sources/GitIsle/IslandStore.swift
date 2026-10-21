@@ -30,8 +30,6 @@ final class IslandStore {
         dropdown = nil
         detailsID = nil
       }
-      // The live bar and the activity row swap places, so neither is under the pointer now.
-      liveHovered = false
       // The inbox opens on the newest change.
       activityIndex = 0
     }

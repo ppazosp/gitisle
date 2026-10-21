@@ -25,11 +25,13 @@ struct IslandView: View {
           .accessibilityHint("Expands the island")
           .accessibilityAddTraits(.isButton)
       } else {
-        // The open island shows the live PRs and banners in its activity row instead.
         if presentation == .expanded {
           ExpandedIsland(store: store, metrics: metrics, contentHeight: $contentHeight)
             .transition(.islandContent)
-        } else {
+        }
+        // The live bar stays where it is when the island opens, beside the notch, so it can still
+        // be clicked; banners move to the open island's activity row.
+        if presentation != .expanded || store.isLive {
           VStack(spacing: 0) {
             CompactBar(store: store, metrics: metrics, side: $liveSide)
             if presentation == .banner, let event = store.recentEvent {
@@ -38,6 +40,7 @@ struct IslandView: View {
                 .transition(.islandContent)
             }
           }
+          .frame(width: presentation == .expanded ? metrics.liveWidth(side: liveSide) : nil)
           .transition(.islandContent)
         }
       }
@@ -137,28 +140,37 @@ private struct CompactBar: View {
   @State private var leadingWidth: CGFloat = 0
   @State private var trailingWidth: CGFloat = 0
 
+  /// The open island has room for arrows to move between live PRs.
+  private var showsArrows: Bool { store.expanded && store.livePullRequests.count > 1 }
+
   var body: some View {
     HStack(spacing: 0) {
-      HStack(spacing: 6) { leading }
-        .fixedSize()
-        .onGeometryChange(for: CGFloat.self) {
-          $0.size.width
-        } action: { width in
-          leadingWidth = width
-          side = max(leadingWidth, trailingWidth)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
+      HStack(spacing: 6) {
+        if showsArrows { chevron("chevron.left", -1) }
+        leading
+      }
+      .fixedSize()
+      .onGeometryChange(for: CGFloat.self) {
+        $0.size.width
+      } action: { width in
+        leadingWidth = width
+        side = max(leadingWidth, trailingWidth)
+      }
+      .frame(maxWidth: .infinity, alignment: .leading)
       // Reserved for the camera housing: content is never laid out under the notch.
       Color.clear.frame(width: metrics.liveGap)
-      trailing
-        .fixedSize()
-        .onGeometryChange(for: CGFloat.self) {
-          $0.size.width
-        } action: { width in
-          trailingWidth = width
-          side = max(leadingWidth, trailingWidth)
-        }
-        .frame(maxWidth: .infinity, alignment: .trailing)
+      HStack(spacing: 6) {
+        trailing
+        if showsArrows { chevron("chevron.right", 1) }
+      }
+      .fixedSize()
+      .onGeometryChange(for: CGFloat.self) {
+        $0.size.width
+      } action: { width in
+        trailingWidth = width
+        side = max(leadingWidth, trailingWidth)
+      }
+      .frame(maxWidth: .infinity, alignment: .trailing)
     }
     .font(.system(size: 13, weight: .semibold))
     .monospacedDigit()
@@ -237,6 +249,18 @@ private struct CompactBar: View {
       .id(pr.id)
       .transition(.liveTurn)
     }
+  }
+
+  private func chevron(_ symbol: String, _ offset: Int) -> some View {
+    Button {
+      store.stepLive(offset)
+    } label: {
+      Image(systemName: symbol).font(.system(size: 9, weight: .bold))
+        .foregroundStyle(.white.opacity(0.6))
+        .frame(width: 14, height: 18).contentShape(Rectangle())
+    }
+    .buttonStyle(.plain)
+    .accessibilityLabel(offset < 0 ? "Previous live pull request" : "Next live pull request")
   }
 
   private var accessibilityText: String {
@@ -344,18 +368,15 @@ private struct BannerTime: View {
 
 // MARK: - Activity row
 
-/// The open island's row for what's happening: a banner for its 5 seconds, else the live PRs
-/// in turn, else a quiet note. It's always there, so nothing in the island moves.
+/// The open island's row for what happened: a banner for its 5 seconds, else an inbox of recent
+/// changes, else a quiet note. It's always there, so nothing in the island moves.
 private struct ActivityRow: View {
   let store: IslandStore
 
   var body: some View {
-    let live = store.livePullRequests
     let recent = store.recentActivity
-    // Arrows only while several PRs are live and no banner has the row, or, with nothing live,
-    // to look back through recent activity.
-    let steps = store.recentEvent == nil && live.count > 1
-    let browses = store.recentEvent == nil && live.isEmpty && recent.count > 1
+    // Arrows to look back through recent activity, while no banner has the row.
+    let browses = store.recentEvent == nil && recent.count > 1
     HStack(spacing: 2) {
       ZStack {
         if let event = store.recentEvent {
@@ -364,11 +385,7 @@ private struct ActivityRow: View {
           )
           .id(event.id)
           .transition(.liveTurn)
-        } else if let pr = store.livePullRequest {
-          LiveCard(pr: pr)
-            .id(pr.id)
-            .transition(.liveTurn)
-        } else if !store.recentActivity.isEmpty {
+        } else if !recent.isEmpty {
           ActivityInbox(store: store).transition(.opacity)
         } else {
           quiet.transition(.opacity)
@@ -376,19 +393,8 @@ private struct ActivityRow: View {
       }
       .frame(maxWidth: .infinity)
       .clipped()
-      // Together at the end, so the row starts where the island's other content does.
-      if steps {
-        HStack(spacing: 0) {
-          arrow("chevron.left", label: "Previous live pull request") { store.stepLive(-1) }
-          Text(verbatim: "\(store.liveIndex + 1)/\(live.count)")
-            .font(.system(size: 11, weight: .semibold)).monospacedDigit()
-            .foregroundStyle(.white.opacity(0.45))
-            .contentTransition(.numericText(value: Double(store.liveIndex)))
-          arrow("chevron.right", label: "Next live pull request") { store.stepLive(1) }
-        }
-        .padding(.bottom, 4)
-        .transition(.opacity)
-      } else if browses {
+      // At the end, so the row starts where the island's other content does.
+      if browses {
         let index = min(store.activityIndex, recent.count - 1)
         HStack(spacing: 0) {
           arrow("chevron.left", label: "Older activity") { store.stepActivity(1) }
@@ -404,7 +410,6 @@ private struct ActivityRow: View {
         .transition(.opacity)
       }
     }
-    .onHover { store.liveHovered = $0 }
   }
 
   /// A line across the row with a quiet label, so the empty row still spans the island.
@@ -616,86 +621,6 @@ private struct ActivityInbox: View {
   }
 }
 
-/// One live PR with room for detail: what it's doing, its place in the queue, its checks, and
-/// how long it has been merging. A click opens it.
-private struct LiveCard: View {
-  let pr: PullRequest
-
-  var body: some View {
-    Button {
-      NSWorkspace.shared.open(pr.url)
-    } label: {
-      HStack(spacing: 11) {
-        badge
-        VStack(alignment: .leading, spacing: 2) {
-          HStack(spacing: 6) {
-            Text(pr.isMerging ? "Merging" : "Checks running")
-              .font(.system(size: 13, weight: .semibold))
-            Text(verbatim: "\(pr.repository) #\(pr.number)").font(.system(size: 11))
-              .foregroundStyle(.white.opacity(0.45))
-          }
-          Text(pr.title).font(.system(size: 12)).foregroundStyle(.white.opacity(0.7))
-        }
-        .lineLimit(1)
-        Spacer(minLength: 6)
-        status
-      }
-      .padding(.horizontal, 10).padding(.top, 6).padding(.bottom, 10)
-      .contentShape(Rectangle())
-    }
-    .buttonStyle(.plain)
-    .accessibilityLabel(
-      "\(pr.isMerging ? "Merging" : "Checks running"): \(pr.repository) #\(pr.number), \(pr.title)"
-    )
-    .accessibilityHint("Opens the pull request on GitHub")
-  }
-
-  private var color: Color { Palette.merging }
-
-  @ViewBuilder private var badge: some View {
-    Group {
-      if pr.isMerging {
-        GlyphView(glyph: .mergeQueue, size: 16).foregroundStyle(color)
-          .phaseAnimator([1.0, 0.45]) { glyph, opacity in
-            glyph.opacity(opacity)
-          } animation: { _ in
-            .easeInOut(duration: 1.1)
-          }
-      } else {
-        GlyphView(glyph: .clock, size: 16).foregroundStyle(color)
-      }
-    }
-    .frame(width: 32, height: 32)
-    .background(Circle().fill(color.opacity(0.18)))
-  }
-
-  @ViewBuilder private var status: some View {
-    HStack(spacing: 8) {
-      if let position = pr.queuePosition {
-        Text(verbatim: "#\(position) in queue").font(.system(size: 11, weight: .semibold))
-          .foregroundStyle(color)
-          .padding(.horizontal, 8).padding(.vertical, 3)
-          .background(Capsule().fill(color.opacity(0.15)))
-      }
-      // The merge queue's checks while merging, the PR's own otherwise.
-      if let checks = pr.isMerging ? pr.queueChecks : pr.checkSummary {
-        CheckRing(summary: checks, size: 14, lineWidth: 2.2)
-        if !pr.isMerging || pr.mergingSince == nil {
-          Text(verbatim: "\(checks.passed)/\(checks.total)")
-            .font(.system(size: 12, weight: .semibold)).monospacedDigit()
-            .foregroundStyle(.white.opacity(0.6))
-        }
-      }
-      if pr.isMerging, let since = pr.mergingSince {
-        Text(since, style: .timer)
-          .font(.system(size: 13, weight: .semibold)).monospacedDigit()
-          .foregroundStyle(color)
-          .fixedSize()
-      }
-    }
-  }
-}
-
 // MARK: - Expanded
 
 private struct ExpandedIsland: View {
@@ -717,7 +642,7 @@ private struct ExpandedIsland: View {
   static let activityHeight: CGFloat = 50
 
   static func chromeHeight(_ metrics: IslandMetrics, store: IslandStore) -> CGFloat {
-    topInset(metrics) + headerHeight + (showsActivity(store) ? activityHeight : 0)
+    topInset(metrics, store: store) + headerHeight + (showsActivity(store) ? activityHeight : 0)
       + (showsFilterBar(store) ? filterBarHeight : 0)
       + footerHeight(store) + 1
   }
@@ -733,13 +658,17 @@ private struct ExpandedIsland: View {
       && store.detailsPullRequest == nil
   }
 
-  static func topInset(_ metrics: IslandMetrics) -> CGFloat {
-    metrics.hasNotch ? metrics.notchHeight + 4 : 10
+  /// Clears the notch, with the live bar beside it. A notch leaves room for the bar either way,
+  /// so the bar coming or going moves nothing.
+  static func topInset(_ metrics: IslandMetrics, store: IslandStore) -> CGFloat {
+    metrics.hasNotch
+      ? max(metrics.notchHeight + 4, metrics.closedHeight)
+      : store.isLive ? metrics.closedHeight : 10
   }
 
   var body: some View {
     let activity = Self.showsActivity(store)
-    let inset = Self.topInset(metrics)
+    let inset = Self.topInset(metrics, store: store)
     VStack(spacing: 0) {
       if activity {
         ActivityRow(store: store)
