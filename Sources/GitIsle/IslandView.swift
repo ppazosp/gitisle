@@ -45,6 +45,25 @@ struct IslandView: View {
         }
       }
     }
+    .coordinateSpace(.named(ChecksPreview.space))
+    .overlay {
+      // Over everything in the island, so it can preview the live bar's rings too.
+      GeometryReader { proxy in
+        if presentation == .expanded, let preview = store.checksPreview {
+          let placement = Dropdown.Placement(
+            anchor: preview.anchor, trailing: preview.anchor.midX > proxy.size.width / 2)
+          let size = proxy.size
+          ZStack(alignment: .topLeading) {
+            Color.clear
+            ChecksPopover(store: store, preview: preview)
+              .alignmentGuide(.leading) { -placement.x(width: $0.width, in: size) }
+              .alignmentGuide(.top) { -placement.y(height: $0.height, in: size) }
+              .transition(.scale(scale: 0.96, anchor: .top).combined(with: .opacity))
+          }
+        }
+      }
+    }
+    .environment(store)
     .padding(.horizontal, ear)
     .frame(width: size.width, height: size.height, alignment: .top)
     .overlay {
@@ -208,7 +227,7 @@ private struct CompactBar: View {
               .easeInOut(duration: 1.1)
             }
         } else if let summary = pr.checkSummary {
-          CheckRing(summary: summary, size: 14, lineWidth: 2.2)
+          CheckRing(summary: summary, size: 14, lineWidth: 2.2).checksHover(pr, queue: false)
         } else {
           GlyphView(glyph: .clock, size: 14).foregroundStyle(Palette.merging)
         }
@@ -231,7 +250,9 @@ private struct CompactBar: View {
         if pr.isMerging {
           HStack(spacing: 6) {
             // The merge queue's checks, as the ring shows the PR's own while they run.
-            if let queue = pr.queueChecks { CheckRing(summary: queue, size: 14, lineWidth: 2.2) }
+            if let queue = pr.queueChecks {
+              CheckRing(summary: queue, size: 14, lineWidth: 2.2).checksHover(pr, queue: true)
+            }
             if let since = pr.mergingSince {
               // How long the PR has been merging; the system updates the timer without polling.
               Text(since, style: .timer)

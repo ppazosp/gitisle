@@ -25,6 +25,7 @@ final class IslandStore {
   var expanded = false {
     didSet {
       if !expanded {
+        checksPreview = nil
         showingSettings = false
         repositoryPickerOpen = false
         dropdown = nil
@@ -64,6 +65,13 @@ final class IslandStore {
   private var liveID: String?
   /// The pointer is on the live bar, which holds it still.
   var liveHovered = false
+  /// The checks a hovered ring shows, and the lists read so far, by `ChecksPreview.key`.
+  var checksPreview: ChecksPreview?
+  private(set) var checkLists: [String: [Check]] = [:]
+  private(set) var checkListErrors: Set<String> = []
+  @ObservationIgnored private var checkListTimes: [String: Date] = [:]
+  @ObservationIgnored private var checksHoverTask: Task<Void, Never>?
+  @ObservationIgnored private var checksRefresh: Task<Void, Never>?
   /// Notifications taken out of the inbox, by ID.
   private var dismissed = Set(UserDefaults.standard.stringArray(forKey: "inboxDismissed") ?? [])
   private(set) var repositories: [RepoSection] = []
@@ -448,6 +456,63 @@ final class IslandStore {
     // The ledger keeps 500 changes, so older dismissals can go with them.
     let kept = Set(events.map(\.id))
     UserDefaults.standard.set(Array(dismissed.intersection(kept)), forKey: "inboxDismissed")
+  }
+
+  /// Shows the checks behind a hovered ring after a short rest, and hides them a moment after
+  /// the pointer leaves, so it can move from the ring onto the preview.
+  func hoverChecks(_ pr: PullRequest, queue: Bool, anchor: CGRect, inside: Bool) {
+    checksHoverTask?.cancel()
+    guard inside else { return hideChecksSoon() }
+    checksHoverTask = Task { [weak self] in
+      do { try await Task.sleep(for: .seconds(0.3)) } catch { return }
+      guard let self else { return }
+      withAnimation(Motion.snappy) {
+        checksPreview = ChecksPreview(prID: pr.id, queue: queue, anchor: anchor)
+      }
+      loadChecks(pr, queue: queue)
+    }
+  }
+
+  /// The pointer on the preview keeps it open.
+  func hoverChecksPreview(_ inside: Bool) {
+    checksHoverTask?.cancel()
+    if !inside { hideChecksSoon() }
+  }
+
+  private func hideChecksSoon() {
+    checksHoverTask = Task { [weak self] in
+      do { try await Task.sleep(for: .seconds(0.25)) } catch { return }
+      withAnimation(Motion.snappy) { self?.checksPreview = nil }
+      self?.checksRefresh?.cancel()
+    }
+  }
+
+  /// Reads the checks unless they were read moments ago, and again every 10 seconds while the
+  /// preview is open and some still run.
+  private func loadChecks(_ pr: PullRequest, queue: Bool) {
+    let key = ChecksPreview.key(pr.id, queue: queue)
+    checksRefresh?.cancel()
+    checksRefresh = Task { [weak self] in
+      while !Task.isCancelled {
+        guard let self else { return }
+        if isDemo {
+          checkLists[key] = demoDetails(pr.id).map { Check.sorted($0.checks) } ?? []
+          return
+        }
+        if Date().timeIntervalSince(checkListTimes[key] ?? .distantPast) > 10 {
+          do {
+            let checks = try await githubService.checks(of: pr, queue: queue)
+            withAnimation(Motion.snappy) { checkLists[key] = checks }
+            checkListTimes[key] = Date()
+            checkListErrors.remove(key)
+          } catch {
+            if checkLists[key] == nil { checkListErrors.insert(key) }
+          }
+        }
+        guard checkLists[key]?.contains(where: { $0.outcome == .running }) == true else { return }
+        do { try await Task.sleep(for: .seconds(10)) } catch { return }
+      }
+    }
   }
 
   /// Every live PR, merging first; the live bar cycles through them.
@@ -1482,4 +1547,19 @@ final class IslandStore {
       ],
       daily: series(4.2).map { DailyValue(day: $0.day, value: ($0.value / 120_000).rounded()) })
   }
+}
+
+/// A hovered check ring: whose checks it previews, and where the ring is in the island.
+struct ChecksPreview: Equatable {
+  let prID: String
+  /// The merge queue run's checks, rather than the PR's own.
+  let queue: Bool
+  let anchor: CGRect
+
+  var key: String { Self.key(prID, queue: queue) }
+
+  static func key(_ id: String, queue: Bool) -> String { queue ? "\(id)/queue" : id }
+
+  /// The island's coordinate space, where rings are measured.
+  static let space = "island"
 }

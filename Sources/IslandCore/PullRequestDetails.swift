@@ -109,17 +109,7 @@ public struct PullRequestDetails: Equatable, Sendable {
 
   /// Failed checks first: real failures with errors to read, then those without, then checks
   /// that only sum up the others. Running checks follow, then everything else.
-  public var sortedChecks: [Check] {
-    func rank(_ check: Check) -> Int {
-      guard check.outcome == .failed else { return 10 + check.outcome.order }
-      return check.isSummary ? 2 : check.errors.isEmpty ? 1 : 0
-    }
-    return checks.enumerated().sorted { left, right in
-      let (a, b) = (rank(left.element), rank(right.element))
-      return a != b ? a < b : left.offset < right.offset
-    }
-    .map(\.element)
-  }
+  public var sortedChecks: [Check] { Check.sorted(checks) }
 
   /// "unit, typecheck", or "unit, typecheck +2", for a banner about the failure.
   public var failureNote: String? {
@@ -281,5 +271,21 @@ public struct Check: Equatable, Sendable, Identifiable {
       }
       return Annotation(path: annotation.path, line: annotation.line, message: message)
     }
+  }
+}
+
+extension Check {
+  /// Failed checks first: real failures with errors to read, then those without, then checks
+  /// that only sum up the others. Running checks follow, then everything else.
+  public static func sorted(_ checks: [Check]) -> [Check] {
+    func rank(_ check: Check) -> Int {
+      guard check.outcome == .failed else { return 10 + check.outcome.order }
+      return check.isSummary ? 2 : check.errors.isEmpty ? 1 : 0
+    }
+    return checks.enumerated().sorted { left, right in
+      let (a, b) = (rank(left.element), rank(right.element))
+      return a != b ? a < b : left.offset < right.offset
+    }
+    .map(\.element)
   }
 }

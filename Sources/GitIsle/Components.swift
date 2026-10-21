@@ -365,9 +365,7 @@ struct CheckBadge: View {
         }
       }
       .font(.system(size: 10.5, weight: .medium)).monospacedDigit()
-      .help(
-        (pr.queueChecks == nil ? "" : "Merge queue: ")
-          + "\(summary.passed) passed · \(summary.failed) failed · \(summary.pending) running")
+      .checksHover(pr, queue: pr.queuePosition != nil && pr.queueChecks != nil)
     } else if let checks = pr.checks {
       switch checks {
       case "SUCCESS": GlyphView(glyph: .checkFill, size: 13).foregroundStyle(Palette.open)
