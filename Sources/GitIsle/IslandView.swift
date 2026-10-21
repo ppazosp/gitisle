@@ -679,7 +679,11 @@ private struct ExpandedIsland: View {
     let inset = Self.topInset(metrics, store: store)
     VStack(spacing: 0) {
       if activity {
+        // As wide as the default island at most, centered under the notch, so a wide board or
+        // PR page doesn't spread a notification across the screen.
         ActivityRow(store: store)
+          .frame(maxWidth: metrics.expandedWidth - 44)
+          .frame(maxWidth: .infinity)
           .padding(.horizontal, 22)
           .padding(.top, inset)
           .frame(height: inset + Self.activityHeight, alignment: .bottom)
