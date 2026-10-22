@@ -16,7 +16,7 @@
 </p>
 
 <p align="center">
-  <img src="docs/images/activity.png" width="720" alt="The expanded island listing pull requests by repository">
+  <img src="docs/images/demo.gif" width="720" alt="GitIsle in the notch: a merge banner tracing its time on the island's edge, the island opening on the inbox, a failed check landing in the activity row, and the merge queue's checks previewed from the live bar">
 </p>
 
 GitIsle is a native macOS app that turns your Mac's notch into a live view of
@@ -24,12 +24,18 @@ your GitHub pull requests. It stays invisible until something happens, then
 shows what's merging, which checks are running, and what needs you.
 
 - **Invisible at rest.** With nothing going on, the island is just the notch.
-- **Live work.** While one of your PRs merges or runs checks, the island shows
-  its number and a timer or check progress. Click it to open the PR.
+- **Live work.** While your PRs merge or run checks, the island shows their
+  number and a timer or check progress, taking turns when there are several.
+  Click it to open the PR.
 - **Banners.** PRs you open (ready or draft), drafts marked ready for review,
   your PRs becoming ready to merge or starting to merge, preview deploys
   becoming ready, merges, failed checks, and review requests slide out of the
-  notch. Click one to open the PR, or the preview.
+  notch, one at a time, their time traced on the island's edge. Click one to
+  open the PR, or the preview.
+- **Inbox.** Open the island and they're waiting: new ones land on top with
+  what to do next, and stay until you dismiss them or clear them all.
+- **Checks at a glance.** Rest on a check ring to see which checks are running,
+  passed, or failed, the merge queue's too, and click one for its log.
 - **Activity.** Hover to open your PRs by repository, or as a board of GitHub
   states: draft, open, merging, merged. Filter by state, by what needs you,
   by repository, and by today, 7 days, or 30 days.
