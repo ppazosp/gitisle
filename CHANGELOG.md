@@ -2,6 +2,13 @@
 
 Notable changes to GitIsle. Releases follow [semantic versioning](https://semver.org).
 
+## [0.3.1](https://github.com/ppazosp/gitisle/compare/v0.3.0...v0.3.1) (2026-10-25)
+
+
+### Bug Fixes
+
+* the live bar shows a PR running checks like a merging one ([#58](https://github.com/ppazosp/gitisle/issues/58)) ([7ef61a8](https://github.com/ppazosp/gitisle/commit/7ef61a8c04f37afb60ed67742f60d331b3c18db8))
+
 ## [0.3.0](https://github.com/ppazosp/gitisle/compare/v0.2.2...v0.3.0) (2026-10-21)
 
 
