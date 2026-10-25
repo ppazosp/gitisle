@@ -226,11 +226,9 @@ private struct CompactBar: View {
             } animation: { _ in
               .easeInOut(duration: 1.1)
             }
-        } else if let summary = pr.checkSummary {
-          CheckRing(summary: summary, size: 14, lineWidth: 2.2)
-            .checksHover(pr, queue: false, liveBar: true)
         } else {
-          GlyphView(glyph: .clock, size: 14).foregroundStyle(Palette.merging)
+          // Which PR it is on the left, as GitHub marks it; its checks on the right.
+          GlyphView(glyph: pr.glyph, size: 14).foregroundStyle(pr.group?.color ?? Palette.open)
         }
         Text(verbatim: "#\(pr.number)")
       }
@@ -266,9 +264,16 @@ private struct CompactBar: View {
             }
           }
         } else if let summary = pr.checkSummary {
-          Text(verbatim: "\(summary.passed)/\(summary.total)")
-            .foregroundStyle(.white.opacity(0.6))
-            .contentTransition(.numericText(value: Double(summary.passed)))
+          HStack(spacing: 6) {
+            CheckRing(summary: summary, size: 14, lineWidth: 2.2)
+              .checksHover(pr, queue: false, liveBar: true)
+            Text(verbatim: "\(summary.passed)/\(summary.total)")
+              .foregroundStyle(.white.opacity(0.6))
+              .contentTransition(.numericText(value: Double(summary.passed)))
+          }
+        } else {
+          // Checks have started but GitHub hasn't counted them yet.
+          GlyphView(glyph: .clock, size: 14).foregroundStyle(Palette.merging)
         }
       }
       .id(pr.id)
