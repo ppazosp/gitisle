@@ -4,7 +4,8 @@ import SwiftUI
 // Pull request glyphs are GitHub Octicons (MIT). See THIRD_PARTY_NOTICES.md.
 enum Glyph: String, CaseIterable {
   case github, board, list, repo, chevronDown, pullRequest, draft, merge, mergeQueue, closed,
-    checkFill, failFill, eye, gear, sync, download, globe, clock, branch, commit, comment
+    checkFill, failFill, eye, gear, sync, download, globe, clock, branch, commit, comment,
+    code
 
   private var source: (viewBox: String, path: String) {
     switch self {
@@ -285,6 +286,16 @@ enum Glyph: String, CaseIterable {
           "M8 0a8 8 0 1 1 0 16A8 8 0 0 1 8 0ZM1.5 8a6.5 6.5 0 1 0 13 0 6.5 6.5 0 0 0-13 0Z",
           "m7-3.25v2.992l2.028.812a.75.75 0 0 1-.557 1.392l-2.5-1A.751.751 0 0 1 7 8.25",
           "v-3.5a.75.75 0 0 1 1.5 0Z",
+        ].joined()
+      )
+    case .code:
+      (
+        "0 0 16 16",
+        [
+          "m11.28 3.22 4.25 4.25a.75.75 0 0 1 0 1.06l-4.25 4.25a.749.749 0 0 1-1.275-.326.749",
+          ".749 0 0 1 .215-.734L13.94 8l-3.72-3.72a.749.749 0 0 1 .326-1.275.749.749 0 0 1 .7",
+          "34.215Zm-6.56 0a.751.751 0 0 1 1.042.018.751.751 0 0 1 .018 1.042L2.06 8l3.72 3.72",
+          "a.749.749 0 0 1-.326 1.275.749.749 0 0 1-.734-.215L.47 8.53a.75.75 0 0 1 0-1.06Z",
         ].joined()
       )
     }

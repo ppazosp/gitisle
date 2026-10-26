@@ -456,7 +456,7 @@ public struct DailyValue: Equatable, Identifiable, Sendable {
   }
 }
 
-/// Personal GitHub activity counts for today, 7 days and 30 days, plus daily contributions.
+/// Personal PR counts for today, 7 days and 30 days, for some repositories or all of them.
 public struct GitHubStats: Equatable, Sendable {
   public struct Window: Equatable, Sendable {
     public var days: Int
@@ -474,105 +474,106 @@ public struct GitHubStats: Equatable, Sendable {
 
   public var login: String
   public var windows: [Window]
-  /// Contributions per day for the last 30 days, oldest first.
-  public var daily: [DailyValue]
+  /// The repositories these counts cover. Empty means every repository.
+  public var repositories: Set<String>
   public var fetchedAt: Date
 
-  public init(login: String, windows: [Window], daily: [DailyValue], fetchedAt: Date = Date()) {
+  public init(
+    login: String, windows: [Window], repositories: Set<String> = [], fetchedAt: Date = Date()
+  ) {
     self.login = login
     self.windows = windows
-    self.daily = daily
+    self.repositories = repositories
     self.fetchedAt = fetchedAt
   }
 
   public func window(days: Int) -> Window? { windows.first { $0.days == days } }
 }
 
-/// How your merged PRs shipped over a window of days: how fast, how big, and where. Built from
-/// the merged PRs GitIsle already keeps, so it costs no GitHub requests.
-public struct ShippingStats: Equatable, Sendable {
-  public struct Repository: Equatable, Sendable {
-    public var name: String
-    public var merged: Int
+/// Your PRs over time, from the PRs already loaded, so it costs no GitHub requests: what you
+/// opened and merged each day, the lines your merged PRs changed, and the hours of the day you
+/// open and merge. Limited to some repositories when `repositories` isn't empty.
+public struct PullRequestTrends: Equatable, Sendable {
+  /// Lines added and removed by the PRs merged in one hour, for today, or one day otherwise.
+  public struct Lines: Equatable, Sendable {
+    public var start: Date
+    public var added: Int
+    public var removed: Int
   }
 
-  public var merged: Int
-  /// From opening to merging: the median, and the fastest and slowest.
-  public var medianTimeToMerge: TimeInterval?
-  public var fastest: TimeInterval?
-  public var slowest: TimeInterval?
-  public var additions: Int
-  public var deletions: Int
-  /// Lines added plus removed, for the middle PR.
-  public var medianSize: Int?
-  /// Most merges first.
-  public var repositories: [Repository]
-  /// Over the last 30 days, oldest first: the median hours to merge, and lines changed.
-  public var dailyTimeToMerge: [DailyValue]
-  public var dailyLines: [DailyValue]
+  /// PRs opened and merged each day over the last 30 days, oldest first.
+  public var opened: [DailyValue]
+  public var merged: [DailyValue]
+  /// Lines changed in the window, oldest first: 24 hours for today, a day each otherwise.
+  public var lines: [Lines]
+  /// PRs opened and merged in the window, by hour of the day from midnight.
+  public var openedByHour: [Int]
+  public var mergedByHour: [Int]
+
+  public var added: Int { lines.reduce(0) { $0 + $1.added } }
+  public var removed: Int { lines.reduce(0) { $0 + $1.removed } }
 
   /// `days` is a window like the stats picker's: today, or that many days counting today.
   public init(
-    pullRequests: [PullRequest], login: String?, days: Int, now: Date = Date(),
-    calendar: Calendar = .current
+    pullRequests: [PullRequest], login: String?, repositories: Set<String> = [], days: Int,
+    now: Date = Date(), calendar: Calendar = .current
   ) {
     let today = calendar.startOfDay(for: now)
-    func start(_ days: Int) -> Date {
-      calendar.date(byAdding: .day, value: -(days - 1), to: today)!
+    let windowStart = calendar.date(byAdding: .day, value: -(days - 1), to: today)!
+    let mine = pullRequests.filter {
+      (login == nil || $0.author == login)
+        && (repositories.isEmpty || repositories.contains($0.repository))
     }
-    // Your own merges, each with when it merged.
-    let shipped = pullRequests.compactMap { pr -> (PullRequest, Date)? in
-      guard pr.state == "MERGED", login == nil || pr.author == login, let mergedAt = pr.mergedAt
-      else { return nil }
-      return (pr, mergedAt)
+    let openings = mine.compactMap(\.createdAt).filter { $0 <= now }
+    let merges = mine.compactMap { pr -> (Date, PullRequest)? in
+      guard pr.state == "MERGED", let mergedAt = pr.mergedAt, mergedAt <= now else { return nil }
+      return (mergedAt, pr)
     }
-    let window = shipped.filter { $0.1 >= start(days) && $0.1 <= now }.map(\.0)
-    func timeToMerge(_ pr: PullRequest) -> TimeInterval? {
-      guard let created = pr.createdAt, let merged = pr.mergedAt, merged >= created else {
-        return nil
-      }
-      return merged.timeIntervalSince(created)
-    }
-    let times = window.compactMap(timeToMerge).sorted()
-    merged = window.count
-    medianTimeToMerge = Self.median(times)
-    fastest = times.first
-    slowest = times.last
-    additions = window.reduce(0) { $0 + ($1.additions ?? 0) }
-    deletions = window.reduce(0) { $0 + ($1.deletions ?? 0) }
-    medianSize = Self.median(
-      window.compactMap { pr in pr.additions.map { $0 + (pr.deletions ?? 0) } }.sorted()
-        .map(Double.init)
-    ).map { Int($0.rounded()) }
-    repositories = Dictionary(grouping: window, by: \.repository)
-      .map { Repository(name: $0.key, merged: $0.value.count) }
-      .sorted { ($1.merged, $0.name) < ($0.merged, $1.name) }
+
     let formatter = DateFormatter()
     formatter.calendar = calendar
     formatter.timeZone = calendar.timeZone
     formatter.locale = Locale(identifier: "en_US_POSIX")
     formatter.dateFormat = "yyyy-MM-dd"
-    let byDay = Dictionary(grouping: shipped) { calendar.startOfDay(for: $0.1) }
     let month = (0..<30).reversed().compactMap {
       calendar.date(byAdding: .day, value: -$0, to: today)
     }
-    dailyTimeToMerge = month.map { day in
-      let hours = (byDay[day] ?? []).compactMap { timeToMerge($0.0) }.sorted().map { $0 / 3600 }
-      return DailyValue(day: formatter.string(from: day), value: Self.median(hours) ?? 0)
-    }
-    dailyLines = month.map { day in
-      let lines = (byDay[day] ?? []).reduce(0) {
-        $0 + ($1.0.additions ?? 0) + ($1.0.deletions ?? 0)
+    func perDay(_ dates: [Date]) -> [DailyValue] {
+      let counts = Dictionary(grouping: dates) { calendar.startOfDay(for: $0) }.mapValues(\.count)
+      return month.map {
+        DailyValue(day: formatter.string(from: $0), value: Double(counts[$0] ?? 0))
       }
-      return DailyValue(day: formatter.string(from: day), value: Double(lines))
     }
-  }
+    opened = perDay(openings)
+    merged = perDay(merges.map(\.0))
 
-  /// The middle value of sorted ones, or the mean of the middle two.
-  static func median(_ sorted: [Double]) -> Double? {
-    guard !sorted.isEmpty else { return nil }
-    let middle = sorted.count / 2
-    return sorted.count % 2 == 1 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2
+    let inWindow = merges.filter { $0.0 >= windowStart }
+    let hourly = days == 1
+    let starts =
+      hourly
+      ? (0..<24).compactMap { calendar.date(byAdding: .hour, value: $0, to: today) }
+      : (0..<days).compactMap { calendar.date(byAdding: .day, value: $0, to: windowStart) }
+    let byStart = Dictionary(grouping: inWindow) { merge in
+      hourly
+        ? calendar.dateInterval(of: .hour, for: merge.0)?.start ?? merge.0
+        : calendar.startOfDay(for: merge.0)
+    }
+    lines = starts.map { start in
+      let prs = byStart[start] ?? []
+      return Lines(
+        start: start, added: prs.reduce(0) { $0 + ($1.1.additions ?? 0) },
+        removed: prs.reduce(0) { $0 + ($1.1.deletions ?? 0) })
+    }
+
+    func byHour(_ dates: [Date]) -> [Int] {
+      var hours = Array(repeating: 0, count: 24)
+      for date in dates where date >= windowStart {
+        hours[calendar.component(.hour, from: date)] += 1
+      }
+      return hours
+    }
+    openedByHour = byHour(openings)
+    mergedByHour = byHour(merges.map(\.0))
   }
 }
 

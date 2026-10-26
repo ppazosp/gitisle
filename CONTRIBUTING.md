@@ -40,7 +40,7 @@ dist/GitIsle.app/Contents/MacOS/GitIsle --showcase          # play every banner 
 dist/GitIsle.app/Contents/MacOS/GitIsle --snapshot "$PWD/.artifacts/activity.png"
 ```
 
-Add `--stats`, `--board`, `--settings`, `--banner`, `--collapsed`,
+Add `--stats` (or `--stats 30` for a period), `--board`, `--settings`, `--banner`, `--collapsed`,
 `--states draft,merged`, `--repos orbit/web,orbit/api`, `--repo-picker`,
 `--update`, `--event draft` (any announcement), `--details demo2` (a PR's page), `--share-card demo6 card.png` (writes a share card), `--story merged` (one PR's life,
 as the website shows it), or `--chart area` to a snapshot

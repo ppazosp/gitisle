@@ -39,9 +39,9 @@ shows what's merging, which checks are running, and what needs you.
 - **Activity.** Hover to open your PRs by repository, or as a board of GitHub
   states: draft, open, merging, merged. Filter by state, by what needs you,
   by repository, and by today, 7 days, or 30 days.
-- **Stats.** PRs opened, merged, and reviewed, how long your PRs take to
-  merge, how big they are, and which repositories they land in, as bars, lines,
-  areas, or running totals.
+- **Stats.** Your PRs opened, merged, and reviewed, with opened and merged per
+  day; the lines your merged PRs added and removed; and the hours of the day you
+  open and merge. It follows the same repository filter as Activity.
 
 GitIsle only reads from GitHub. It never merges, reviews, comments, or marks
 notifications as read.
@@ -126,7 +126,7 @@ can choose the display, the hover delay, extra repositories to watch, system
 notifications, which events to announce, and launch at login.
 
 <p align="center">
-  <img src="docs/images/stats.png" width="560" alt="Stats with GitHub activity, time to merge, PR size and repositories">
+  <img src="docs/images/stats.png" width="560" alt="Stats with PRs opened and merged per day, lines added and removed, and PRs by hour of the day">
 </p>
 
 ## How the numbers work
@@ -140,10 +140,10 @@ notifications, which events to announce, and launch at login.
   error, the last snapshot stays on screen marked as cached.
 - **Needs you** flags open PRs with a review request, failed checks, conflicts,
   requested changes, or that are ready to merge, behind, or blocked.
-- **Speed, size and repositories** come from your PRs merged in the chosen
-  period, which GitIsle already keeps for 30 days, so they cost no extra
-  GitHub requests. Time to merge runs from opening to merging, drafts included.
-  Size is lines added plus lines removed.
+- **Stats** counts opened, merged, and reviewed PRs with one GitHub query, limited
+  to the repositories you chose. The charts come from your PRs that GitIsle
+  already keeps for 30 days, so they cost no extra requests. Lines count when a
+  PR merges; a day far above the rest is cut short so the others stay readable.
 
 ## Privacy
 

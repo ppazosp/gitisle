@@ -49,7 +49,7 @@ final class IslandStore {
   }
   /// The window the Stats tab shows: today, 7 days or 30 days.
   var statsDays = 1
-  /// Example data only: merged PRs for the Stats tab.
+  /// Example data only: a month of your PRs for the Stats tab.
   @ObservationIgnored private var demoShipped: [PullRequest] = []
   var hovered = false
   var persistenceError: String?
@@ -346,6 +346,8 @@ final class IslandStore {
       UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: hidden)
     }
     lastActiveRefresh = .distantPast
+    // GitHub's counts are per repository; the rest of Stats is already loaded.
+    Task { await refreshStats() }
   }
   /// PR counts per state after the repository and time filters, for the state filter bar.
   private(set) var stateCounts: [StateCount] = []
@@ -564,13 +566,33 @@ final class IslandStore {
     }
   }
 
-  /// How your merged PRs shipped in the Stats window: from the PRs already loaded, so it
-  /// costs no GitHub requests.
-  var shipping: ShippingStats {
-    isDemo
-      ? ShippingStats(pullRequests: demoShipped, login: nil, days: statsDays)
-      : ShippingStats(
-        pullRequests: github?.pullRequests ?? [], login: github?.login, days: statsDays)
+  /// Your PRs in the Stats window and repositories, from the PRs already loaded, so it costs
+  /// no GitHub requests.
+  var trends: PullRequestTrends {
+    PullRequestTrends(
+      pullRequests: (github?.pullRequests ?? []) + demoShipped, login: github?.login,
+      repositories: repositoryFilter, days: statsDays)
+  }
+
+  /// GitHub's counts for the Stats window, once they cover the chosen repositories. Example
+  /// data counts its own PRs instead.
+  var statsCounts: GitHubStats.Window? {
+    if isDemo {
+      let trends = self.trends
+      func total(_ days: [DailyValue]) -> Int {
+        Int(days.suffix(statsDays).reduce(0) { $0 + $1.value })
+      }
+      return .init(
+        days: statsDays, opened: total(trends.opened), merged: total(trends.merged),
+        reviewed: [1: 1, 7: 6, 30: 23][statsDays] ?? 0)
+    }
+    guard let githubStats, githubStats.repositories == repositoryFilter else { return nil }
+    return githubStats.window(days: statsDays)
+  }
+
+  /// Your open PRs in the chosen repositories.
+  var openNow: Int {
+    openPRs.count { $0.author != nil && $0.author == github?.login && shows($0.repository) }
   }
 
   var presentation: Presentation {
@@ -801,10 +823,16 @@ final class IslandStore {
       statsRefreshing = false
       lastStatsRefresh = Date()
     }
-    do {
-      githubStats = try await githubService.stats()
-      githubStatsError = nil
-    } catch { githubStatsError = error.localizedDescription }
+    // A filter chosen while counting is counted again, so stale counts never show as current.
+    var repositories: Set<String>
+    repeat {
+      repositories = repositoryFilter
+      do {
+        let stats = try await githubService.stats(repositories: repositories)
+        if repositories == repositoryFilter { githubStats = stats }
+        githubStatsError = nil
+      } catch { githubStatsError = error.localizedDescription }
+    } while repositories != repositoryFilter
   }
 
   /// Every 10 minutes, and whenever there's nothing to compare against, every search runs in
@@ -1526,38 +1554,34 @@ final class IslandStore {
       return event
     }
     dismissed = []
+    // A month of your PRs for Stats, kept apart so the activity list stays short: opened and
+    // merged during working hours, one of them a large cleanup.
     let calendar = Calendar.current
-    let formatter = DateFormatter()
-    formatter.dateFormat = "yyyy-MM-dd"
-    func series(_ seed: Double) -> [DailyValue] {
-      (0..<30).reversed().map { offset in
-        let day = calendar.date(byAdding: .day, value: -offset, to: now)!
-        let wave = (sin(Double(offset) * 0.9 + seed) + 1.2) * (offset % 7 > 4 ? 0.3 : 1)
-        return DailyValue(day: formatter.string(from: day), value: (wave * 900_000).rounded())
-      }
-    }
-    // A month of merges for Stats, kept apart so the activity list stays short.
+    let today = calendar.startOfDay(for: now)
     let repositories = [
       "orbit/web", "orbit/web", "orbit/api", "orbit/web", "orbit/api", "orbit/docs",
     ]
-    demoShipped = (0..<46).map { index in
-      let merged = now.addingTimeInterval(
-        -Double(index * 37 % 30) * 86_400 - Double(index % 9) * hour)
+    // Busier some weekdays than others, and little at weekends.
+    let days = (0..<30).flatMap { offset in
+      let day = calendar.date(byAdding: .day, value: -offset, to: today)!
+      let count =
+        calendar.isDateInWeekend(day)
+        ? offset % 2 : 1 + Int((sin(Double(offset) * 0.9) + 1.2) * 3)
+      return Array(repeating: day, count: count)
+    }
+    demoShipped = days.enumerated().compactMap { index, day in
+      let merged = day.addingTimeInterval(
+        Double(8 + index * 7 % 13) * hour + Double(index * 13 % 60) * 60)
+      guard merged <= now else { return nil }
       return PullRequest(
         id: "shipped\(index)", number: 300 + index, repository: repositories[index % 6],
         title: "Shipped change \(index)", url: link, state: "MERGED", updatedAt: merged,
         mergedAt: merged, author: "maya",
-        createdAt: merged.addingTimeInterval(-Double(1 + index * 13 % 40) * 0.25 * hour),
-        additions: 20 + index * 53 % 600, deletions: 5 + index * 29 % 250)
+        // A third open the day before they merge.
+        createdAt: merged.addingTimeInterval(
+          -(Double(1 + index * 13 % 40) * 0.2 + (index % 3 == 0 ? 26 : 0)) * hour),
+        additions: 20 + index * 53 % 600, deletions: index == 7 ? 9_400 : 5 + index * 29 % 250)
     }
-    githubStats = GitHubStats(
-      login: "maya",
-      windows: [
-        .init(days: 1, opened: 3, merged: 2, reviewed: 1),
-        .init(days: 7, opened: 14, merged: 11, reviewed: 6),
-        .init(days: 30, opened: 52, merged: 44, reviewed: 23),
-      ],
-      daily: series(4.2).map { DailyValue(day: $0.day, value: ($0.value / 120_000).rounded()) })
   }
 }
 

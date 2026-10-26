@@ -63,7 +63,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     {
       store.expanded = true
     }
-    if arguments.contains("--stats") { store.tab = .stats }
+    // `--stats` opens Stats; `--stats 30` also picks its period.
+    if let index = arguments.firstIndex(of: "--stats") {
+      store.tab = .stats
+      if arguments.count > index + 1, let days = Int(arguments[index + 1]),
+        [1, 7, 30].contains(days)
+      {
+        store.statsDays = days
+      }
+    }
     if arguments.contains("--board") { store.activityLayout = .board }
     if let index = arguments.firstIndex(of: "--chart"), arguments.count > index + 1,
       let style = ChartStyle(rawValue: arguments[index + 1])
@@ -221,9 +229,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
       "pullRequests": store.openPRs.count,
       "githubStatsDays": store.githubStats?.windows.map(\.days) ?? [],
       "pullRequestsWithCheckCounts": store.openPRs.count { $0.checkSummary != nil },
-      "mergedLast30Days": ShippingStats(
+      "mergedLast30Days": PullRequestTrends(
         pullRequests: store.github?.pullRequests ?? [], login: store.github?.login, days: 30
-      ).merged,
+      ).merged.reduce(0) { $0 + Int($1.value) },
       "errors": [store.githubError, store.githubStatsError].compactMap { $0 },
     ]
     if let data = try? JSONSerialization.data(

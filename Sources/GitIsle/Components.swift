@@ -271,19 +271,6 @@ enum Format {
     }
   }
 
-  /// How long something took, at the scale it took: "42m", "5h 12m", or "3d 4h".
-  static func span(_ seconds: TimeInterval) -> String {
-    let minutes = Int(max(0, seconds) / 60)
-    switch minutes {
-    case ..<60: return "\(max(1, minutes))m"
-    case ..<(48 * 60):
-      return minutes % 60 == 0 ? "\(minutes / 60)h" : "\(minutes / 60)h \(minutes % 60)m"
-    default:
-      let hours = (minutes / 60) % 24
-      return hours == 0 ? "\(minutes / 1440)d" : "\(minutes / 1440)d \(hours)h"
-    }
-  }
-
   /// A short age such as "now", "4m", "2h", or "3d".
   static func age(_ date: Date, now: Date = Date()) -> String {
     let seconds = max(0, now.timeIntervalSince(date))

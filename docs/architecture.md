@@ -16,7 +16,7 @@ flowchart LR
 
 `IslandCore` owns normalized PRs, PR grouping by state and repository, time
 windows, GitHub queries, bounded subprocess execution, event comparisons, and
-the shipping statistics derived from merged PRs. Its tests use local fixtures.
+the PR trends derived from loaded PRs. Its tests use local fixtures.
 `GitIsle` owns the UI, settings, cache, and notifications.
 
 Each collector runs independently. GitHub queries have a process deadline and
@@ -42,9 +42,10 @@ connection and account or repository changes establish a new baseline. A new
 requested review can notify after that baseline. Failed-check notifications are
 identified by PR and commit. Merge notifications use the observed merge time.
 
-Statistics make no requests of their own. GitHub activity counts come from
-one contributions query; time to merge, PR size and repositories are computed
-from the merged PRs the collector already keeps for 30 days.
+Statistics cost one query: GitHub's search counts of PRs opened, merged and
+reviewed, limited to the chosen repositories and asked again when the choice
+changes. The charts, from PRs per day to lines and hours of the day, are computed
+from the PRs the collector already keeps for 30 days.
 
 The island has four presentations: idle, which covers only the notch; live,
 while your PRs merge or run checks; a temporary event banner; and expanded. One shape morphs between them with a spring; content fades in after
