@@ -120,16 +120,14 @@ struct TrendChart: View {
   }
 }
 
-/// Chooses a chart style, and optionally what the chart measures.
+/// Chooses a chart style.
 struct ChartMenu: View {
   let style: ChartStyle
   let setStyle: (ChartStyle) -> Void
-  var metric: UsageMetric?
-  var setMetric: ((UsageMetric) -> Void)?
 
   var body: some View {
-    DropdownButton(id: metric == nil ? "chart-github" : "chart-usage", trailing: true) {
-      var sections = [
+    DropdownButton(id: "chart-github", trailing: true) {
+      [
         Dropdown.Section(
           id: "chart", title: "Chart",
           items: ChartStyle.allCases.map { option in
@@ -139,17 +137,6 @@ struct ChartMenu: View {
             ) { setStyle(option) }
           })
       ]
-      if let metric, let setMetric {
-        sections.append(
-          Dropdown.Section(
-            id: "show", title: "Show",
-            items: UsageMetric.allCases.map { option in
-              Dropdown.Item(
-                id: option.rawValue, title: option.label, selected: option == metric
-              ) { setMetric(option) }
-            }))
-      }
-      return sections
     } label: {
       Image(systemName: style.symbol)
         .font(.system(size: 10.5, weight: .semibold))

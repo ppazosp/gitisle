@@ -99,7 +99,6 @@ enum Palette {
   static let merging = Color(red: 0.82, green: 0.60, blue: 0.13)
   static let failed = Color(red: 0.97, green: 0.32, blue: 0.29)
   static let attention = Color(red: 0.94, green: 0.62, blue: 0.27)
-  static let claude = Color(red: 0.85, green: 0.47, blue: 0.34)
   static let update = Color(red: 0.24, green: 0.56, blue: 1.0)
   static let surface = Color.white.opacity(0.055)
   static let hairline = Color.white.opacity(0.09)
@@ -254,11 +253,6 @@ extension PRStatus {
   }
 }
 
-extension AgentProvider {
-  var glyph: Glyph { self == .codex ? .openai : .claude }
-  var tint: Color { self == .codex ? .white : Palette.claude }
-}
-
 enum Format {
   static func count(_ value: Int?) -> String {
     guard let value else { return "—" }
@@ -274,6 +268,19 @@ enum Format {
     default:
       let minutes = (total % 3600) / 60
       return minutes == 0 ? "\(total / 3600)h" : "\(total / 3600)h \(minutes)m"
+    }
+  }
+
+  /// How long something took, at the scale it took: "42m", "5h 12m", or "3d 4h".
+  static func span(_ seconds: TimeInterval) -> String {
+    let minutes = Int(max(0, seconds) / 60)
+    switch minutes {
+    case ..<60: return "\(max(1, minutes))m"
+    case ..<(48 * 60):
+      return minutes % 60 == 0 ? "\(minutes / 60)h" : "\(minutes / 60)h \(minutes % 60)m"
+    default:
+      let hours = (minutes / 60) % 24
+      return hours == 0 ? "\(minutes / 1440)d" : "\(minutes / 1440)d \(hours)h"
     }
   }
 

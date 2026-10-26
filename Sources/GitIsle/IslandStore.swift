@@ -13,9 +13,6 @@ final class IslandStore {
   var githubRefreshing = false
   var githubStats: GitHubStats?
   var githubStatsError: String?
-  var usage: [AgentProvider: [UsageSummary]] = [:]
-  var usageErrors: [AgentProvider: String] = [:]
-  var usageRefreshing = false
   var events: [IslandEvent] = []
   var recentEvent: IslandEvent?
   /// How long a banner shows.
@@ -50,7 +47,10 @@ final class IslandStore {
   var activityWindow: ActivityWindow = .month {
     didSet { if activityWindow != oldValue { regroup() } }
   }
-  var usageDays = 1
+  /// The window the Stats tab shows: today, 7 days or 30 days.
+  var statsDays = 1
+  /// Example data only: merged PRs for the Stats tab.
+  @ObservationIgnored private var demoShipped: [PullRequest] = []
   var hovered = false
   var persistenceError: String?
   var isDemo: Bool
@@ -383,7 +383,6 @@ final class IslandStore {
 
   @ObservationIgnored private let githubService = GitHubService()
   let updater = Updater()
-  @ObservationIgnored private let usageService: UsageService
   @ObservationIgnored private var loops: [Task<Void, Never>] = []
   @ObservationIgnored private var hoverTask: Task<Void, Never>?
   @ObservationIgnored private var notificationTask: Task<Void, Never>?
@@ -402,7 +401,6 @@ final class IslandStore {
   /// The Mac is asleep, its screens are off, or the session is locked: nobody is looking.
   @ObservationIgnored private var away = false
   @ObservationIgnored private var systemObservers: [NSObjectProtocol] = []
-  @ObservationIgnored private var lastUsageRefresh = Date.distantPast
   @ObservationIgnored private var lastStatsRefresh = Date.distantPast
   @ObservationIgnored private var statsRefreshing = false
 
@@ -566,9 +564,13 @@ final class IslandStore {
     }
   }
 
-  /// Stats is open in the expanded island, so its usage figures are on screen.
-  var showingStats: Bool {
-    expanded && tab == .stats && !showingSettings && !showingOnboarding
+  /// How your merged PRs shipped in the Stats window: from the PRs already loaded, so it
+  /// costs no GitHub requests.
+  var shipping: ShippingStats {
+    isDemo
+      ? ShippingStats(pullRequests: demoShipped, login: nil, days: statsDays)
+      : ShippingStats(
+        pullRequests: github?.pullRequests ?? [], login: github?.login, days: statsDays)
   }
 
   var presentation: Presentation {
@@ -580,7 +582,6 @@ final class IslandStore {
   init(demo: Bool = false) {
     isDemo = demo
     settings = demo ? AppSettings() : AppSettings.load(from: AppFiles.settings)
-    usageService = UsageService(cacheRoot: AppFiles.directory.appendingPathComponent("usage-cache"))
     if demo {
       // Previews must not depend on this Mac's remembered choices.
       repositoryFilter = []
@@ -708,22 +709,6 @@ final class IslandStore {
             } else if !githubBudgetLow, Date().timeIntervalSince(lastActiveRefresh) >= active {
               await refreshActive()
             }
-          }
-          do { try await Task.sleep(for: .seconds(1)) } catch { return }
-        }
-      })
-    loops.append(
-      Task { [weak self] in
-        while !Task.isCancelled {
-          guard let self else { return }
-          // Usage is read only while Stats is on screen: each read scans the agents' local
-          // history and rewrites its cache. A new day changes what "today" means, so it's
-          // stale after midnight too.
-          if showingStats,
-            Date().timeIntervalSince(lastUsageRefresh) > 120
-              || !Calendar.current.isDateInToday(lastUsageRefresh)
-          {
-            await refreshUsage()
           }
           do { try await Task.sleep(for: .seconds(1)) } catch { return }
         }
@@ -980,44 +965,17 @@ final class IslandStore {
     for event in announced { notify(event) }
   }
 
-  func refreshUsage() async {
-    guard !usageRefreshing, !isDemo else { return }
-    usageRefreshing = true
-    defer {
-      usageRefreshing = false
-      lastUsageRefresh = Date()
-    }
-    let paths = (settings.codexHome, settings.claudeHome)
-    for provider in AgentProvider.allCases {
-      do {
-        let fresh = try await usageService.summaries(
-          provider: provider,
-          codexHome: NSString(string: paths.0).expandingTildeInPath,
-          claudeHome: NSString(string: paths.1).expandingTildeInPath)
-        guard settings.codexHome == paths.0, settings.claudeHome == paths.1 else { return }
-        usage[provider] = fresh
-        usageErrors[provider] = nil
-      } catch { usageErrors[provider] = error.localizedDescription }
-    }
-  }
-
   /// Applies and saves settings edited in the island. Only changes to what is fetched start a
   /// refetch; display preferences apply as they are.
   func applySettings(_ proposed: AppSettings) {
     do {
       _ = try RepositorySelection(text: proposed.repositories)
-      guard !proposed.codexHome.isEmpty, !proposed.claudeHome.isEmpty else {
-        throw ProcessFailure.failed("Choose a home directory for each agent.")
-      }
       let previous = settings
       settings = proposed
       saveSettings()
       if proposed.repositories != previous.repositories {
         lastGitHubRefresh = .distantPast
         lastStatsRefresh = .distantPast
-      }
-      if proposed.codexHome != previous.codexHome || proposed.claudeHome != previous.claudeHome {
-        lastUsageRefresh = .distantPast
       }
       NotificationCenter.default.post(name: .islandSettingsChanged, object: nil)
     } catch { persistenceError = error.localizedDescription }
@@ -1578,33 +1536,19 @@ final class IslandStore {
         return DailyValue(day: formatter.string(from: day), value: (wave * 900_000).rounded())
       }
     }
-    for provider in AgentProvider.allCases {
-      let daily = series(provider == .codex ? 0.4 : 2.1)
-      usage[provider] = [1, 7, 30].map { days in
-        let window = Array(daily.suffix(days))
-        let tokens = Int(window.reduce(0) { $0 + $1.value })
-        let cost = Double(tokens) / 1_000_000 * (provider == .codex ? 4.1 : 6.3)
-        let models =
-          provider == .codex
-          ? [
-            UsageModel(name: "gpt-6", tokens: tokens * 7 / 10, estimatedCost: cost * 0.8),
-            UsageModel(name: "gpt-6-mini", tokens: tokens * 3 / 10, estimatedCost: cost * 0.2),
-          ]
-          : [
-            UsageModel(
-              name: "claude-opus-5-5", tokens: tokens * 6 / 10, estimatedCost: cost * 0.75),
-            UsageModel(
-              name: "claude-sonnet-5-5", tokens: tokens * 4 / 10, estimatedCost: cost * 0.25),
-          ]
-        return UsageSummary(
-          provider: provider, days: days, tokens: tokens, inputTokens: tokens * 85 / 100,
-          outputTokens: tokens * 15 / 100, cachedTokens: tokens * 55 / 100,
-          cacheCreationTokens: tokens / 20, estimatedCost: cost, models: models, daily: window,
-          dailyCost: window.map {
-            DailyValue(day: $0.day, value: $0.value / 1_000_000 * (provider == .codex ? 4.1 : 6.3))
-          },
-          partial: false, updatedAt: now)
-      }
+    // A month of merges for Stats, kept apart so the activity list stays short.
+    let repositories = [
+      "orbit/web", "orbit/web", "orbit/api", "orbit/web", "orbit/api", "orbit/docs",
+    ]
+    demoShipped = (0..<46).map { index in
+      let merged = now.addingTimeInterval(
+        -Double(index * 37 % 30) * 86_400 - Double(index % 9) * hour)
+      return PullRequest(
+        id: "shipped\(index)", number: 300 + index, repository: repositories[index % 6],
+        title: "Shipped change \(index)", url: link, state: "MERGED", updatedAt: merged,
+        mergedAt: merged, author: "maya",
+        createdAt: merged.addingTimeInterval(-Double(1 + index * 13 % 40) * 0.25 * hour),
+        additions: 20 + index * 53 % 600, deletions: 5 + index * 29 % 250)
     }
     githubStats = GitHubStats(
       login: "maya",

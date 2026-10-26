@@ -78,7 +78,7 @@ bash scripts/build-app.sh
 | Path | What lives there |
 | --- | --- |
 | `Sources/IslandCore` | Models, GitHub queries, grouping, and change detection. No UI. |
-| `Sources/GitIsle` | The SwiftUI island, AppKit panel, settings, and usage statistics. |
+| `Sources/GitIsle` | The SwiftUI island, AppKit panel, settings, and statistics. |
 | `Tests/IslandCoreTests` | Unit tests with local fixtures. |
 | `assets` | Logo and app icon sources. |
 | `scripts` | Build, packaging, install, and icon scripts. |

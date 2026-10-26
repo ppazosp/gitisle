@@ -63,17 +63,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     {
       store.expanded = true
     }
-    // `--agents` is the earlier name for the statistics preview.
-    if arguments.contains("--stats") || arguments.contains("--agents") { store.tab = .stats }
+    if arguments.contains("--stats") { store.tab = .stats }
     if arguments.contains("--board") { store.activityLayout = .board }
     if let index = arguments.firstIndex(of: "--chart"), arguments.count > index + 1,
       let style = ChartStyle(rawValue: arguments[index + 1])
     {
-      store.update {
-        $0.githubChart = style
-        $0.usageChart = style
-        $0.usageMetric = style == .cumulative ? .cost : .tokens
-      }
+      store.update { $0.githubChart = style }
     }
     // `--display <id>` previews the island on another screen.
     if let index = arguments.firstIndex(of: "--display"), arguments.count > index + 1,
@@ -220,23 +215,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
   private func diagnose(store: IslandStore) async {
     await store.refreshGitHub()
-    await store.refreshUsage()
     await store.refreshStats()
     let report: [String: Any] = [
       "githubConnected": store.githubError == nil && store.github != nil,
       "pullRequests": store.openPRs.count,
       "githubStatsDays": store.githubStats?.windows.map(\.days) ?? [],
       "pullRequestsWithCheckCounts": store.openPRs.count { $0.checkSummary != nil },
-      "usageProviders": store.usage.keys.map(\.rawValue).sorted(),
-      "usageMetrics": store.usage.map { provider, summaries -> [String: Any] in
-        let today = summaries.first { $0.days == 1 }
-        return [
-          "provider": provider.rawValue, "todayTokens": today?.tokens as Any? ?? NSNull(),
-          "modelCount": today?.models.count ?? 0, "partialHistory": today?.partial ?? true,
-        ]
-      },
-      "errors": [store.githubError, store.githubStatsError].compactMap { $0 }
-        + Array(store.usageErrors.values),
+      "mergedLast30Days": ShippingStats(
+        pullRequests: store.github?.pullRequests ?? [], login: store.github?.login, days: 30
+      ).merged,
+      "errors": [store.githubError, store.githubStatsError].compactMap { $0 },
     ]
     if let data = try? JSONSerialization.data(
       withJSONObject: report, options: [.prettyPrinted, .sortedKeys])
@@ -244,7 +232,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
       print(String(decoding: data, as: UTF8.self))
     }
     exit(
-      store.githubError == nil && store.githubStatsError == nil && store.usageErrors.isEmpty
-        ? 0 : 1)
+      store.githubError == nil && store.githubStatsError == nil ? 0 : 1)
   }
 }

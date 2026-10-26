@@ -6,41 +6,34 @@ struct StatsView: View {
   @Binding var contentHeight: CGFloat
 
   var body: some View {
+    let shipping = store.shipping
     MeasuredColumn {
       VStack(spacing: 10) {
         GitHubStatsCard(store: store)
         // Equal-height columns: each card stretches to the taller one.
         HStack(alignment: .top, spacing: 10) {
-          ForEach([AgentProvider.claude, .codex], id: \.self) { provider in
-            UsageCard(store: store, provider: provider)
-          }
+          SpeedCard(store: store, shipping: shipping)
+          SizeCard(store: store, shipping: shipping)
         }
         .fixedSize(horizontal: false, vertical: true)
-        Text(costNote)
+        RepositoriesCard(shipping: shipping)
+        Text("Speed, size and repositories come from the merged PRs GitIsle already keeps.")
           .font(.system(size: 10)).foregroundStyle(.white.opacity(0.35))
           .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 6)
       }
       .padding(.horizontal, 16).padding(.top, 12).padding(.bottom, 4)
+      .animation(Motion.snappy, value: store.statsDays)
     } onHeight: {
       contentHeight = $0
     }
-  }
-
-  private var costNote: String {
-    let base =
-      "Tokens come from local history. Costs are estimates at API prices, separate from your plan."
-    guard store.settings.currency == .eur else { return base }
-    return base + " Euros use 1 USD = \(store.settings.usdToEur.formatted()) EUR."
   }
 }
 
 private let wideMetricColumns = Array(
   repeating: GridItem(.flexible(), spacing: 8, alignment: .leading), count: 4)
 
-private let metricColumns = [
-  GridItem(.flexible(), spacing: 8, alignment: .leading),
-  GridItem(.flexible(), spacing: 8, alignment: .leading),
-]
+private let metricColumns = Array(
+  repeating: GridItem(.flexible(), spacing: 8, alignment: .leading), count: 3)
 
 private struct Card<Accessory: View, Content: View>: View {
   let glyph: Glyph
@@ -70,6 +63,18 @@ private struct Card<Accessory: View, Content: View>: View {
   }
 }
 
+extension Card where Accessory == EmptyView {
+  /// A card with nothing beside its title.
+  init(
+    glyph: Glyph, tint: Color, title: String, badge: String? = nil,
+    @ViewBuilder content: () -> Content
+  ) {
+    self.init(
+      glyph: glyph, tint: tint, title: title, badge: badge, accessory: { EmptyView() },
+      content: content)
+  }
+}
+
 private struct Metric: View {
   let label: String
   let value: String
@@ -92,7 +97,7 @@ private struct GitHubStatsCard: View {
 
   var body: some View {
     let stats = store.githubStats
-    let days = store.usageDays
+    let days = store.statsDays
     Card(glyph: .github, tint: .white, title: "GitHub", badge: stats.map { "@\($0.login)" }) {
       ChartMenu(style: store.settings.githubChart) { style in
         store.update { $0.githubChart = style }
@@ -123,83 +128,106 @@ private struct GitHubStatsCard: View {
   }
 }
 
-private struct UsageCard: View {
+/// How fast PRs go from opened to merged.
+private struct SpeedCard: View {
   let store: IslandStore
-  let provider: AgentProvider
+  let shipping: ShippingStats
 
   var body: some View {
-    let days = store.usageDays
-    let summary = store.usage[provider]?.first { $0.days == days }
-    let history = store.usage[provider]?.first { $0.days == 30 }
-    let settings = store.settings
+    Card(glyph: .clock, tint: Palette.merged, title: "Speed") {
+      LazyVGrid(columns: metricColumns, alignment: .leading, spacing: 10) {
+        Metric(label: "To merge", value: shipping.medianTimeToMerge.map(Format.span) ?? "—")
+        Metric(label: "Fastest", value: shipping.fastest.map(Format.span) ?? "—")
+        Metric(label: "Slowest", value: shipping.slowest.map(Format.span) ?? "—")
+      }
+      TrendChart(
+        values: shipping.dailyTimeToMerge, highlight: store.statsDays, tint: Palette.merged,
+        style: store.settings.githubChart, caption: "Median time to merge · 30 days",
+        format: { $0 == 0 ? "No merges" : Format.span($0 * 3600) })
+    }
+  }
+}
+
+/// How much changed in the PRs merged.
+private struct SizeCard: View {
+  let store: IslandStore
+  let shipping: ShippingStats
+
+  var body: some View {
+    Card(glyph: .commit, tint: Palette.open, title: "Size") {
+      LazyVGrid(columns: metricColumns, alignment: .leading, spacing: 10) {
+        Metric(
+          label: "Added", value: "+" + Format.count(shipping.additions),
+          numeric: Double(shipping.additions))
+        Metric(
+          label: "Removed", value: "−" + Format.count(shipping.deletions),
+          numeric: Double(shipping.deletions))
+        Metric(
+          label: "Typical PR", value: shipping.medianSize.map { "\(Format.count($0)) lines" } ?? "—"
+        )
+      }
+      TrendChart(
+        values: shipping.dailyLines, highlight: store.statsDays, tint: Palette.open,
+        style: store.settings.githubChart, caption: "Lines changed · 30 days",
+        format: { "\(Format.count(Int($0))) lines" })
+    }
+  }
+}
+
+/// Where merges went, most first.
+private struct RepositoriesCard: View {
+  let shipping: ShippingStats
+
+  /// More would make the page scroll; the rest are summed up below.
+  static let shown = 4
+
+  var body: some View {
+    let top = Array(shipping.repositories.prefix(Self.shown))
+    let peak = Double(max(1, top.first?.merged ?? 1))
     Card(
-      glyph: provider.glyph, tint: provider.tint,
-      title: provider == .claude ? "Claude Code" : "Codex",
-      badge: summary?.partial == true ? "Partial history" : nil,
-      badgeColor: Palette.attention
+      glyph: .repo, tint: .white, title: "Repositories",
+      badge: shipping.merged == 1 ? "1 merge" : "\(shipping.merged) merges"
     ) {
-      ChartMenu(
-        style: settings.usageChart, setStyle: { style in store.update { $0.usageChart = style } },
-        metric: settings.usageMetric,
-        setMetric: { metric in store.update { $0.usageMetric = metric } })
-    } content: {
-      if let summary {
-        LazyVGrid(columns: metricColumns, alignment: .leading, spacing: 10) {
-          Metric(
-            label: "Tokens", value: Format.count(summary.tokens),
-            numeric: summary.tokens.map(Double.init))
-          Metric(
-            label: "Est. API cost", value: settings.cost(summary.estimatedCost),
-            numeric: summary.estimatedCost)
-          Metric(
-            label: "Cache read", value: Format.count(summary.cachedTokens),
-            numeric: summary.cachedTokens.map(Double.init))
-        }
-        .animation(Motion.snappy, value: days)
-        if let history {
-          let tokens = settings.usageMetric == .tokens
-          let values = tokens ? history.daily : history.dailyCost
-          if !values.isEmpty {
-            TrendChart(
-              values: values, highlight: days, tint: provider.tint.opacity(0.9),
-              style: settings.usageChart,
-              caption: "\(settings.usageMetric.label) · 30 days",
-              format: { value in
-                tokens ? "\(Format.count(Int(value))) tokens" : settings.cost(value)
-              })
+      if top.isEmpty {
+        Text("No merges in this period.").font(.system(size: 11))
+          .foregroundStyle(.white.opacity(0.4))
+      } else {
+        VStack(spacing: 8) {
+          ForEach(top, id: \.name) { repository in
+            HStack(spacing: 10) {
+              RepositoryName(name: repository.name)
+                .frame(width: 200, alignment: .leading)
+              GeometryReader { proxy in
+                Capsule().fill(Palette.merged.opacity(0.6))
+                  .frame(width: max(4, proxy.size.width * Double(repository.merged) / peak))
+              }
+              .frame(height: 5)
+              Text("\(repository.merged)").font(.system(size: 11, weight: .semibold))
+                .monospacedDigit().foregroundStyle(.white.opacity(0.7))
+                .frame(width: 30, alignment: .trailing)
+            }
+          }
+          let rest = shipping.repositories.dropFirst(Self.shown)
+          if !rest.isEmpty {
+            let merges = rest.reduce(0) { $0 + $1.merged }
+            Text("\(rest.count) more, \(merges) \(merges == 1 ? "merge" : "merges")")
+              .font(.system(size: 10.5)).foregroundStyle(.white.opacity(0.4))
+              .frame(maxWidth: .infinity, alignment: .leading)
           }
         }
-        if !summary.models.isEmpty { models(summary) }
-      } else if let error = store.usageErrors[provider] {
-        Text(error).font(.system(size: 11)).foregroundStyle(Palette.attention).lineLimit(3)
-      } else {
-        Text("Reading local history…").font(.system(size: 11))
-          .foregroundStyle(.white.opacity(0.4))
       }
     }
   }
+}
 
-  private func models(_ summary: UsageSummary) -> some View {
-    let top = Array(summary.models.prefix(3))
-    let peak = Double(max(1, top.compactMap(\.tokens).max() ?? 1))
-    return VStack(spacing: 6) {
-      ForEach(top) { model in
-        VStack(spacing: 4) {
-          HStack(spacing: 8) {
-            Text(model.name).font(.system(size: 11)).foregroundStyle(.white.opacity(0.7))
-              .lineLimit(1)
-            Spacer(minLength: 4)
-            Text(Format.count(model.tokens)).font(.system(size: 10.5)).monospacedDigit()
-              .foregroundStyle(.white.opacity(0.5))
-          }
-          GeometryReader { proxy in
-            Capsule().fill(provider.tint.opacity(0.55))
-              .frame(width: max(3, proxy.size.width * Double(model.tokens ?? 0) / peak))
-          }
-          .frame(height: 3)
-        }
-      }
-    }
-    .animation(Motion.snappy, value: store.usageDays)
+/// "owner/name" with the owner dimmed, as the activity list shows repositories.
+private struct RepositoryName: View {
+  let name: String
+
+  var body: some View {
+    let parts = name.split(separator: "/", maxSplits: 1).map(String.init)
+    (Text(parts.count == 2 ? parts[0] + "/" : "").foregroundStyle(.white.opacity(0.45))
+      + Text(parts.last ?? name).foregroundStyle(.white.opacity(0.9)))
+      .font(.system(size: 12)).lineLimit(1).truncationMode(.middle)
   }
 }

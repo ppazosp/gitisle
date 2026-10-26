@@ -444,11 +444,6 @@ public struct RateBudget: Equatable, Sendable {
   }
 }
 
-public enum AgentProvider: String, Codable, CaseIterable, Sendable {
-  case codex, claude
-  public var label: String { self == .codex ? "Codex" : "Claude Code" }
-}
-
 /// One value for a calendar day, keyed by its local `yyyy-MM-dd` date.
 public struct DailyValue: Equatable, Identifiable, Sendable {
   public var day: String
@@ -461,56 +456,7 @@ public struct DailyValue: Equatable, Identifiable, Sendable {
   }
 }
 
-public struct UsageModel: Identifiable, Sendable {
-  public var id: String { name }
-  public var name: String
-  public var tokens: Int?
-  public var estimatedCost: Double?
-
-  public init(name: String, tokens: Int?, estimatedCost: Double?) {
-    self.name = name
-    self.tokens = tokens
-    self.estimatedCost = estimatedCost
-  }
-}
-
-public struct UsageSummary: Sendable {
-  public var provider: AgentProvider
-  public var days: Int
-  public var tokens: Int?
-  public var inputTokens: Int?
-  public var outputTokens: Int?
-  public var cachedTokens: Int?
-  public var cacheCreationTokens: Int?
-  public var estimatedCost: Double?
-  public var models: [UsageModel]
-  public var daily: [DailyValue]
-  public var dailyCost: [DailyValue]
-  public var partial: Bool
-  public var updatedAt: Date
-
-  public init(
-    provider: AgentProvider, days: Int, tokens: Int?, inputTokens: Int?, outputTokens: Int?,
-    cachedTokens: Int?, cacheCreationTokens: Int?, estimatedCost: Double?, models: [UsageModel],
-    daily: [DailyValue] = [], dailyCost: [DailyValue] = [], partial: Bool, updatedAt: Date
-  ) {
-    self.provider = provider
-    self.days = days
-    self.tokens = tokens
-    self.inputTokens = inputTokens
-    self.outputTokens = outputTokens
-    self.cachedTokens = cachedTokens
-    self.cacheCreationTokens = cacheCreationTokens
-    self.estimatedCost = estimatedCost
-    self.models = models
-    self.daily = daily
-    self.dailyCost = dailyCost
-    self.partial = partial
-    self.updatedAt = updatedAt
-  }
-}
-
-/// Personal GitHub activity counts for the same windows as local usage.
+/// Personal GitHub activity counts for today, 7 days and 30 days, plus daily contributions.
 public struct GitHubStats: Equatable, Sendable {
   public struct Window: Equatable, Sendable {
     public var days: Int
@@ -540,6 +486,94 @@ public struct GitHubStats: Equatable, Sendable {
   }
 
   public func window(days: Int) -> Window? { windows.first { $0.days == days } }
+}
+
+/// How your merged PRs shipped over a window of days: how fast, how big, and where. Built from
+/// the merged PRs GitIsle already keeps, so it costs no GitHub requests.
+public struct ShippingStats: Equatable, Sendable {
+  public struct Repository: Equatable, Sendable {
+    public var name: String
+    public var merged: Int
+  }
+
+  public var merged: Int
+  /// From opening to merging: the median, and the fastest and slowest.
+  public var medianTimeToMerge: TimeInterval?
+  public var fastest: TimeInterval?
+  public var slowest: TimeInterval?
+  public var additions: Int
+  public var deletions: Int
+  /// Lines added plus removed, for the middle PR.
+  public var medianSize: Int?
+  /// Most merges first.
+  public var repositories: [Repository]
+  /// Over the last 30 days, oldest first: the median hours to merge, and lines changed.
+  public var dailyTimeToMerge: [DailyValue]
+  public var dailyLines: [DailyValue]
+
+  /// `days` is a window like the stats picker's: today, or that many days counting today.
+  public init(
+    pullRequests: [PullRequest], login: String?, days: Int, now: Date = Date(),
+    calendar: Calendar = .current
+  ) {
+    let today = calendar.startOfDay(for: now)
+    func start(_ days: Int) -> Date {
+      calendar.date(byAdding: .day, value: -(days - 1), to: today)!
+    }
+    // Your own merges, each with when it merged.
+    let shipped = pullRequests.compactMap { pr -> (PullRequest, Date)? in
+      guard pr.state == "MERGED", login == nil || pr.author == login, let mergedAt = pr.mergedAt
+      else { return nil }
+      return (pr, mergedAt)
+    }
+    let window = shipped.filter { $0.1 >= start(days) && $0.1 <= now }.map(\.0)
+    func timeToMerge(_ pr: PullRequest) -> TimeInterval? {
+      guard let created = pr.createdAt, let merged = pr.mergedAt, merged >= created else {
+        return nil
+      }
+      return merged.timeIntervalSince(created)
+    }
+    let times = window.compactMap(timeToMerge).sorted()
+    merged = window.count
+    medianTimeToMerge = Self.median(times)
+    fastest = times.first
+    slowest = times.last
+    additions = window.reduce(0) { $0 + ($1.additions ?? 0) }
+    deletions = window.reduce(0) { $0 + ($1.deletions ?? 0) }
+    medianSize = Self.median(
+      window.compactMap { pr in pr.additions.map { $0 + (pr.deletions ?? 0) } }.sorted()
+        .map(Double.init)
+    ).map { Int($0.rounded()) }
+    repositories = Dictionary(grouping: window, by: \.repository)
+      .map { Repository(name: $0.key, merged: $0.value.count) }
+      .sorted { ($1.merged, $0.name) < ($0.merged, $1.name) }
+    let formatter = DateFormatter()
+    formatter.calendar = calendar
+    formatter.timeZone = calendar.timeZone
+    formatter.locale = Locale(identifier: "en_US_POSIX")
+    formatter.dateFormat = "yyyy-MM-dd"
+    let byDay = Dictionary(grouping: shipped) { calendar.startOfDay(for: $0.1) }
+    let month = (0..<30).reversed().compactMap {
+      calendar.date(byAdding: .day, value: -$0, to: today)
+    }
+    dailyTimeToMerge = month.map { day in
+      let hours = (byDay[day] ?? []).compactMap { timeToMerge($0.0) }.sorted().map { $0 / 3600 }
+      return DailyValue(day: formatter.string(from: day), value: Self.median(hours) ?? 0)
+    }
+    dailyLines = month.map { day in
+      let lines = (byDay[day] ?? []).reduce(0) {
+        $0 + ($1.0.additions ?? 0) + ($1.0.deletions ?? 0)
+      }
+      return DailyValue(day: formatter.string(from: day), value: Double(lines))
+    }
+  }
+
+  /// The middle value of sorted ones, or the mean of the middle two.
+  static func median(_ sorted: [Double]) -> Double? {
+    guard !sorted.isEmpty else { return nil }
+    let middle = sorted.count / 2
+    return sorted.count % 2 == 1 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2
+  }
 }
 
 /// A preview deploy of a PR's head commit, one per project.
@@ -745,30 +779,6 @@ public enum GitHubChanges {
       events.append(event(pr, kind, occurrence))
       return events
     }
-  }
-}
-
-public enum UsageMath {
-  public static func tokens(_ values: [Int?]) -> Int? {
-    guard !values.isEmpty else { return nil }
-    var total = 0
-    for value in values {
-      guard let value, value >= 0 else { return nil }
-      let (sum, overflow) = total.addingReportingOverflow(value)
-      guard !overflow else { return nil }
-      total = sum
-    }
-    return total
-  }
-  public static func costs(_ values: [Double?]) -> Double? {
-    guard !values.isEmpty else { return nil }
-    var total = 0.0
-    for value in values {
-      guard let value, value.isFinite, value >= 0 else { return nil }
-      total += value
-      guard total.isFinite else { return nil }
-    }
-    return total
   }
 }
 
