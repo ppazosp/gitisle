@@ -1,31 +1,18 @@
 # Third-party notices
 
-GitIsle uses [CodexBarCore](https://github.com/steipete/CodexBar), pinned to
-`79831b47517f3e3e340886be63157f582ab13d41`, for local token and model accounting.
 The macOS notch geometry and non-activating window pattern are adapted from
 [Agents Island](https://github.com/mustafahalabi/agents-island), reviewed at
-`275f5e8`. Both projects use the MIT license reproduced below.
+`275f5e8`, under the MIT license reproduced below.
 
 Pull request, check, and GitHub glyphs are
 [Octicons](https://github.com/primer/octicons) 19.15.1 by GitHub, used under
-the MIT license below. The OpenAI and Claude marks are path data from
-[Simple Icons](https://github.com/simple-icons/simple-icons) 15.10.0, released
-under CC0 1.0. The marks remain trademarks of their owners and only identify
-each provider's sessions and usage.
+the MIT license below.
 
 The website's buttons recreate the "Download for Mac", "Star on GitHub" and
 "Copy" interactions from [Amicro](https://github.com/Subhan-code/Amicro--Micro-transitions-)
 in CSS, under the MIT license below. Their arrow, star, copy and check icons are
 path data from [Lucide](https://github.com/lucide-icons/lucide), under the ISC
 license at the end of this file.
-
-CodexBarCore dependencies retain their own licenses in their source repositories
-and resource bundles. `Package.resolved` records the exact dependency versions.
-GitIsle does not include the CodexBar menu bar application, branding, or updater.
-
-## CodexBar
-
-Copyright (c) 2026 Peter Steinberger
 
 ## Agents Island
 

@@ -444,11 +444,6 @@ public struct RateBudget: Equatable, Sendable {
   }
 }
 
-public enum AgentProvider: String, Codable, CaseIterable, Sendable {
-  case codex, claude
-  public var label: String { self == .codex ? "Codex" : "Claude Code" }
-}
-
 /// One value for a calendar day, keyed by its local `yyyy-MM-dd` date.
 public struct DailyValue: Equatable, Identifiable, Sendable {
   public var day: String
@@ -461,56 +456,7 @@ public struct DailyValue: Equatable, Identifiable, Sendable {
   }
 }
 
-public struct UsageModel: Identifiable, Sendable {
-  public var id: String { name }
-  public var name: String
-  public var tokens: Int?
-  public var estimatedCost: Double?
-
-  public init(name: String, tokens: Int?, estimatedCost: Double?) {
-    self.name = name
-    self.tokens = tokens
-    self.estimatedCost = estimatedCost
-  }
-}
-
-public struct UsageSummary: Sendable {
-  public var provider: AgentProvider
-  public var days: Int
-  public var tokens: Int?
-  public var inputTokens: Int?
-  public var outputTokens: Int?
-  public var cachedTokens: Int?
-  public var cacheCreationTokens: Int?
-  public var estimatedCost: Double?
-  public var models: [UsageModel]
-  public var daily: [DailyValue]
-  public var dailyCost: [DailyValue]
-  public var partial: Bool
-  public var updatedAt: Date
-
-  public init(
-    provider: AgentProvider, days: Int, tokens: Int?, inputTokens: Int?, outputTokens: Int?,
-    cachedTokens: Int?, cacheCreationTokens: Int?, estimatedCost: Double?, models: [UsageModel],
-    daily: [DailyValue] = [], dailyCost: [DailyValue] = [], partial: Bool, updatedAt: Date
-  ) {
-    self.provider = provider
-    self.days = days
-    self.tokens = tokens
-    self.inputTokens = inputTokens
-    self.outputTokens = outputTokens
-    self.cachedTokens = cachedTokens
-    self.cacheCreationTokens = cacheCreationTokens
-    self.estimatedCost = estimatedCost
-    self.models = models
-    self.daily = daily
-    self.dailyCost = dailyCost
-    self.partial = partial
-    self.updatedAt = updatedAt
-  }
-}
-
-/// Personal GitHub activity counts for the same windows as local usage.
+/// Personal PR counts for today, 7 days and 30 days, for some repositories or all of them.
 public struct GitHubStats: Equatable, Sendable {
   public struct Window: Equatable, Sendable {
     public var days: Int
@@ -528,18 +474,107 @@ public struct GitHubStats: Equatable, Sendable {
 
   public var login: String
   public var windows: [Window]
-  /// Contributions per day for the last 30 days, oldest first.
-  public var daily: [DailyValue]
+  /// The repositories these counts cover. Empty means every repository.
+  public var repositories: Set<String>
   public var fetchedAt: Date
 
-  public init(login: String, windows: [Window], daily: [DailyValue], fetchedAt: Date = Date()) {
+  public init(
+    login: String, windows: [Window], repositories: Set<String> = [], fetchedAt: Date = Date()
+  ) {
     self.login = login
     self.windows = windows
-    self.daily = daily
+    self.repositories = repositories
     self.fetchedAt = fetchedAt
   }
 
   public func window(days: Int) -> Window? { windows.first { $0.days == days } }
+}
+
+/// Your PRs over time, from the PRs already loaded, so it costs no GitHub requests: what you
+/// opened and merged each day, the lines your merged PRs changed, and the hours of the day you
+/// open and merge. Limited to some repositories when `repositories` isn't empty.
+public struct PullRequestTrends: Equatable, Sendable {
+  /// Lines added and removed by the PRs merged in one hour, for today, or one day otherwise.
+  public struct Lines: Equatable, Sendable {
+    public var start: Date
+    public var added: Int
+    public var removed: Int
+  }
+
+  /// PRs opened and merged each day over the last 30 days, oldest first.
+  public var opened: [DailyValue]
+  public var merged: [DailyValue]
+  /// Lines changed in the window, oldest first: 24 hours for today, a day each otherwise.
+  public var lines: [Lines]
+  /// PRs opened and merged in the window, by hour of the day from midnight.
+  public var openedByHour: [Int]
+  public var mergedByHour: [Int]
+
+  public var added: Int { lines.reduce(0) { $0 + $1.added } }
+  public var removed: Int { lines.reduce(0) { $0 + $1.removed } }
+
+  /// `days` is a window like the stats picker's: today, or that many days counting today.
+  public init(
+    pullRequests: [PullRequest], login: String?, repositories: Set<String> = [], days: Int,
+    now: Date = Date(), calendar: Calendar = .current
+  ) {
+    let today = calendar.startOfDay(for: now)
+    let windowStart = calendar.date(byAdding: .day, value: -(days - 1), to: today)!
+    let mine = pullRequests.filter {
+      (login == nil || $0.author == login)
+        && (repositories.isEmpty || repositories.contains($0.repository))
+    }
+    let openings = mine.compactMap(\.createdAt).filter { $0 <= now }
+    let merges = mine.compactMap { pr -> (Date, PullRequest)? in
+      guard pr.state == "MERGED", let mergedAt = pr.mergedAt, mergedAt <= now else { return nil }
+      return (mergedAt, pr)
+    }
+
+    let formatter = DateFormatter()
+    formatter.calendar = calendar
+    formatter.timeZone = calendar.timeZone
+    formatter.locale = Locale(identifier: "en_US_POSIX")
+    formatter.dateFormat = "yyyy-MM-dd"
+    let month = (0..<30).reversed().compactMap {
+      calendar.date(byAdding: .day, value: -$0, to: today)
+    }
+    func perDay(_ dates: [Date]) -> [DailyValue] {
+      let counts = Dictionary(grouping: dates) { calendar.startOfDay(for: $0) }.mapValues(\.count)
+      return month.map {
+        DailyValue(day: formatter.string(from: $0), value: Double(counts[$0] ?? 0))
+      }
+    }
+    opened = perDay(openings)
+    merged = perDay(merges.map(\.0))
+
+    let inWindow = merges.filter { $0.0 >= windowStart }
+    let hourly = days == 1
+    let starts =
+      hourly
+      ? (0..<24).compactMap { calendar.date(byAdding: .hour, value: $0, to: today) }
+      : (0..<days).compactMap { calendar.date(byAdding: .day, value: $0, to: windowStart) }
+    let byStart = Dictionary(grouping: inWindow) { merge in
+      hourly
+        ? calendar.dateInterval(of: .hour, for: merge.0)?.start ?? merge.0
+        : calendar.startOfDay(for: merge.0)
+    }
+    lines = starts.map { start in
+      let prs = byStart[start] ?? []
+      return Lines(
+        start: start, added: prs.reduce(0) { $0 + ($1.1.additions ?? 0) },
+        removed: prs.reduce(0) { $0 + ($1.1.deletions ?? 0) })
+    }
+
+    func byHour(_ dates: [Date]) -> [Int] {
+      var hours = Array(repeating: 0, count: 24)
+      for date in dates where date >= windowStart {
+        hours[calendar.component(.hour, from: date)] += 1
+      }
+      return hours
+    }
+    openedByHour = byHour(openings)
+    mergedByHour = byHour(merges.map(\.0))
+  }
 }
 
 /// A preview deploy of a PR's head commit, one per project.
@@ -745,30 +780,6 @@ public enum GitHubChanges {
       events.append(event(pr, kind, occurrence))
       return events
     }
-  }
-}
-
-public enum UsageMath {
-  public static func tokens(_ values: [Int?]) -> Int? {
-    guard !values.isEmpty else { return nil }
-    var total = 0
-    for value in values {
-      guard let value, value >= 0 else { return nil }
-      let (sum, overflow) = total.addingReportingOverflow(value)
-      guard !overflow else { return nil }
-      total = sum
-    }
-    return total
-  }
-  public static func costs(_ values: [Double?]) -> Double? {
-    guard !values.isEmpty else { return nil }
-    var total = 0.0
-    for value in values {
-      guard let value, value.isFinite, value >= 0 else { return nil }
-      total += value
-      guard total.isFinite else { return nil }
-    }
-    return total
   }
 }
 
