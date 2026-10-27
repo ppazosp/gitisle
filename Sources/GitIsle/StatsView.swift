@@ -22,6 +22,7 @@ struct StatsView: View {
       }
       .padding(.horizontal, 16).padding(.top, 12).padding(.bottom, 4)
       .animation(Motion.snappy, value: store.statsDays)
+      .animation(Motion.snappy, value: store.repositoryFilter)
     } onHeight: {
       contentHeight = $0
     }
@@ -167,7 +168,10 @@ private struct LinesCard: View {
 
   private func caption(_ lines: [PullRequestTrends.Lines]) -> String {
     guard let hovered, lines.indices.contains(hovered) else {
-      return "Added above, removed below · per \(hourly ? "hour" : "day")"
+      let cut = lines.contains { Double(max($0.added, $0.removed)) > DivergingBars.cap(lines) }
+      return cut
+        ? "Per \(hourly ? "hour" : "day") · tall bars cut to fit"
+        : "Added above, removed below · per \(hourly ? "hour" : "day")"
     }
     let bucket = lines[hovered]
     let when =
@@ -179,13 +183,13 @@ private struct LinesCard: View {
 }
 
 /// One bar per hour or day, added above the middle and removed below. One huge cleanup would
-/// flatten every other bar, so bars stop at a cap set by the typical ones and show a break.
+/// flatten every other bar, so bars stop at a cap set by the typical ones; the caption says so.
 private struct DivergingBars: View {
   let lines: [PullRequestTrends.Lines]
   @Binding var hovered: Int?
 
   /// Three times the upper quartile of the non-zero values, so only outliers get cut.
-  private var cap: Double {
+  static func cap(_ lines: [PullRequestTrends.Lines]) -> Double {
     let values = lines.flatMap { [$0.added, $0.removed] }.filter { $0 > 0 }.sorted()
     guard let largest = values.last else { return 1 }
     let quartile = values[min(values.count - 1, values.count * 3 / 4)]
@@ -193,7 +197,7 @@ private struct DivergingBars: View {
   }
 
   var body: some View {
-    let cap = self.cap
+    let cap = Self.cap(lines)
     GeometryReader { proxy in
       let half = proxy.size.height / 2
       let slot = proxy.size.width / CGFloat(max(lines.count, 1))
@@ -209,6 +213,9 @@ private struct DivergingBars: View {
             .frame(width: width).offset(x: x, y: half + 1).opacity(dim ? 0.45 : 1)
         }
       }
+      // Offsets move the removed bars down without growing the stack, so it takes the full
+      // size here or hovering would only reach the top half.
+      .frame(width: proxy.size.width, height: proxy.size.height, alignment: .topLeading)
       .contentShape(Rectangle())
       .onContinuousHover { phase in
         switch phase {
@@ -222,7 +229,7 @@ private struct DivergingBars: View {
     .accessibilityLabel("Lines added and removed")
   }
 
-  /// A bar of `value` lines, cut with a break mark past the cap.
+  /// A bar of `value` lines, stopping at the cap.
   private func bar(_ value: Int, cap: Double, half: CGFloat, color: Color, up: Bool) -> some View {
     let length = value == 0 ? 0 : max(1.5, (half - 1) * min(Double(value), cap) / cap)
     return VStack(spacing: 0) {
@@ -233,12 +240,6 @@ private struct DivergingBars: View {
       )
       .fill(color)
       .frame(height: length)
-      .overlay(alignment: up ? .top : .bottom) {
-        if Double(value) > cap {
-          Rectangle().fill(Color(white: 0.08)).frame(height: 2)
-            .rotationEffect(.degrees(-20)).offset(y: up ? 6 : -6)
-        }
-      }
       if !up { Spacer(minLength: 0) }
     }
     .frame(height: half - 1)
@@ -264,6 +265,7 @@ private struct ClockCard: View {
         VStack(spacing: 1) {
           Text(busiest.map { String(format: "%02d:00", $0) } ?? "—")
             .font(.system(size: 15, weight: .semibold, design: .rounded)).monospacedDigit()
+            .contentTransition(.numericText(value: Double(busiest ?? -1)))
           Text("busiest hour").font(.system(size: 9)).foregroundStyle(.white.opacity(0.45))
         }
       }
@@ -289,50 +291,74 @@ private struct ClockCard: View {
 }
 
 /// 24 hours around a circle, midnight at the top, with an opened and a merged bar side by
-/// side for each hour.
+/// side for each hour. Each bar is its own shape, so a new period grows and shrinks them.
 private struct HourClock: View {
   let opened: [Int]
   let merged: [Int]
 
   var body: some View {
-    Canvas { context, size in draw(in: &context, size: size) }
-  }
-
-  private func draw(in context: inout GraphicsContext, size: CGSize) {
-    let center = CGPoint(x: size.width / 2, y: size.height / 2)
-    let radius: Double = min(size.width, size.height) / 2
-    let inner: Double = radius * 0.4
-    let length: Double = radius * 0.42
     let peak = Double(max((opened + merged).max() ?? 0, 1))
-    let ring: Double = inner - 4
-    let circle = CGRect(x: center.x - ring, y: center.y - ring, width: ring * 2, height: ring * 2)
-    context.stroke(Path(ellipseIn: circle), with: .color(.white.opacity(0.12)), lineWidth: 1)
     let series: [([Int], Double, Color)] = [
       (opened, -0.055, Palette.open), (merged, 0.055, Palette.merged),
     ]
-    for hour in 0..<24 {
-      for (values, offset, color) in series {
-        let angle: Double = angle(hour: Double(hour) + 0.5) + offset
-        let value = Double(values[hour])
-        let end: Double = inner + max(length * value / peak, 1.5)
-        var bar = Path()
-        bar.move(to: point(center, inner, angle))
-        bar.addLine(to: point(center, end, angle))
-        let tint: Color = value > 0 ? color : .white.opacity(0.15)
-        context.stroke(bar, with: .color(tint), style: StrokeStyle(lineWidth: 4, lineCap: .round))
+    GeometryReader { proxy in
+      let radius = min(proxy.size.width, proxy.size.height) / 2
+      let center = CGPoint(x: proxy.size.width / 2, y: proxy.size.height / 2)
+      ZStack {
+        Circle().stroke(.white.opacity(0.12), lineWidth: 1)
+          .frame(width: (radius * 0.4 - 4) * 2, height: (radius * 0.4 - 4) * 2)
+          .position(center)
+        ForEach(0..<24, id: \.self) { hour in
+          ForEach(0..<2, id: \.self) { index in
+            let (values, offset, color) = series[index]
+            let value = Double(values[hour])
+            RadialBar(
+              angle: Self.angle(hour: Double(hour) + 0.5) + offset,
+              length: value / peak
+            )
+            .stroke(
+              value > 0 ? color : .white.opacity(0.15),
+              style: StrokeStyle(lineWidth: 4, lineCap: .round))
+          }
+        }
+        ForEach([0, 6, 12, 18], id: \.self) { hour in
+          let angle = Self.angle(hour: Double(hour))
+          Text(String(format: "%02d", hour)).font(.system(size: 9))
+            .foregroundStyle(.white.opacity(0.4))
+            .position(
+              x: center.x + radius * 0.82 * cos(angle) + 9 * cos(angle),
+              y: center.y + radius * 0.82 * sin(angle) + 9 * sin(angle))
+        }
       }
-    }
-    for hour in [0, 6, 12, 18] {
-      let label = Text(String(format: "%02d", hour)).font(.system(size: 9))
-        .foregroundStyle(.white.opacity(0.4))
-      context.draw(label, at: point(center, inner + length + 9, angle(hour: Double(hour))))
     }
   }
 
   /// Midnight at the top, going clockwise.
-  private func angle(hour: Double) -> Double { hour / 24 * 2 * .pi - .pi / 2 }
+  static func angle(hour: Double) -> Double { hour / 24 * 2 * .pi - .pi / 2 }
+}
 
-  private func point(_ center: CGPoint, _ distance: Double, _ angle: Double) -> CGPoint {
-    CGPoint(x: center.x + distance * cos(angle), y: center.y + distance * sin(angle))
+/// One hour's bar: it starts at 0.4 of the radius and grows outwards by `length`, a share of
+/// the busiest hour, up to 0.42 of the radius.
+private struct RadialBar: Shape {
+  let angle: Double
+  var length: Double
+
+  var animatableData: Double {
+    get { length }
+    set { length = newValue }
+  }
+
+  func path(in rect: CGRect) -> Path {
+    let radius = min(rect.width, rect.height) / 2
+    let inner = radius * 0.4
+    let end = inner + max(radius * 0.42 * length, 1.5)
+    var path = Path()
+    path.move(to: point(rect, inner))
+    path.addLine(to: point(rect, end))
+    return path
+  }
+
+  private func point(_ rect: CGRect, _ distance: Double) -> CGPoint {
+    CGPoint(x: rect.midX + distance * cos(angle), y: rect.midY + distance * sin(angle))
   }
 }

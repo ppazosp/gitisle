@@ -2,8 +2,8 @@ import Charts
 import IslandCore
 import SwiftUI
 
-/// A 30-day trend of one or more series in one of several styles. The selected period is
-/// emphasized, and hovering a day shows its values in the caption.
+/// A 30-day trend of one or more series in one of several styles. Days before the selected
+/// period are shaded, and hovering a day shows its values in the caption.
 struct TrendChart: View {
   struct Series {
     let name: String
@@ -25,7 +25,6 @@ struct TrendChart: View {
     let series: Int
     let date: Date
     let value: Double
-    let active: Bool
     var id: String { "\(series)-\(date.timeIntervalSinceReferenceDate)" }
   }
 
@@ -39,12 +38,11 @@ struct TrendChart: View {
   private var points: [Point] {
     series.enumerated().flatMap { index, series in
       var running = 0.0
-      return series.values.enumerated().compactMap { offset, day -> Point? in
+      return series.values.compactMap { day -> Point? in
         guard let date = Self.parser.date(from: day.day) else { return nil }
         running += day.value
         return Point(
-          series: index, date: date, value: style == .cumulative ? running : day.value,
-          active: offset >= series.values.count - highlight)
+          series: index, date: date, value: style == .cumulative ? running : day.value)
       }
     }
   }
@@ -55,17 +53,10 @@ struct TrendChart: View {
     let hovered = selected.map { day in
       points.filter { Calendar.current.isDate($0.date, inSameDayAs: day) }
     }
+    let days = Array(Set(points.map(\.date))).sorted()
+    let start = days.count > highlight ? days[days.count - highlight] : nil
     VStack(alignment: .leading, spacing: 6) {
       Chart {
-        // Bars colour the selected period; other styles mark where it starts, and only
-        // when it is shorter than the chart.
-        if style != .bars, points.first?.active == false,
-          let start = points.first(where: \.active)?.date
-        {
-          RuleMark(x: .value("Period start", start))
-            .foregroundStyle(.white.opacity(0.18))
-            .lineStyle(StrokeStyle(lineWidth: 1, dash: [3, 3]))
-        }
         ForEach(points) { point in
           let tint = series[point.series].tint
           let name = series[point.series].name
@@ -73,7 +64,7 @@ struct TrendChart: View {
           case .bars:
             BarMark(x: .value("Day", point.date, unit: .day), y: .value("Value", point.value))
               .position(by: .value("Series", name))
-              .foregroundStyle(point.active ? tint : .white.opacity(0.14))
+              .foregroundStyle(tint)
               .cornerRadius(1.5)
           case .line:
             LineMark(
@@ -113,6 +104,25 @@ struct TrendChart: View {
       .chartYScale(domain: 0...peak)
       .chartLegend(.hidden)
       .chartXSelection(value: $selected)
+      // A shade over the days before the period. Charts swaps a mark's colour without
+      // animating it, while the shade's width animates.
+      .chartOverlay { proxy in
+        GeometryReader { geometry in
+          if let frame = proxy.plotFrame.map({ geometry[$0] }) {
+            let edge = start.flatMap { day in
+              // Bars fill their whole day, so the period starts at the day's left edge;
+              // lines start halfway between the day and the one before.
+              proxy.position(forX: style == .bars ? day : day.addingTimeInterval(-43_200))
+            }
+            Rectangle()
+              // The card's own colour: its surface over the black island.
+              .fill(Color(white: 0.055).opacity(0.72))
+              .frame(width: max(0, edge ?? 0), height: frame.height)
+              .offset(x: frame.minX, y: frame.minY)
+              .allowsHitTesting(false)
+          }
+        }
+      }
       .frame(height: height)
       .animation(Motion.snappy, value: style)
       .animation(Motion.snappy, value: highlight)
