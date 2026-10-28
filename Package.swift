@@ -17,7 +17,8 @@ let package = Package(
       dependencies: [
         "IslandCore",
         .product(name: "CodexBarCore", package: "CodexBar"),
-      ]),
-    .testTarget(name: "IslandCoreTests", dependencies: ["IslandCore"]),
+      ],
+      resources: [.copy("Resources/PiLogo.svg")]),
+    .testTarget(name: "IslandCoreTests", dependencies: ["IslandCore", "GitIsle"]),
   ]
 )

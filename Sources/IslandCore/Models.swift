@@ -444,9 +444,16 @@ public struct RateBudget: Equatable, Sendable {
   }
 }
 
-public enum AgentProvider: String, Codable, CaseIterable, Sendable {
-  case codex, claude
-  public var label: String { self == .codex ? "Codex" : "Claude Code" }
+public enum AgentProvider: String, Codable, CaseIterable, Hashable, Sendable {
+  case codex, claude, pi
+
+  public var label: String {
+    switch self {
+    case .codex: "Codex"
+    case .claude: "Claude Code"
+    case .pi: "Pi"
+    }
+  }
 }
 
 /// One value for a calendar day, keyed by its local `yyyy-MM-dd` date.

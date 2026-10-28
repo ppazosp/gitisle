@@ -14,12 +14,13 @@ struct SettingsView: View {
   @State private var repositoriesText: String
   @State private var codexHomeText: String
   @State private var claudeHomeText: String
+  @State private var piHomeText: String
   @FocusState private var focusedField: TextSetting?
   @State private var pendingApply: Task<Void, Never>?
   @State private var cardsHeight: CGFloat = 0
   @State private var footerHeight: CGFloat = 0
 
-  private enum TextSetting { case repositories, codexHome, claudeHome }
+  private enum TextSetting { case repositories, codexHome, claudeHome, piHome }
 
   init(store: IslandStore, contentHeight: Binding<CGFloat>) {
     self.store = store
@@ -28,6 +29,7 @@ struct SettingsView: View {
     _repositoriesText = State(initialValue: store.settings.repositories)
     _codexHomeText = State(initialValue: store.settings.codexHome)
     _claudeHomeText = State(initialValue: store.settings.claudeHome)
+    _piHomeText = State(initialValue: store.settings.piHome)
   }
 
   /// The draft with the preferences that apply outside this page (system permission and
@@ -47,6 +49,7 @@ struct SettingsView: View {
     draft.repositories = repositoriesText
     draft.codexHome = codexHomeText
     draft.claudeHome = claudeHomeText
+    draft.piHome = piHomeText
   }
 
   /// Saves shortly after the last change, so dragging the slider doesn't write on every step.
@@ -252,17 +255,10 @@ struct SettingsView: View {
   }
 
   private var usage: some View {
-    SettingsCard(glyph: .claude, title: "Usage statistics") {
-      SettingsRow("Codex home") {
-        TextField("~/.codex", text: $codexHomeText).islandField()
-          .focused($focusedField, equals: .codexHome)
-          .onSubmit(commitText)
-      }
-      SettingsRow("Claude Code home") {
-        TextField("~/.claude", text: $claudeHomeText).islandField()
-          .focused($focusedField, equals: .claudeHome)
-          .onSubmit(commitText)
-      }
+    SettingsCard(glyph: .pi, title: "Usage statistics") {
+      usageHomeRow(.codex, path: "~/.codex", text: $codexHomeText, setting: .codexHome)
+      usageHomeRow(.claude, path: "~/.claude", text: $claudeHomeText, setting: .claudeHome)
+      usageHomeRow(.pi, path: "~/.pi/agent", text: $piHomeText, setting: .piHome)
       SettingsRow("Currency") {
         PillPicker(
           options: [(CostCurrency.usd, "$ USD"), (.eur, "€ EUR")], selection: $draft.currency,
@@ -284,6 +280,32 @@ struct SettingsView: View {
       }
     }
     .animation(Motion.snappy, value: draft.currency)
+  }
+
+  private func usageHomeRow(
+    _ provider: AgentProvider, path: String, text: Binding<String>, setting: TextSetting
+  ) -> some View {
+    HStack(spacing: 8) {
+      Toggle("Show \(provider.label) in Stats", isOn: usageProviderBinding(provider))
+        .islandToggle()
+      SettingsRow(provider.label) {
+        TextField(path, text: text).islandField()
+          .focused($focusedField, equals: setting)
+          .onSubmit(commitText)
+      }
+    }
+  }
+
+  private func usageProviderBinding(_ provider: AgentProvider) -> Binding<Bool> {
+    Binding(
+      get: { draft.enabledUsageProviders.contains(provider) },
+      set: { enabled in
+        if enabled {
+          draft.enabledUsageProviders.insert(provider)
+        } else {
+          draft.enabledUsageProviders.remove(provider)
+        }
+      })
   }
 }
 

@@ -1,4 +1,5 @@
 import Foundation
+import IslandCore
 
 enum ChartStyle: String, Codable, CaseIterable {
   case bars, line, area, cumulative
@@ -40,6 +41,9 @@ struct AppSettings: Codable, Equatable {
   var codexHome = ProcessInfo.processInfo.environment["CODEX_HOME"] ?? NSHomeDirectory() + "/.codex"
   var claudeHome =
     ProcessInfo.processInfo.environment["CLAUDE_CONFIG_DIR"] ?? NSHomeDirectory() + "/.claude"
+  var piHome = AppSettings.defaultPiHome()
+  /// Agent harnesses included in the Stats tab and usage scans.
+  var enabledUsageProviders: Set<AgentProvider> = Set(AgentProvider.allCases)
   /// Island banners for changes, separate from system notifications.
   var bannersEnabled = true
   /// A banner shows its time running out: along the closed island's edge, and as a bar in the
@@ -70,6 +74,20 @@ struct AppSettings: Codable, Equatable {
 
   init() {}
 
+  static func defaultPiHome(
+    environment: [String: String] = ProcessInfo.processInfo.environment,
+    homeDirectory: String = NSHomeDirectory()
+  ) -> String {
+    if let configured = environment["PI_CODING_AGENT_DIR"]?
+      .trimmingCharacters(in: .whitespacesAndNewlines),
+      !configured.isEmpty
+    {
+      return configured
+    }
+    return URL(fileURLWithPath: homeDirectory, isDirectory: true)
+      .appendingPathComponent(".pi/agent", isDirectory: true).path
+  }
+
   /// Missing keys keep their defaults, so adding a setting never resets the others.
   init(from decoder: Decoder) throws {
     let values = try decoder.container(keyedBy: CodingKeys.self)
@@ -87,6 +105,8 @@ struct AppSettings: Codable, Equatable {
     notificationsEnabled = value(.notificationsEnabled, defaults.notificationsEnabled)
     codexHome = value(.codexHome, defaults.codexHome)
     claudeHome = value(.claudeHome, defaults.claudeHome)
+    piHome = value(.piHome, defaults.piHome)
+    enabledUsageProviders = value(.enabledUsageProviders, defaults.enabledUsageProviders)
     bannersEnabled = value(.bannersEnabled, defaults.bannersEnabled)
     bannerTimer = value(.bannerTimer, defaults.bannerTimer)
     notificationSound = value(.notificationSound, defaults.notificationSound)

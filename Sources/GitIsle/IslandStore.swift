@@ -15,6 +15,9 @@ final class IslandStore {
   var githubStatsError: String?
   var usage: [AgentProvider: [UsageSummary]] = [:]
   var usageErrors: [AgentProvider: String] = [:]
+  var visibleUsageProviders: [AgentProvider] {
+    AgentProvider.allCases.filter(settings.enabledUsageProviders.contains)
+  }
   var usageRefreshing = false
   var events: [IslandEvent] = []
   var recentEvent: IslandEvent?
@@ -983,21 +986,38 @@ final class IslandStore {
   func refreshUsage() async {
     guard !usageRefreshing, !isDemo else { return }
     usageRefreshing = true
+    let codexHome = settings.codexHome
+    let claudeHome = settings.claudeHome
+    let piHome = settings.piHome
+    let enabledProviders = settings.enabledUsageProviders
+    let providersToRefresh = visibleUsageProviders
     defer {
       usageRefreshing = false
-      lastUsageRefresh = Date()
+      let settingsUnchanged =
+        settings.codexHome == codexHome
+        && settings.claudeHome == claudeHome
+        && settings.piHome == piHome
+        && settings.enabledUsageProviders == enabledProviders
+      lastUsageRefresh = settingsUnchanged ? Date() : .distantPast
     }
-    let paths = (settings.codexHome, settings.claudeHome)
-    for provider in AgentProvider.allCases {
+    for provider in providersToRefresh {
       do {
         let fresh = try await usageService.summaries(
           provider: provider,
-          codexHome: NSString(string: paths.0).expandingTildeInPath,
-          claudeHome: NSString(string: paths.1).expandingTildeInPath)
-        guard settings.codexHome == paths.0, settings.claudeHome == paths.1 else { return }
+          codexHome: NSString(string: codexHome).expandingTildeInPath,
+          claudeHome: NSString(string: claudeHome).expandingTildeInPath,
+          piHome: NSString(string: piHome).expandingTildeInPath)
+        guard settings.codexHome == codexHome, settings.claudeHome == claudeHome,
+          settings.piHome == piHome, settings.enabledUsageProviders == enabledProviders
+        else { return }
         usage[provider] = fresh
         usageErrors[provider] = nil
-      } catch { usageErrors[provider] = error.localizedDescription }
+      } catch {
+        guard settings.codexHome == codexHome, settings.claudeHome == claudeHome,
+          settings.piHome == piHome, settings.enabledUsageProviders == enabledProviders
+        else { return }
+        usageErrors[provider] = error.localizedDescription
+      }
     }
   }
 
@@ -1006,17 +1026,23 @@ final class IslandStore {
   func applySettings(_ proposed: AppSettings) {
     do {
       _ = try RepositorySelection(text: proposed.repositories)
-      guard !proposed.codexHome.isEmpty, !proposed.claudeHome.isEmpty else {
+      guard !proposed.codexHome.isEmpty, !proposed.claudeHome.isEmpty,
+        !proposed.piHome.isEmpty
+      else {
         throw ProcessFailure.failed("Choose a home directory for each agent.")
       }
       let previous = settings
       settings = proposed
       saveSettings()
+      updateUsageProviderSelection(
+        from: previous.enabledUsageProviders, to: proposed.enabledUsageProviders)
       if proposed.repositories != previous.repositories {
         lastGitHubRefresh = .distantPast
         lastStatsRefresh = .distantPast
       }
-      if proposed.codexHome != previous.codexHome || proposed.claudeHome != previous.claudeHome {
+      if proposed.codexHome != previous.codexHome || proposed.claudeHome != previous.claudeHome
+        || proposed.piHome != previous.piHome
+      {
         lastUsageRefresh = .distantPast
       }
       NotificationCenter.default.post(name: .islandSettingsChanged, object: nil)
@@ -1025,11 +1051,25 @@ final class IslandStore {
 
   /// Applies a display preference, such as a chart style, and saves it without refetching.
   func update(_ change: (inout AppSettings) -> Void) {
+    let previousEnabledProviders = settings.enabledUsageProviders
     change(&settings)
+    updateUsageProviderSelection(
+      from: previousEnabledProviders, to: settings.enabledUsageProviders)
     guard !isDemo else { return }
     do { try settings.save(to: AppFiles.settings) } catch {
       persistenceError = error.localizedDescription
     }
+  }
+
+  private func updateUsageProviderSelection(
+    from previous: Set<AgentProvider>, to current: Set<AgentProvider>
+  ) {
+    guard previous != current else { return }
+    for provider in previous.subtracting(current) {
+      usage.removeValue(forKey: provider)
+      usageErrors.removeValue(forKey: provider)
+    }
+    lastUsageRefresh = .distantPast
   }
 
   func saveSettings() {
@@ -1579,29 +1619,50 @@ final class IslandStore {
       }
     }
     for provider in AgentProvider.allCases {
-      let daily = series(provider == .codex ? 0.4 : 2.1)
+      let seed =
+        switch provider {
+        case .codex: 0.4
+        case .claude: 2.1
+        case .pi: 4.8
+        }
+      let daily = series(seed)
       usage[provider] = [1, 7, 30].map { days in
         let window = Array(daily.suffix(days))
         let tokens = Int(window.reduce(0) { $0 + $1.value })
-        let cost = Double(tokens) / 1_000_000 * (provider == .codex ? 4.1 : 6.3)
-        let models =
-          provider == .codex
-          ? [
-            UsageModel(name: "gpt-6", tokens: tokens * 7 / 10, estimatedCost: cost * 0.8),
-            UsageModel(name: "gpt-6-mini", tokens: tokens * 3 / 10, estimatedCost: cost * 0.2),
-          ]
-          : [
-            UsageModel(
-              name: "claude-opus-5-5", tokens: tokens * 6 / 10, estimatedCost: cost * 0.75),
-            UsageModel(
-              name: "claude-sonnet-5-5", tokens: tokens * 4 / 10, estimatedCost: cost * 0.25),
-          ]
+        let pricePerMillion =
+          switch provider {
+          case .codex: 4.1
+          case .claude: 6.3
+          case .pi: 5.2
+          }
+        let cost = Double(tokens) / 1_000_000 * pricePerMillion
+        let models: [UsageModel] =
+          switch provider {
+          case .codex:
+            [
+              UsageModel(name: "gpt-6", tokens: tokens * 7 / 10, estimatedCost: cost * 0.8),
+              UsageModel(name: "gpt-6-mini", tokens: tokens * 3 / 10, estimatedCost: cost * 0.2),
+            ]
+          case .claude:
+            [
+              UsageModel(
+                name: "claude-opus-5-5", tokens: tokens * 6 / 10, estimatedCost: cost * 0.75),
+              UsageModel(
+                name: "claude-sonnet-5-5", tokens: tokens * 4 / 10, estimatedCost: cost * 0.25),
+            ]
+          case .pi:
+            [
+              UsageModel(
+                name: "claude-sonnet-4-6", tokens: tokens * 6 / 10, estimatedCost: cost * 0.6),
+              UsageModel(name: "gpt-5.4", tokens: tokens * 4 / 10, estimatedCost: cost * 0.4),
+            ]
+          }
         return UsageSummary(
           provider: provider, days: days, tokens: tokens, inputTokens: tokens * 85 / 100,
           outputTokens: tokens * 15 / 100, cachedTokens: tokens * 55 / 100,
           cacheCreationTokens: tokens / 20, estimatedCost: cost, models: models, daily: window,
           dailyCost: window.map {
-            DailyValue(day: $0.day, value: $0.value / 1_000_000 * (provider == .codex ? 4.1 : 6.3))
+            DailyValue(day: $0.day, value: $0.value / 1_000_000 * pricePerMillion)
           },
           partial: false, updatedAt: now)
       }
