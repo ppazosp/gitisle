@@ -190,23 +190,49 @@ private struct AgentsStep: View {
   var body: some View {
     VStack(alignment: .leading, spacing: 12) {
       StepText(
-        "The Stats tab can chart Claude Code and Codex usage from their local history. These are the usual folders; change them only if yours live elsewhere."
+        "Choose which coding agents to show in Stats. GitIsle reads their local usage history; change a folder only if yours lives elsewhere."
       )
       FolderRow(
-        label: "Claude Code", glyph: .claude, path: store.settings.claudeHome
+        label: "Claude Code", glyph: .claude, path: store.settings.claudeHome,
+        statsEnabled: statsBinding(for: .claude)
       ) { path in
         var next = store.settings
         next.claudeHome = path
         store.applySettings(next)
       }
-      FolderRow(label: "Codex", glyph: .openai, path: store.settings.codexHome) { path in
+      FolderRow(
+        label: "Codex", glyph: .openai, path: store.settings.codexHome,
+        statsEnabled: statsBinding(for: .codex)
+      ) { path in
         var next = store.settings
         next.codexHome = path
         store.applySettings(next)
       }
-      Text("Don't use one of them? Leave it; GitIsle skips what it can't find.")
+      FolderRow(
+        label: "Pi", glyph: .pi, path: store.settings.piHome,
+        statsEnabled: statsBinding(for: .pi)
+      ) { path in
+        var next = store.settings
+        next.piHome = path
+        store.applySettings(next)
+      }
+      Text("Turn off Stats for any agent you don't want GitIsle to scan or show.")
         .font(.system(size: 11)).foregroundStyle(.white.opacity(0.4))
     }
+  }
+
+  private func statsBinding(for provider: AgentProvider) -> Binding<Bool> {
+    Binding(
+      get: { store.settings.enabledUsageProviders.contains(provider) },
+      set: { enabled in
+        store.update { settings in
+          if enabled {
+            settings.enabledUsageProviders.insert(provider)
+          } else {
+            settings.enabledUsageProviders.remove(provider)
+          }
+        }
+      })
   }
 }
 
@@ -215,6 +241,7 @@ private struct FolderRow: View {
   let label: String
   let glyph: Glyph
   let path: String
+  @Binding var statsEnabled: Bool
   let commit: (String) -> Void
   @State private var text = ""
   @FocusState private var focused: Bool
@@ -241,6 +268,11 @@ private struct FolderRow: View {
       .font(.system(size: 11))
       .foregroundStyle(exists ? Palette.open : .white.opacity(0.4))
       .frame(width: 84, alignment: .leading)
+      Text("Stats").font(.system(size: 10)).foregroundStyle(.white.opacity(0.45))
+      Toggle("Show \(label) in Stats", isOn: $statsEnabled)
+        .islandToggle()
+        .help("Include \(label) in the Stats tab")
+        .accessibilityLabel("Show \(label) in Stats")
     }
     .onAppear { text = path }
     .onDisappear { commitIfValid() }
