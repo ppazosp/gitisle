@@ -100,6 +100,7 @@ enum Palette {
   static let failed = Color(red: 0.97, green: 0.32, blue: 0.29)
   static let attention = Color(red: 0.94, green: 0.62, blue: 0.27)
   static let claude = Color(red: 0.85, green: 0.47, blue: 0.34)
+  static let pi = Color(red: 0.52, green: 0.64, blue: 0.95)
   static let update = Color(red: 0.24, green: 0.56, blue: 1.0)
   static let surface = Color.white.opacity(0.055)
   static let hairline = Color.white.opacity(0.09)
@@ -255,8 +256,21 @@ extension PRStatus {
 }
 
 extension AgentProvider {
-  var glyph: Glyph { self == .codex ? .openai : .claude }
-  var tint: Color { self == .codex ? .white : Palette.claude }
+  var glyph: Glyph {
+    switch self {
+    case .codex: .openai
+    case .claude: .claude
+    case .pi: .pi
+    }
+  }
+
+  var tint: Color {
+    switch self {
+    case .codex: .white
+    case .claude: Palette.claude
+    case .pi: Palette.pi
+    }
+  }
 }
 
 enum Format {

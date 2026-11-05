@@ -39,8 +39,8 @@ shows what's merging, which checks are running, and what needs you.
 - **Activity.** Hover to open your PRs by repository, or as a board of GitHub
   states: draft, open, merging, merged. Filter by state, by what needs you,
   by repository, and by today, 7 days, or 30 days.
-- **Stats.** PRs opened, merged, and reviewed, plus local Claude Code and Codex
-  token usage and estimated cost, as bars, lines, areas, or running totals.
+- **Stats.** PRs opened, merged, and reviewed, plus local Claude Code, Codex,
+  and Pi token usage and estimated cost from local history, as bars, lines, areas, or running totals.
 
 GitIsle only reads from GitHub. It never merges, reviews, comments, or marks
 notifications as read.

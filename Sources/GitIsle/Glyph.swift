@@ -1,15 +1,15 @@
 import AppKit
 import SwiftUI
 
-// Pull request glyphs are GitHub Octicons (MIT). The OpenAI and Claude marks come from
-// Simple Icons (CC0) and identify each provider. See THIRD_PARTY_NOTICES.md.
+// Pull request glyphs are GitHub Octicons (MIT). OpenAI and Claude marks come from
+// Simple Icons (CC0); Pi uses its official SVG. See THIRD_PARTY_NOTICES.md.
 enum Glyph: String, CaseIterable {
   case github, board, list, repo, chevronDown, pullRequest, draft, merge, mergeQueue, closed,
     checkFill,
     failFill, eye, gear, sync, download, globe,
-    clock, branch, commit, comment, openai, claude
+    clock, branch, commit, comment, openai, claude, pi
 
-  private var source: (viewBox: String, path: String) {
+  private var source: (viewBox: String, path: String)? {
     switch self {
     case .board:
       (
@@ -360,6 +360,8 @@ enum Glyph: String, CaseIterable {
           "l-6.3385 4.1164-1.1293.1457-.4857-.4554.0608-.7467.2307-.2429 1.9064-1.3114Z",
         ].joined()
       )
+    case .pi:
+      nil
     }
   }
 
@@ -369,12 +371,28 @@ enum Glyph: String, CaseIterable {
   @MainActor func image(size: CGFloat) -> NSImage {
     let key = "\(rawValue)@\(size)"
     if let cached = Self.cache[key] { return cached }
-    let svg =
-      "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"\(source.viewBox)\">"
-      + "<path d=\"\(source.path)\"/></svg>"
-    let image = NSImage(data: Data(svg.utf8)) ?? NSImage()
+    let image: NSImage
+    if self == .pi {
+      if let url = Bundle.module.url(forResource: "PiLogo", withExtension: "svg"),
+        let bundledImage = NSImage(contentsOf: url)
+      {
+        image = bundledImage
+      } else {
+        image = NSImage()
+      }
+      image.isTemplate = false
+    } else {
+      guard let source else {
+        assertionFailure("Only the Pi glyph uses a bundled logo asset.")
+        return NSImage()
+      }
+      let svg =
+        "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"\(source.viewBox)\">"
+        + "<path d=\"\(source.path)\"/></svg>"
+      image = NSImage(data: Data(svg.utf8)) ?? NSImage()
+      image.isTemplate = true
+    }
     image.size = NSSize(width: size, height: size)
-    image.isTemplate = true
     Self.cache[key] = image
     return image
   }
@@ -385,7 +403,8 @@ struct GlyphView: View {
   var size: CGFloat = 14
 
   var body: some View {
-    Image(nsImage: glyph.image(size: size)).renderingMode(.template)
+    Image(nsImage: glyph.image(size: size))
+      .renderingMode(glyph == .pi ? .original : .template)
       .frame(width: size, height: size)
       .accessibilityHidden(true)
   }
