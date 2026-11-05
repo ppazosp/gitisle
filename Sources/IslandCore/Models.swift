@@ -320,7 +320,8 @@ public struct RepoSection: Identifiable, Equatable, Sendable {
 }
 
 public enum PRGrouping {
-  /// Repositories that need you come first, then those merging, then by latest activity.
+  /// Repositories with the newest activity come first; the needs-you badge and filter, not
+  /// the order, point at PRs waiting on you, so an old one can't pin its repository on top.
   /// An empty `states` set shows every state; `needsYouOnly` keeps only PRs that need you.
   /// Repositories with nothing left are omitted. Order follows the PRs the filters show, so
   /// hiding a repository's newest PR moves it down; counts ignore the filters, so every state
@@ -351,18 +352,11 @@ public enum PRGrouping {
       return RepoSection(
         repository: repository, pullRequests: shown, counts: all.counts, needsYou: all.needsYou)
     }
-    // Repositories that need you come first, then by their most advanced open work, among the
-    // PRs shown.
-    func rank(_ prs: [PullRequest]) -> Int {
-      if prs.contains(where: \.needsYou) { return 0 }
-      return 1 + (PRGroup.allCases.firstIndex { group in prs.contains { $0.group == group } } ?? 99)
-    }
+    // Newest activity among the PRs shown.
     func latest(_ prs: [PullRequest]) -> Date {
       prs.map { $0.mergedAt ?? $0.updatedAt }.max() ?? .distantPast
     }
     return sections.sorted { lhs, rhs in
-      let (left, right) = (rank(lhs.pullRequests), rank(rhs.pullRequests))
-      if left != right { return left < right }
       let (newer, older) = (latest(lhs.pullRequests), latest(rhs.pullRequests))
       if newer != older { return newer > older }
       return lhs.repository < rhs.repository

@@ -67,7 +67,7 @@ struct ActivityTests {
     #expect(sections[1].pullRequests.map(\.id) == ["first", "second"])
   }
 
-  @Test func repositoriesThatNeedYouComeFirstWithPRsInStateOrder() {
+  @Test func repositoriesFollowTheirNewestActivityWithPRsInStateOrder() {
     func make(_ id: String, _ repository: String, updated: TimeInterval) -> PullRequest {
       var request = pr(id, updated: updated)
       request.repository = repository
@@ -84,12 +84,12 @@ struct ActivityTests {
 
     let sections = PRGrouping.repositories(
       [draft, open, review, merged, older], window: .month, now: now, calendar: calendar)
-    #expect(sections.map(\.repository) == ["b/needs-you", "a/recent", "c/older"])
-    #expect(sections[0].pullRequests.map(\.id) == ["review", "merged"])
-    #expect(sections[1].pullRequests.map(\.id) == ["open", "draft"])
-    #expect(sections[0].counts.map(\.group) == [.open, .merged])
-    #expect(sections[0].needsYou == 1)
-    #expect(sections[0].owner == "b" && sections[0].name == "needs-you")
+    #expect(sections.map(\.repository) == ["a/recent", "b/needs-you", "c/older"])
+    #expect(sections[0].pullRequests.map(\.id) == ["open", "draft"])
+    #expect(sections[1].pullRequests.map(\.id) == ["review", "merged"])
+    #expect(sections[1].counts.map(\.group) == [.open, .merged])
+    #expect(sections[1].needsYou == 1)
+    #expect(sections[1].owner == "b" && sections[1].name == "needs-you")
 
     let drafts = PRGrouping.repositories(
       [draft, open, review, merged, older], window: .month, states: [.draft], now: now,
@@ -99,8 +99,7 @@ struct ActivityTests {
     // Counts ignore the state filter so other states can still be selected.
     #expect(drafts[0].counts.map(\.group) == [.open, .draft])
 
-    // With its review hidden, b no longer needs you here; a's draft is further along than
-    // b's merge.
+    // a's draft is newer than b's merge.
     let combined = PRGrouping.repositories(
       [draft, open, review, merged, older], window: .month, states: [.draft, .merged], now: now,
       calendar: calendar)
@@ -110,6 +109,28 @@ struct ActivityTests {
       [draft, open, review, merged, older], window: .month, needsYouOnly: true, now: now,
       calendar: calendar)
     #expect(waiting.flatMap(\.pullRequests).map(\.id) == ["review"])
+  }
+
+  @Test func anOldPRThatNeedsYouDoesNotOutrankTodaysWork() {
+    func make(_ id: String, _ repository: String, days: Double) -> PullRequest {
+      var request = pr(id, updated: days * 86_400)
+      request.repository = repository
+      return request
+    }
+    // Failed checks twelve days ago, against a draft and a merge from this morning.
+    var stale = make("stale", "a/stale", days: 12)
+    stale.checks = "FAILURE"
+    var draft = make("draft", "b/busy", days: 0.1)
+    draft.isDraft = true
+    var merged = make("merged", "b/busy", days: 0.2)
+    merged.state = "MERGED"
+    let quiet = make("quiet", "c/quiet", days: 3)
+
+    let sections = PRGrouping.repositories(
+      [stale, draft, merged, quiet], window: .month, now: now, calendar: calendar)
+    #expect(sections.map(\.repository) == ["b/busy", "c/quiet", "a/stale"])
+    // The badge still counts it.
+    #expect(sections[2].needsYou == 1)
   }
 
   @Test func repositoryOrderFollowsTheFilters() {
