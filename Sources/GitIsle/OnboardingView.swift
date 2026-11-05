@@ -4,7 +4,7 @@ import SwiftUI
 
 /// The steps of first-run setup, in order.
 enum OnboardingStep: Int, CaseIterable {
-  case welcome, github, agents, notifications, display, tuning, login
+  case welcome, github, notifications, display, tuning, login
 
   /// Preview names for `--onboarding <step>`.
   init?(name: String) {
@@ -16,7 +16,6 @@ enum OnboardingStep: Int, CaseIterable {
     switch self {
     case .welcome: "Welcome to GitIsle"
     case .github: "Connect GitHub"
-    case .agents: "Coding agents"
     case .notifications: "Notifications"
     case .display: "Your screen"
     case .tuning: "Make it yours"
@@ -37,7 +36,6 @@ struct OnboardingView: View {
         switch store.onboardingStep {
         case .welcome: WelcomeStep()
         case .github: GitHubStep(store: store)
-        case .agents: AgentsStep(store: store)
         case .notifications: NotificationsStep(store: store)
         case .display: DisplayStep(store: store)
         case .tuning: TuningStep()
@@ -181,74 +179,6 @@ private struct GitHubStep: View {
   private var isConnected: Bool {
     if case .connected = store.githubConnection { return true }
     return false
-  }
-}
-
-private struct AgentsStep: View {
-  let store: IslandStore
-
-  var body: some View {
-    VStack(alignment: .leading, spacing: 12) {
-      StepText(
-        "The Stats tab can chart Claude Code and Codex usage from their local history. These are the usual folders; change them only if yours live elsewhere."
-      )
-      FolderRow(
-        label: "Claude Code", glyph: .claude, path: store.settings.claudeHome
-      ) { path in
-        var next = store.settings
-        next.claudeHome = path
-        store.applySettings(next)
-      }
-      FolderRow(label: "Codex", glyph: .openai, path: store.settings.codexHome) { path in
-        var next = store.settings
-        next.codexHome = path
-        store.applySettings(next)
-      }
-      Text("Don't use one of them? Leave it; GitIsle skips what it can't find.")
-        .font(.system(size: 11)).foregroundStyle(.white.opacity(0.4))
-    }
-  }
-}
-
-/// A folder setting with a found or not-found mark; edits apply on Return or leaving the field.
-private struct FolderRow: View {
-  let label: String
-  let glyph: Glyph
-  let path: String
-  let commit: (String) -> Void
-  @State private var text = ""
-  @FocusState private var focused: Bool
-
-  private var exists: Bool {
-    var directory: ObjCBool = false
-    let expanded = (text as NSString).expandingTildeInPath
-    return FileManager.default.fileExists(atPath: expanded, isDirectory: &directory)
-      && directory.boolValue
-  }
-
-  var body: some View {
-    HStack(spacing: 10) {
-      GlyphView(glyph: glyph, size: 13).foregroundStyle(.white.opacity(0.6)).frame(width: 16)
-      Text(label).font(.system(size: 12.5)).frame(width: 90, alignment: .leading)
-      TextField("Folder", text: $text).islandField().frame(maxWidth: .infinity)
-        .focused($focused)
-        .onSubmit { commitIfValid() }
-        .onChange(of: focused) { _, isFocused in if !isFocused { commitIfValid() } }
-      HStack(spacing: 4) {
-        Image(systemName: exists ? "checkmark.circle.fill" : "questionmark.circle")
-        Text(exists ? "Found" : "Not found")
-      }
-      .font(.system(size: 11))
-      .foregroundStyle(exists ? Palette.open : .white.opacity(0.4))
-      .frame(width: 84, alignment: .leading)
-    }
-    .onAppear { text = path }
-    .onDisappear { commitIfValid() }
-  }
-
-  private func commitIfValid() {
-    let trimmed = text.trimmingCharacters(in: .whitespaces)
-    if !trimmed.isEmpty, trimmed != path { commit(trimmed) }
   }
 }
 

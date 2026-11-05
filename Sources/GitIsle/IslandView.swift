@@ -804,9 +804,11 @@ private struct ExpandedIsland: View {
     .environment(store)
   }
 
-  /// The picker belongs to Activity; leaving it hides the picker.
+  /// The picker belongs to the tabs, which share one repository filter; settings, setup and a
+  /// PR's page hide it.
   static func showsRepositoryPicker(_ store: IslandStore) -> Bool {
-    store.repositoryPickerOpen && showsFilterBar(store)
+    store.repositoryPickerOpen && !store.showingSettings && !store.showingOnboarding
+      && store.detailsPullRequest == nil
   }
 
   /// Content height the island needs so the open picker isn't cut off by its bottom edge.
@@ -880,9 +882,10 @@ private struct ExpandedIsland: View {
           selection: $store.activityWindow, fontSize: 11)
         LayoutToggle(layout: $store.activityLayout)
       case .stats:
+        RepositoryButton(store: store)
         PillPicker(
           options: [(1, "Today"), (7, "7 days"), (30, "30 days")],
-          selection: $store.usageDays, fontSize: 11)
+          selection: $store.statsDays, fontSize: 11)
       }
     }
     .padding(.horizontal, 28)
@@ -895,9 +898,8 @@ private struct ExpandedIsland: View {
       FooterButton(glyph: .sync, label: "Refresh", spinning: refreshing) {
         Task {
           async let github: Void = store.refreshGitHub()
-          async let usage: Void = store.refreshUsage()
           async let stats: Void = store.refreshStats()
-          _ = await (github, usage, stats)
+          _ = await (github, stats)
         }
       }
       .disabled(refreshing || store.isDemo)
@@ -920,7 +922,7 @@ private struct ExpandedIsland: View {
     .animation(Motion.snappy, value: store.updater.available)
   }
 
-  private var refreshing: Bool { store.githubRefreshing || store.usageRefreshing }
+  private var refreshing: Bool { store.githubRefreshing }
 
   @ViewBuilder private var status: some View {
     if let note = store.footerNote {
