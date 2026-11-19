@@ -219,8 +219,6 @@ struct StateFilterBar: View {
         ) {
           withAnimation(Motion.morph) { store.toggleState(group) }
         }
-        .disabled(count == 0 && !selected)
-        .opacity(count == 0 && !selected ? 0.35 : 1)
       }
       Spacer(minLength: 4)
       if !store.stateFilter.isEmpty || store.needsYouOnly {
@@ -275,8 +273,6 @@ private struct NeedsYouChip: View {
       .contentShape(Capsule())
     }
     .buttonStyle(.plain)
-    .disabled(count == 0 && !selected)
-    .opacity(count == 0 && !selected ? 0.35 : 1)
     .onHover { inside in withAnimation(.easeOut(duration: 0.12)) { hovered = inside } }
     .help(selected ? "Show every PR" : "Show only PRs waiting on you")
     .accessibilityLabel("Needs you, \(count)")
