@@ -69,10 +69,12 @@ struct DropdownButton<Label: View>: View {
   let id: String
   var maxWidth: CGFloat = 260
   var trailing = false
+  var opensOnHover = false
   let sections: () -> [Dropdown.Section]
   @ViewBuilder let label: Label
   @Environment(IslandStore.self) private var store
   @State private var frame: CGRect = .zero
+  @State private var hovered = false
 
   var body: some View {
     Button {
@@ -81,6 +83,13 @@ struct DropdownButton<Label: View>: View {
       label
     }
     .buttonStyle(.plain)
+    .onHover { if opensOnHover { hovered = $0 } }
+    .task(id: hovered) {
+      guard hovered else { return }
+      do { try await Task.sleep(for: .seconds(0.3)) } catch { return }
+      guard store.expanded, store.dropdown == nil, frame != .zero else { return }
+      withAnimation(Motion.snappy) { store.dropdown = open() }
+    }
     .onGeometryChange(for: CGRect.self) {
       $0.frame(in: .named(Dropdown.space))
     } action: {
