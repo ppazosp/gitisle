@@ -190,6 +190,8 @@ public struct PullRequest: Codable, Hashable, Identifiable, Sendable {
   /// Set to merge when ready, but still waiting for checks or reviews.
   public var isWaitingToMerge: Bool { state == "OPEN" && autoMerge && !isMerging }
 
+  fileprivate var activityDate: Date { state == "MERGED" ? (mergedAt ?? updatedAt) : updatedAt }
+
   /// The GitHub state this PR is in. Closed PRs are not shown.
   public var group: PRGroup? {
     switch state {
@@ -320,8 +322,8 @@ public struct RepoSection: Identifiable, Equatable, Sendable {
 }
 
 public enum PRGrouping {
-  /// Repositories with the newest activity come first; the needs-you badge and filter, not
-  /// the order, point at PRs waiting on you, so an old one can't pin its repository on top.
+  /// Repositories and their PRs show the newest activity first. A stack reads bottom to top
+  /// at the position of its newest visible PR.
   /// An empty `states` set shows every state; `needsYouOnly` keeps only PRs that need you.
   /// Repositories with nothing left are omitted. Order follows the PRs the filters show, so
   /// hiding a repository's newest PR moves it down; counts ignore the filters, so every state
@@ -330,31 +332,26 @@ public enum PRGrouping {
     _ pullRequests: [PullRequest], window: ActivityWindow, states: Set<PRGroup> = [],
     needsYouOnly: Bool = false, now: Date = Date(), calendar: Calendar = .current
   ) -> [RepoSection] {
-    var order: [String] = []
-    var buckets: [String: [PullRequest]] = [:]
-    for section in sections(pullRequests, window: window, now: now, calendar: calendar) {
-      for pr in section.pullRequests {
-        if buckets[pr.repository] == nil { order.append(pr.repository) }
-        buckets[pr.repository, default: []].append(pr)
-      }
+    let recent = pullRequests.filter {
+      $0.group != nil && window.includes($0.activityDate, now: now, calendar: calendar)
     }
-    // A stack reads bottom to top, together.
-    for (repository, prs) in buckets { buckets[repository] = PRStacks.ordered(prs) }
-    let sections = order.compactMap { repository -> RepoSection? in
-      let all = RepoSection(repository: repository, pullRequests: buckets[repository] ?? [])
+    let buckets = Dictionary(grouping: recent, by: \.repository)
+    let sections = buckets.compactMap { repository, prs -> RepoSection? in
+      let all = RepoSection(repository: repository, pullRequests: prs)
       let shown = all.pullRequests.filter { pr in
         // A closure, not `map(states.contains)`: release builds miscompile that method
         // reference and crash when a state filter is pressed.
         (states.isEmpty || (pr.group.map { states.contains($0) } ?? false))
           && (!needsYouOnly || pr.needsYou)
-      }
+      }.sorted { ($0.activityDate, $0.number) > ($1.activityDate, $1.number) }
       guard !shown.isEmpty else { return nil }
       return RepoSection(
-        repository: repository, pullRequests: shown, counts: all.counts, needsYou: all.needsYou)
+        repository: repository, pullRequests: PRStacks.ordered(shown), counts: all.counts,
+        needsYou: all.needsYou)
     }
     // Newest activity among the PRs shown.
     func latest(_ prs: [PullRequest]) -> Date {
-      prs.map { $0.mergedAt ?? $0.updatedAt }.max() ?? .distantPast
+      prs.lazy.map(\.activityDate).max() ?? .distantPast
     }
     return sections.sorted { lhs, rhs in
       let (newer, older) = (latest(lhs.pullRequests), latest(rhs.pullRequests))
@@ -370,8 +367,7 @@ public enum PRGrouping {
     var buckets: [PRGroup: [PullRequest]] = [:]
     for pr in pullRequests {
       guard let group = pr.group else { continue }
-      let activity = group == .merged ? (pr.mergedAt ?? pr.updatedAt) : pr.updatedAt
-      guard window.includes(activity, now: now, calendar: calendar) else { continue }
+      guard window.includes(pr.activityDate, now: now, calendar: calendar) else { continue }
       buckets[group, default: []].append(pr)
     }
     return PRGroup.allCases.compactMap { group in
@@ -382,7 +378,7 @@ public enum PRGrouping {
           ($0.queuePosition ?? .max, $1.updatedAt) < ($1.queuePosition ?? .max, $0.updatedAt)
         }
       case .merged:
-        rows.sort { ($0.mergedAt ?? $0.updatedAt) > ($1.mergedAt ?? $1.updatedAt) }
+        rows.sort { $0.activityDate > $1.activityDate }
       case .open:
         // PRs waiting on you lead their column.
         rows.sort { lhs, rhs in
