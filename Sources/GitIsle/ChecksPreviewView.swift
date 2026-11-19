@@ -3,35 +3,85 @@ import IslandCore
 import SwiftUI
 
 extension View {
-  /// Previews `pr`'s checks, or its merge queue run's, while the pointer rests here in the open
-  /// island.
-  /// `liveBar` marks the live bar's rings, which a tour previews.
-  func checksHover(_ pr: PullRequest, queue: Bool, liveBar: Bool = false) -> some View {
-    modifier(ChecksHover(pr: pr, queue: queue, liveBar: liveBar))
+  /// Opens the checks by click or by briefly resting the pointer on their control.
+  func checksControl(_ pr: PullRequest, queue: Bool, liveBar: Bool = false) -> some View {
+    modifier(ChecksControl(pr: pr, queue: queue, liveBar: liveBar))
+  }
+
+  /// The badge belongs to the row's label. Its button sits above the row's own button.
+  func prChecksControl(_ pr: PullRequest) -> some View {
+    overlayPreferenceValue(CheckBadgeBounds.self) { anchor in
+      GeometryReader { proxy in
+        if let anchor {
+          let rect = proxy[anchor].insetBy(dx: -2, dy: -3)
+          Color.clear.frame(width: rect.width, height: rect.height)
+            .checksControl(pr, queue: pr.queuePosition != nil && pr.queueChecks != nil)
+            .position(x: rect.midX, y: rect.midY)
+        }
+      }
+    }
   }
 }
 
-private struct ChecksHover: ViewModifier {
+struct CheckBadgeBounds: PreferenceKey {
+  static let defaultValue: Anchor<CGRect>? = nil
+  static func reduce(value: inout Anchor<CGRect>?, nextValue: () -> Anchor<CGRect>?) {
+    value = value ?? nextValue()
+  }
+}
+
+/// The area outside a pinned checks preview's trigger. The trigger can still close it.
+struct ChecksDismissArea: Shape {
+  let anchor: CGRect
+
+  func path(in rect: CGRect) -> Path {
+    Path { path in
+      path.addRect(rect)
+      path.addRect(anchor.intersection(rect))
+    }
+  }
+}
+
+private struct ChecksControl: ViewModifier {
   let pr: PullRequest
   let queue: Bool
   let liveBar: Bool
   @Environment(IslandStore.self) private var store
   @State private var frame: CGRect = .zero
 
+  private var preview: ChecksPreview {
+    ChecksPreview(prID: pr.id, queue: queue, liveBar: liveBar, anchor: frame)
+  }
+
   func body(content: Content) -> some View {
-    content
-      .onGeometryChange(for: CGRect.self) {
-        $0.frame(in: .named(ChecksPreview.space))
-      } action: {
-        frame = $0
-        openPending()
+    Button {
+      store.toggleChecks(preview, pr: pr)
+    } label: {
+      content.contentShape(Rectangle())
+    }
+    .buttonStyle(.plain)
+    .onGeometryChange(for: CGRect.self) {
+      $0.frame(in: .named(ChecksPreview.space))
+    } action: {
+      frame = $0
+      if store.checksPreview?.matches(preview) == true {
+        store.checksPreview?.anchor = $0
       }
-      .onHover { inside in
-        // The closed island opens on hover; the preview belongs to the open one.
-        guard store.expanded else { return }
-        store.hoverChecks(pr, queue: queue, anchor: frame, inside: inside)
-      }
-      .onChange(of: store.pendingChecks) { openPending() }
+      openPending()
+    }
+    .onHover { inside in
+      // The closed island opens on hover; the preview belongs to the open one.
+      guard store.expanded else { return }
+      store.hoverChecks(preview, pr: pr, inside: inside)
+    }
+    .onChange(of: store.pendingChecks) { openPending() }
+    .onDisappear {
+      if store.checksPreview?.matches(preview) == true { store.closeChecksPreview() }
+    }
+    .accessibilityLabel(
+      queue ? "Merge queue checks for PR #\(pr.number)" : "Checks for PR #\(pr.number)"
+    )
+    .accessibilityHint("Shows the checks preview")
   }
 
   /// Opens the preview a tour asked for, once this ring is laid out.
@@ -40,7 +90,7 @@ private struct ChecksHover: ViewModifier {
       store.pendingChecks == ChecksPreview.key(pr.id, queue: queue)
     else { return }
     store.pendingChecks = nil
-    store.hoverChecks(pr, queue: queue, anchor: frame, inside: true)
+    store.hoverChecks(preview, pr: pr, inside: true)
   }
 }
 

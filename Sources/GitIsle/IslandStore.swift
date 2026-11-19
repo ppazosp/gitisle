@@ -25,7 +25,7 @@ final class IslandStore {
   var expanded = false {
     didSet {
       if !expanded {
-        checksPreview = nil
+        closeChecksPreview()
         showingSettings = false
         repositoryPickerOpen = false
         dropdown = nil
@@ -65,7 +65,7 @@ final class IslandStore {
   private var liveID: String?
   /// The pointer is on the live bar, which holds it still.
   var liveHovered = false
-  /// The checks a hovered ring shows, and the lists read so far, by `ChecksPreview.key`.
+  /// The open checks preview, and the lists read so far, by `ChecksPreview.key`.
   var checksPreview: ChecksPreview?
   private(set) var checkLists: [String: [Check]] = [:]
   private(set) var checkListErrors: Set<String> = []
@@ -96,7 +96,9 @@ final class IslandStore {
   /// The repository picker is open over Activity.
   var repositoryPickerOpen = false
   /// The dropdown open over the island, if any.
-  var dropdown: Dropdown?
+  var dropdown: Dropdown? {
+    didSet { if dropdown != nil { closeChecksPreview() } }
+  }
   /// Example data only: a dropdown to open once its control is laid out, for captures.
   @ObservationIgnored var pendingDropdown: String?
   /// Example data only: a tour opens the live bar's checks preview for this
@@ -463,21 +465,44 @@ final class IslandStore {
 
   /// Shows the checks behind a hovered ring after a short rest, and hides them a moment after
   /// the pointer leaves, so it can move from the ring onto the preview.
-  func hoverChecks(_ pr: PullRequest, queue: Bool, anchor: CGRect, inside: Bool) {
+  func hoverChecks(_ preview: ChecksPreview, pr: PullRequest, inside: Bool) {
+    guard checksPreview?.pinned != true, dropdown == nil else { return }
     checksHoverTask?.cancel()
     guard inside else { return hideChecksSoon() }
     checksHoverTask = Task { [weak self] in
       do { try await Task.sleep(for: .seconds(0.3)) } catch { return }
-      guard let self else { return }
-      withAnimation(Motion.snappy) {
-        checksPreview = ChecksPreview(prID: pr.id, queue: queue, anchor: anchor)
-      }
-      loadChecks(pr, queue: queue)
+      guard let self, expanded else { return }
+      showChecks(preview, pr: pr)
     }
+  }
+
+  func toggleChecks(_ preview: ChecksPreview, pr: PullRequest) {
+    checksHoverTask?.cancel()
+    if let current = checksPreview, current.pinned, current.matches(preview) {
+      closeChecksPreview()
+    } else {
+      expanded = true
+      dropdown = nil
+      var pinned = preview
+      pinned.pinned = true
+      showChecks(pinned, pr: pr)
+    }
+  }
+
+  private func showChecks(_ preview: ChecksPreview, pr: PullRequest) {
+    withAnimation(Motion.snappy) { checksPreview = preview }
+    loadChecks(pr, queue: preview.queue)
+  }
+
+  func closeChecksPreview() {
+    checksHoverTask?.cancel()
+    checksRefresh?.cancel()
+    withAnimation(Motion.snappy) { checksPreview = nil }
   }
 
   /// The pointer on the preview keeps it open.
   func hoverChecksPreview(_ inside: Bool) {
+    guard checksPreview?.pinned != true else { return }
     checksHoverTask?.cancel()
     if !inside { hideChecksSoon() }
   }
@@ -485,8 +510,7 @@ final class IslandStore {
   private func hideChecksSoon() {
     checksHoverTask = Task { [weak self] in
       do { try await Task.sleep(for: .seconds(0.25)) } catch { return }
-      withAnimation(Motion.snappy) { self?.checksPreview = nil }
-      self?.checksRefresh?.cancel()
+      self?.closeChecksPreview()
     }
   }
 
@@ -505,10 +529,12 @@ final class IslandStore {
         if Date().timeIntervalSince(checkListTimes[key] ?? .distantPast) > 10 {
           do {
             let checks = try await githubService.checks(of: pr, queue: queue)
+            guard !Task.isCancelled else { return }
             withAnimation(Motion.snappy) { checkLists[key] = checks }
             checkListTimes[key] = Date()
             checkListErrors.remove(key)
           } catch {
+            guard !Task.isCancelled else { return }
             if checkLists[key] == nil { checkListErrors.insert(key) }
           }
         }
@@ -558,7 +584,9 @@ final class IslandStore {
       while true {
         do { try await Task.sleep(for: .seconds(0.5)) } catch { return }
         guard let self else { return }
-        if liveHovered { continue }
+        if liveHovered || (checksPreview?.liveBar == true && checksPreview?.pinned == true) {
+          continue
+        }
         liveShownFor += 0.5
         if liveShownFor >= 5 { stepLive(1) }
       }
@@ -1345,7 +1373,7 @@ final class IslandStore {
           // The merge queue's checks, from the live bar's ring: #433 first comes round.
           try await step(5.0) { self?.showLive(at: 0) }
           try await step(0.6) { self?.pendingChecks = ChecksPreview.key("demo3", queue: true) }
-          try await step(4.0) { self?.checksPreview = nil }
+          try await step(4.0) { self?.closeChecksPreview() }
           // Dismiss one, then clear the rest.
           try await step(0.8) {
             if let front = self?.inbox.first { self?.dismiss(front) }
@@ -1616,14 +1644,18 @@ final class IslandStore {
   }
 }
 
-/// A hovered check ring: whose checks it previews, and where the ring is in the island.
+/// Whose checks are shown, and where their control is in the island.
 struct ChecksPreview: Equatable {
   let prID: String
   /// The merge queue run's checks, rather than the PR's own.
   let queue: Bool
-  let anchor: CGRect
+  let liveBar: Bool
+  var anchor: CGRect
+  var pinned = false
 
   var key: String { Self.key(prID, queue: queue) }
+
+  func matches(_ other: ChecksPreview) -> Bool { key == other.key && liveBar == other.liveBar }
 
   static func key(_ id: String, queue: Bool) -> String { queue ? "\(id)/queue" : id }
 

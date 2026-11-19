@@ -145,9 +145,10 @@ final class IslandPanel: NSPanel {
       .mouseMoved, .leftMouseDown, .keyDown,
     ]) { [weak self] event in
       if event.type == .keyDown, event.keyCode == 53, self?.panel.isKeyWindow == true {
-        // Escape closes a dropdown, the repository picker, an open file, or a PR's page first,
-        // then the island.
-        if self?.store.dropdown != nil {
+        // Escape closes the open overlay or page first, then the island.
+        if self?.store.checksPreview != nil {
+          self?.store.closeChecksPreview()
+        } else if self?.store.dropdown != nil {
           withAnimation(Motion.snappy) { self?.store.dropdown = nil }
         } else if self?.store.repositoryPickerOpen == true {
           withAnimation(Motion.snappy) { self?.store.repositoryPickerOpen = false }

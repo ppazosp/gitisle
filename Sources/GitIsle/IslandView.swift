@@ -55,6 +55,13 @@ struct IslandView: View {
           let size = proxy.size
           ZStack(alignment: .topLeading) {
             Color.clear
+            if preview.pinned {
+              let dismissArea = ChecksDismissArea(anchor: preview.anchor)
+              dismissArea.fill(.black.opacity(0.001), style: FillStyle(eoFill: true))
+                .contentShape(dismissArea, eoFill: true)
+                .onTapGesture { store.closeChecksPreview() }
+                .accessibilityHidden(true)
+            }
             ChecksPopover(store: store, preview: preview)
               .alignmentGuide(.leading) { -placement.x(width: $0.width, in: size) }
               .alignmentGuide(.top) { -placement.y(height: $0.height, in: size) }
@@ -251,7 +258,7 @@ private struct CompactBar: View {
             // The merge queue's checks, as the ring shows the PR's own while they run.
             if let queue = pr.queueChecks {
               CheckRing(summary: queue, size: 14, lineWidth: 2.2)
-                .checksHover(pr, queue: true, liveBar: true)
+                .checksControl(pr, queue: true, liveBar: true)
             }
             if let since = pr.mergingSince {
               // How long the PR has been merging; the system updates the timer without polling.
@@ -266,7 +273,7 @@ private struct CompactBar: View {
         } else if let summary = pr.checkSummary {
           HStack(spacing: 6) {
             CheckRing(summary: summary, size: 14, lineWidth: 2.2)
-              .checksHover(pr, queue: false, liveBar: true)
+              .checksControl(pr, queue: false, liveBar: true)
             Text(verbatim: "\(summary.passed)/\(summary.total)")
               .foregroundStyle(.white.opacity(0.6))
               .contentTransition(.numericText(value: Double(summary.passed)))
@@ -1223,7 +1230,7 @@ private struct PreviewButton: View {
           }
           .disabled(first.url == nil)
         } else {
-          DropdownButton(id: "pr-previews", trailing: true) {
+          DropdownButton(id: "pr-previews", trailing: true, opensOnHover: true) {
             [
               Dropdown.Section(
                 id: "previews", title: nil,

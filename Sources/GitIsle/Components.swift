@@ -367,7 +367,7 @@ struct CheckBadge: View {
         }
       }
       .font(.system(size: 10.5, weight: .medium)).monospacedDigit()
-      .checksHover(pr, queue: pr.queuePosition != nil && pr.queueChecks != nil)
+      .anchorPreference(key: CheckBadgeBounds.self, value: .bounds) { $0 }
     } else if let checks = pr.checks {
       switch checks {
       case "SUCCESS": GlyphView(glyph: .checkFill, size: 13).foregroundStyle(Palette.open)
@@ -397,7 +397,7 @@ struct PreviewChip: View {
       .help("Open the \(preview.name) preview")
       .accessibilityLabel("Open the \(preview.name) preview")
     } else if ready.count > 1 {
-      DropdownButton(id: "previews-\(pr.id)", trailing: true) {
+      DropdownButton(id: "previews-\(pr.id)", trailing: true, opensOnHover: true) {
         [
           Dropdown.Section(
             id: "previews", title: nil,
