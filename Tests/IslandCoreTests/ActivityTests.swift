@@ -67,7 +67,7 @@ struct ActivityTests {
     #expect(sections[1].pullRequests.map(\.id) == ["first", "second"])
   }
 
-  @Test func repositoriesFollowTheirNewestActivityWithPRsInStateOrder() {
+  @Test func repositoriesAndTheirPRsFollowTheirNewestActivity() {
     func make(_ id: String, _ repository: String, updated: TimeInterval) -> PullRequest {
       var request = pr(id, updated: updated)
       request.repository = repository
@@ -85,8 +85,8 @@ struct ActivityTests {
     let sections = PRGrouping.repositories(
       [draft, open, review, merged, older], window: .month, now: now, calendar: calendar)
     #expect(sections.map(\.repository) == ["a/recent", "b/needs-you", "c/older"])
-    #expect(sections[0].pullRequests.map(\.id) == ["open", "draft"])
-    #expect(sections[1].pullRequests.map(\.id) == ["review", "merged"])
+    #expect(sections[0].pullRequests.map(\.id) == ["draft", "open"])
+    #expect(sections[1].pullRequests.map(\.id) == ["merged", "review"])
     #expect(sections[1].counts.map(\.group) == [.open, .merged])
     #expect(sections[1].needsYou == 1)
     #expect(sections[1].owner == "b" && sections[1].name == "needs-you")
@@ -109,6 +109,23 @@ struct ActivityTests {
       [draft, open, review, merged, older], window: .month, needsYouOnly: true, now: now,
       calendar: calendar)
     #expect(waiting.flatMap(\.pullRequests).map(\.id) == ["review"])
+  }
+
+  @Test func aRecentlyUpdatedStackLeadsAnOlderOpenPRAndKeepsItsBaseFirst() {
+    var olderOpen = pr("older-open", updated: 86_400)
+    olderOpen.checks = "FAILURE"
+    var base = pr("base", updated: 2 * 86_400)
+    base.isDraft = true
+    base.headRefName = "base"
+    var child = pr("child", updated: 28 * 60)
+    child.isDraft = true
+    child.baseRefName = "base"
+
+    let sections = PRGrouping.repositories(
+      [olderOpen, base, child], window: .week, now: now, calendar: calendar)
+    let rows = sections.flatMap(\.pullRequests)
+    let piles = PRStacks.piles(rows, links: PRStacks.links([olderOpen, base, child]))
+    #expect(piles.map { $0.map(\.id) } == [["base", "child"], ["older-open"]])
   }
 
   @Test func anOldPRThatNeedsYouDoesNotOutrankTodaysWork() {
@@ -182,6 +199,8 @@ struct ActivityTests {
     #expect(today.flatMap(\.pullRequests).map(\.id) == ["merged"])
     let week = PRGrouping.sections(all, window: .week, now: now, calendar: calendar)
     #expect(week.flatMap(\.pullRequests).count == 3)
+    let repositoryList = PRGrouping.repositories(all, window: .week, now: now, calendar: calendar)
+    #expect(repositoryList.flatMap(\.pullRequests).map(\.id) == ["merged", "yesterday", "old"])
     #expect(
       ActivityWindow.week.includes(
         startOfToday.addingTimeInterval(-6 * 86_400), now: now, calendar: calendar))
