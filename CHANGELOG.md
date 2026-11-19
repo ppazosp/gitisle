@@ -2,6 +2,15 @@
 
 Notable changes to GitIsle. Releases follow [semantic versioning](https://semver.org).
 
+## [0.3.4](https://github.com/ppazosp/gitisle/compare/v0.3.3...v0.3.4) (2026-11-19)
+
+
+### Bug Fixes
+
+* keep zero-count Activity filters selectable ([#67](https://github.com/ppazosp/gitisle/issues/67)) ([eebc00f](https://github.com/ppazosp/gitisle/commit/eebc00f046c555d92c057445d8a75170637b6939))
+* open checks on click and deployment menus on hover ([#70](https://github.com/ppazosp/gitisle/issues/70)) ([162aa96](https://github.com/ppazosp/gitisle/commit/162aa96382c4aba5fdab976a4d1828bb3b52ee5b))
+* reopen GitIsle after installing an update ([#68](https://github.com/ppazosp/gitisle/issues/68)) ([1ef1034](https://github.com/ppazosp/gitisle/commit/1ef1034d507b51b44aaa68cc8fe849bf37f1d832))
+
 ## [0.3.3](https://github.com/ppazosp/gitisle/compare/v0.3.2...v0.3.3) (2026-11-19)
 
 
