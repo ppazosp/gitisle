@@ -166,10 +166,9 @@ private struct RepositoryCard: View {
       // over the header while the section opens or closes.
       VStack(spacing: 0) {
         let visible = self.visible
-        // A stack folds into one row, its top PR; a click unfolds it.
         ForEach(PRStacks.piles(visible, links: store.stackLinks), id: \.first?.id) { pile in
           if pile.count > 1, let bottom = pile.first {
-            ListStack(pile: pile, unfolded: store.unfoldedStacks.contains(bottom.id)) {
+            ListStack(pile: pile, unfolded: !store.foldedStacks.contains(bottom.id)) {
               withAnimation(Motion.snappy) { store.toggleStack(bottom.id) }
             }
           } else if let pr = pile.first {
@@ -584,12 +583,11 @@ private struct BoardView: View {
         Spacer(minLength: 0)
       }
       .padding(.horizontal, 4).padding(.top, 4)
-      // A stack's PRs fold into one pile; clicking it fans them out, bottom first.
       let piles = PRStacks.piles(section.pullRequests, links: store.stackLinks)
       let limit = shortened(section) ? 8 : piles.count
       ForEach(piles.prefix(limit), id: \.first?.id) { pile in
         if pile.count > 1, let bottom = pile.first {
-          StackPile(pile: pile, fanned: store.unfoldedStacks.contains(bottom.id)) {
+          StackPile(pile: pile, fanned: !store.foldedStacks.contains(bottom.id)) {
             withAnimation(Motion.snappy) { store.toggleStack(bottom.id) }
           }
           .transition(.opacity)

@@ -366,12 +366,11 @@ final class IslandStore {
       if !isDemo { UserDefaults.standard.set(activityLayout.rawValue, forKey: "activityLayout") }
     }
   }
-  /// Stacks unfolded in the list and on the board, by the ID of their bottom PR; every stack
-  /// starts folded.
-  private(set) var unfoldedStacks: Set<String> = []
+  /// Stacks manually folded in the list or on the board, by the ID of their bottom PR.
+  private(set) var foldedStacks: Set<String> = []
 
   func toggleStack(_ bottom: String) {
-    if unfoldedStacks.remove(bottom) == nil { unfoldedStacks.insert(bottom) }
+    if foldedStacks.remove(bottom) == nil { foldedStacks.insert(bottom) }
   }
 
   /// Repositories collapsed in the activity list, remembered across launches.
@@ -1296,7 +1295,7 @@ final class IslandStore {
           try await step(2.2) { defaults.set("split", forKey: "diffLayout") }
           try await step(2.6) { self?.closeFile() }
           try await step(1.2) { self?.closeDetails() }
-          // The board, where #431 and #436 fold into one pile; fan it out and back.
+          // Switch to the board, then fold and reopen the stack of #431 and #436.
           try await step(1.2) { self?.activityLayout = .board }
           try await step(1.8) { self?.toggleStack("demo4") }
           try await step(2.4) { self?.toggleStack("demo4") }
