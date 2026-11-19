@@ -70,7 +70,12 @@ import Observation
     Task {
       do {
         try await Self.replace(app, with: release)
-        Self.relaunch(app)
+        let configuration = NSWorkspace.OpenConfiguration()
+        configuration.createsNewApplicationInstance = true
+        configuration.allowsRunningApplicationSubstitution = false
+        // Keep this copy running until macOS reports that the replacement launched.
+        _ = try await NSWorkspace.shared.openApplication(at: app, configuration: configuration)
+        NSApp.terminate(nil)
       } catch {
         self.error = "Couldn't update: \(error.localizedDescription)"
         installing = false
@@ -129,18 +134,6 @@ import Observation
       URL(fileURLWithPath: "/usr/bin/xattr"),
       arguments: ["-dr", "com.apple.quarantine", fresh.path])
     _ = try files.replaceItemAt(app, withItemAt: fresh)
-  }
-
-  /// Opens the new copy once this one has quit.
-  private static func relaunch(_ app: URL) {
-    let process = Process()
-    process.executableURL = URL(fileURLWithPath: "/bin/sh")
-    process.arguments = [
-      "-c", "while /bin/kill -0 \"$1\" 2>/dev/null; do /bin/sleep 0.2; done; /usr/bin/open \"$0\"",
-      app.path, String(ProcessInfo.processInfo.processIdentifier),
-    ]
-    try? process.run()
-    NSApp.terminate(nil)
   }
 }
 
