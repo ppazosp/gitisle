@@ -2,6 +2,14 @@
 
 Notable changes to GitIsle. Releases follow [semantic versioning](https://semver.org).
 
+## [0.3.3](https://github.com/ppazosp/gitisle/compare/v0.3.2...v0.3.3) (2026-11-19)
+
+
+### Bug Fixes
+
+* expand pull request stacks by default ([#64](https://github.com/ppazosp/gitisle/issues/64)) ([58c1ec4](https://github.com/ppazosp/gitisle/commit/58c1ec433e6ab6d9c3fe6b80501983a199bdd895))
+* sort Activity pull requests by latest activity ([#65](https://github.com/ppazosp/gitisle/issues/65)) ([4f5e821](https://github.com/ppazosp/gitisle/commit/4f5e821a43ae4c0ca9fa9a3231504313b062eaa9))
+
 ## [0.3.2](https://github.com/ppazosp/gitisle/compare/v0.3.1...v0.3.2) (2026-11-05)
 
 
