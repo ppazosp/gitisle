@@ -13,6 +13,15 @@ struct ActivityView: View {
       case .board: BoardView(store: store, contentHeight: $contentHeight)
       }
     }
+    // Measure the filtered content at its new layout. The island animates to that size.
+    .transaction(
+      value: ActivityFilters(
+        states: store.stateFilter, needsYou: store.needsYouOnly, window: store.activityWindow,
+        repositories: store.repositoryFilter)
+    ) { transaction in
+      transaction.animation = nil
+      transaction.disablesAnimations = true
+    }
     .environment(\.openPullRequest) { pr in
       withAnimation(Motion.snappy) { store.openDetails(pr) }
     }
@@ -66,6 +75,13 @@ struct ActivityView: View {
           "Showing the first 400 PRs in each group. Narrow the watched repositories in Settings.")
     }
   }
+}
+
+private struct ActivityFilters: Equatable {
+  let states: Set<PRGroup>
+  let needsYou: Bool
+  let window: ActivityWindow
+  let repositories: Set<String>
 }
 
 private struct Notice: View {
@@ -200,11 +216,14 @@ struct StateFilterBar: View {
   let store: IslandStore
 
   var body: some View {
+    let canExclude =
+      store.stateFilter.isEmpty && !store.repositoryPickerOpen
+      && store.dropdown == nil && store.checksPreview == nil
     HStack(spacing: 6) {
       NeedsYouChip(
         count: store.needsYouCount, selected: store.needsYouOnly
       ) {
-        withAnimation(Motion.morph) { store.needsYouOnly.toggle() }
+        store.needsYouOnly.toggle()
       }
       Rectangle().fill(Palette.hairline).frame(width: 1, height: 16).padding(.horizontal, 2)
       ForEach(PRGroup.boardOrder, id: \.self) { group in
@@ -215,18 +234,15 @@ struct StateFilterBar: View {
           group == .merged && store.github?.mergedLimited == true && store.activityWindow == .month
         StateChip(
           group: group, count: count, capped: capped, selected: selected,
-          dimmed: !store.stateFilter.isEmpty && !selected
-        ) {
-          withAnimation(Motion.morph) { store.toggleState(group) }
-        }
+          dimmed: !store.stateFilter.isEmpty && !selected,
+          action: { store.toggleState(group) },
+          exclude: canExclude ? { store.excludeState(group) } : nil)
       }
       Spacer(minLength: 4)
       if !store.stateFilter.isEmpty || store.needsYouOnly {
         Button {
-          withAnimation(Motion.morph) {
-            store.stateFilter = []
-            store.needsYouOnly = false
-          }
+          store.stateFilter = []
+          store.needsYouOnly = false
         } label: {
           Image(systemName: "xmark").font(.system(size: 9, weight: .bold))
             .foregroundStyle(.white.opacity(0.6))
@@ -287,6 +303,7 @@ private struct StateChip: View {
   let selected: Bool
   let dimmed: Bool
   let action: () -> Void
+  let exclude: (() -> Void)?
   @State private var hovered = false
 
   var body: some View {
@@ -310,13 +327,69 @@ private struct StateChip: View {
       .contentShape(Capsule())
     }
     .buttonStyle(.plain)
+    .overlay {
+      if let exclude {
+        StateChipSecondaryClick(action: exclude)
+          .allowsHitTesting(false)
+          .accessibilityHidden(true)
+      }
+    }
     .onHover { inside in withAnimation(.easeOut(duration: 0.12)) { hovered = inside } }
-    .help(
-      selected
-        ? "Stop filtering by \(group.label.lowercased())" : "Filter by \(group.label.lowercased())"
-    )
+    .help(helpText)
     .accessibilityLabel("\(group.label), \(count)")
     .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
+    .accessibilityActions {
+      if let exclude {
+        Button("Show all states except \(group.label)", action: exclude)
+      }
+    }
+  }
+
+  private var helpText: String {
+    let state = group.label.lowercased()
+    if selected { return "Stop filtering by \(state)" }
+    if exclude != nil { return "Filter by \(state). Right-click to exclude \(state)." }
+    return "Filter by \(state)"
+  }
+}
+
+/// Handles a secondary click before the island's context menu sees it.
+private struct StateChipSecondaryClick: NSViewRepresentable {
+  let action: () -> Void
+
+  func makeNSView(context: Context) -> ClickArea { ClickArea() }
+
+  func updateNSView(_ view: ClickArea, context: Context) { view.action = action }
+
+  static func dismantleNSView(_ view: ClickArea, coordinator: ()) { view.stopMonitoring() }
+
+  final class ClickArea: NSView {
+    var action: (() -> Void)?
+    private var monitor: Any?
+
+    override func viewDidMoveToWindow() {
+      super.viewDidMoveToWindow()
+      stopMonitoring()
+      guard window != nil else { return }
+      monitor = NSEvent.addLocalMonitorForEvents(matching: [.rightMouseDown, .leftMouseDown]) {
+        [weak self] event in
+        guard let self, let window, event.window === window, let action,
+          event.type == .rightMouseDown || event.modifierFlags.contains(.control)
+        else { return event }
+        let point = convert(event.locationInWindow, from: nil)
+        let radius = bounds.height / 2
+        guard visibleRect.contains(point),
+          NSBezierPath(roundedRect: bounds, xRadius: radius, yRadius: radius).contains(point)
+        else { return event }
+        action()
+        return nil
+      }
+    }
+
+    func stopMonitoring() {
+      if let monitor { NSEvent.removeMonitor(monitor) }
+      monitor = nil
+    }
   }
 }
 

@@ -113,8 +113,7 @@ struct IslandView: View {
         : [.idle, .live].contains(presentation) ? Motion.collapse : Motion.morph,
       value: presentation
     )
-    .animation(reduceMotion ? nil : Motion.morph, value: contentHeight)
-    .animation(reduceMotion ? nil : Motion.morph, value: liveSide)
+    .animation(reduceMotion ? nil : .easeOut(duration: 0.20), value: size)
     // The activity row comes and goes with notifications.
     .animation(reduceMotion ? nil : Motion.morph, value: ExpandedIsland.showsActivity(store))
     .padding(.top, metrics.topGap)
