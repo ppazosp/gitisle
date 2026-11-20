@@ -2,21 +2,29 @@ import AppKit
 import IslandCore
 import SwiftUI
 
+extension EnvironmentValues {
+  @Entry var activityHeightLimit: CGFloat = .infinity
+}
+
 struct ActivityView: View {
   let store: IslandStore
   @Binding var contentHeight: CGFloat
+  @Environment(\.activityHeightLimit) private var heightLimit
 
   var body: some View {
     Group {
       switch store.activityLayout {
-      case .list: list
-      case .board: BoardView(store: store, contentHeight: $contentHeight)
+      case .list:
+        ActivityList(store: store, contentHeight: $contentHeight, heightLimit: heightLimit)
+      case .board:
+        BoardView(store: store, contentHeight: $contentHeight, heightLimit: heightLimit)
       }
     }
-    // Measure the filtered content at its new layout. The island animates to that size.
+    // Lay out the new content once. The island animates to that size.
     .transaction(
       value: ActivityFilters(
-        states: store.stateFilter, needsYou: store.needsYouOnly, window: store.activityWindow,
+        layout: store.activityLayout, states: store.stateFilter, needsYou: store.needsYouOnly,
+        window: store.activityWindow,
         repositories: store.repositoryFilter)
     ) { transaction in
       transaction.animation = nil
@@ -28,10 +36,50 @@ struct ActivityView: View {
     .environment(\.stackLinks, store.stackLinks)
     .environment(store)
   }
+}
 
-  private var list: some View {
-    MeasuredColumn {
-      VStack(alignment: .leading, spacing: 0) {
+private struct ActivityList: View {
+  let store: IslandStore
+  @Binding var contentHeight: CGFloat
+  let heightLimit: CGFloat
+  @State private var expandedMerged: Set<String> = []
+
+  private enum Row: Identifiable {
+    enum ID: Hashable {
+      case header(String)
+      case pile(String)
+      case more(String)
+    }
+
+    case header(RepoSection, collapsed: Bool, separated: Bool)
+    case pile([PullRequest], bottom: PullRequest, trailingSpace: Bool)
+    case more(repository: String, count: Int)
+
+    var id: ID {
+      switch self {
+      case .header(let section, _, _): .header(section.id)
+      case .pile(_, let bottom, _): .pile(bottom.id)
+      case .more(let repository, _): .more(repository)
+      }
+    }
+  }
+
+  var body: some View {
+    let rows = store.repositories.enumerated().flatMap { index, section in
+      self.rows(for: section, separated: index > 0)
+    }
+    // Count only the rows that are actually shown. At this lower bound the list
+    // already fills the island, so it can scroll without measuring every row.
+    let rowCount = rows.reduce(0) { count, row in
+      switch row {
+      case .header: count + 1
+      case .pile(let pile, let bottom, _):
+        count + (store.foldedStacks.contains(bottom.id) ? 1 : pile.count)
+      case .more: count
+      }
+    }
+    MeasuredColumn(fixedHeight: CGFloat(rowCount) * 36 >= heightLimit ? heightLimit : nil) {
+      LazyVStack(alignment: .leading, spacing: 0) {
         notices
         if store.github != nil && store.repositories.isEmpty {
           EmptyState(
@@ -41,17 +89,9 @@ struct ActivityView: View {
               : store.activityWindow == .month
                 ? "You're all caught up" : "No PR activity \(windowPhrase)")
         }
-        ForEach(store.repositories) { section in
-          if section.id != store.repositories.first?.id {
-            Rectangle().fill(Palette.hairline).frame(height: 1).padding(.horizontal, 8)
-          }
-          RepositoryCard(
-            section: section, collapsed: store.collapsedRepositories.contains(section.id),
-            showsEverything: !store.stateFilter.isEmpty || store.needsYouOnly,
-          ) {
-            withAnimation(Motion.snappy) { store.toggleCollapsed(section.id) }
-          }
-          .transition(.opacity)
+        ForEach(rows) { item in
+          // One view per item gives the lazy stack stable scroll positions across repositories.
+          VStack(spacing: 0) { row(item) }
         }
       }
       .padding(.horizontal, 14).padding(.top, 8).padding(.bottom, 4)
@@ -59,6 +99,62 @@ struct ActivityView: View {
       contentHeight = $0
     }
     .animation(Motion.snappy, value: store.repositories)
+  }
+
+  private func rows(for section: RepoSection, separated: Bool) -> [Row] {
+    let collapsed = store.collapsedRepositories.contains(section.id)
+    var rows: [Row] = [.header(section, collapsed: collapsed, separated: separated)]
+    guard !collapsed else { return rows }
+    let showAll =
+      !store.stateFilter.isEmpty || store.needsYouOnly
+      || expandedMerged.contains(section.id)
+    let visible = showAll ? section.pullRequests : newestMergesAndOpen(section.pullRequests)
+    let hidden = section.pullRequests.count - visible.count
+    let piles = PRStacks.piles(visible, links: store.stackLinks)
+    for (index, pile) in piles.enumerated() {
+      if let bottom = pile.first {
+        rows.append(
+          .pile(pile, bottom: bottom, trailingSpace: hidden == 0 && index == piles.count - 1))
+      }
+    }
+    if hidden > 0 { rows.append(.more(repository: section.id, count: hidden)) }
+    return rows
+  }
+
+  @ViewBuilder private func row(_ item: Row) -> some View {
+    switch item {
+    case .header(let section, let collapsed, let separated):
+      RepositoryHeader(section: section, collapsed: collapsed, separated: separated) {
+        withAnimation(Motion.snappy) { store.toggleCollapsed(section.id) }
+      }
+    case .pile(let pile, let bottom, let trailingSpace):
+      Group {
+        if pile.count > 1 {
+          ListStack(pile: pile, unfolded: !store.foldedStacks.contains(bottom.id)) {
+            withAnimation(Motion.snappy) { store.toggleStack(bottom.id) }
+          }
+        } else {
+          PRRow(pr: bottom)
+        }
+      }
+      .padding(.bottom, trailingSpace ? 8 : 0)
+      .transition(.opacity)
+    case .more(let repository, let count):
+      ShowMoreButton(hidden: count) {
+        withAnimation(Motion.snappy) { _ = expandedMerged.insert(repository) }
+      }
+      .padding(.horizontal, 8).padding(.top, 2).padding(.bottom, 8)
+    }
+  }
+
+  /// Merged PRs are history. Show a few alongside current work until asked for more.
+  private func newestMergesAndOpen(_ pulls: [PullRequest]) -> [PullRequest] {
+    var merged = 0
+    return pulls.filter { pr in
+      guard pr.group == .merged else { return true }
+      merged += 1
+      return merged <= 5
+    }
   }
 
   private var windowPhrase: String {
@@ -78,6 +174,7 @@ struct ActivityView: View {
 }
 
 private struct ActivityFilters: Equatable {
+  let layout: IslandStore.ActivityLayout
   let states: Set<PRGroup>
   let needsYou: Bool
   let window: ActivityWindow
@@ -107,30 +204,19 @@ private struct EmptyState: View {
   }
 }
 
-/// A repository with its PRs. The header summarizes PR states and toggles the list.
-private struct RepositoryCard: View {
+/// Summarizes a repository's PR states and toggles its section.
+private struct RepositoryHeader: View {
   let section: RepoSection
   let collapsed: Bool
-  /// A state filter is a request to see those PRs, so nothing is shortened.
-  let showsEverything: Bool
+  let separated: Bool
   let toggle: () -> Void
   @State private var hovered = false
-  @State private var showsAllMerged = false
-  @Environment(IslandStore.self) private var store
-
-  /// Merged PRs are history; a few are enough next to open work until asked for more.
-  private var visible: [PullRequest] {
-    guard !showsEverything, !showsAllMerged else { return section.pullRequests }
-    var merged = 0
-    return section.pullRequests.filter { pr in
-      guard pr.group == .merged else { return true }
-      merged += 1
-      return merged <= 5
-    }
-  }
 
   var body: some View {
     VStack(spacing: 0) {
+      if separated {
+        Rectangle().fill(Palette.hairline).frame(height: 1).padding(.horizontal, 8)
+      }
       HStack(spacing: 9) {
         RepoAvatar(url: section.avatar)
         (Text(verbatim: "\(section.owner)/").foregroundStyle(.white.opacity(0.45))
@@ -178,34 +264,6 @@ private struct RepositoryCard: View {
           + (collapsed ? "collapsed" : "expanded")
       )
       .accessibilityAction(named: collapsed ? "Expand" : "Collapse", toggle)
-      // Rows stay in place and are revealed by a clipped height, so they never slide
-      // over the header while the section opens or closes.
-      VStack(spacing: 0) {
-        let visible = self.visible
-        ForEach(PRStacks.piles(visible, links: store.stackLinks), id: \.first?.id) { pile in
-          if pile.count > 1, let bottom = pile.first {
-            ListStack(pile: pile, unfolded: !store.foldedStacks.contains(bottom.id)) {
-              withAnimation(Motion.snappy) { store.toggleStack(bottom.id) }
-            }
-          } else if let pr = pile.first {
-            PRRow(pr: pr)
-          }
-        }
-        .transition(.opacity)
-        if visible.count < section.pullRequests.count {
-          ShowMoreButton(hidden: section.pullRequests.count - visible.count) {
-            withAnimation(Motion.snappy) { showsAllMerged = true }
-          }
-          .padding(.horizontal, 8).padding(.top, 2)
-        }
-      }
-      .padding(.bottom, 8)
-      .fixedSize(horizontal: false, vertical: true)
-      .frame(height: collapsed ? 0 : nil, alignment: .top)
-      .opacity(collapsed ? 0 : 1)
-      .clipped()
-      .allowsHitTesting(!collapsed)
-      .accessibilityHidden(collapsed)
     }
   }
 }
@@ -274,6 +332,7 @@ private struct NeedsYouChip: View {
         GlyphView(glyph: .eye, size: 11)
         Text("Needs you").lineLimit(1).fixedSize()
         Text("\(count)").monospacedDigit().opacity(0.7)
+          .lineLimit(1).fixedSize()
           .contentTransition(.numericText(value: Double(count)))
       }
       .font(.system(size: 11, weight: .semibold))
@@ -313,6 +372,7 @@ private struct StateChip: View {
         GlyphView(glyph: group.glyph, size: 11)
         Text(group.label).lineLimit(1).fixedSize()
         Text(capped ? "\(count)+" : "\(count)").monospacedDigit().opacity(0.7)
+          .lineLimit(1).fixedSize()
           .contentTransition(.numericText(value: Double(count)))
       }
       .font(.system(size: 11, weight: .semibold))
@@ -586,6 +646,7 @@ private struct PRNumberLink: View {
 private struct BoardView: View {
   let store: IslandStore
   @Binding var contentHeight: CGFloat
+  let heightLimit: CGFloat
   @State private var heights: [PRGroup: CGFloat] = [:]
   @State private var expanded: Set<PRGroup> = []
 
@@ -605,8 +666,13 @@ private struct BoardView: View {
       } else {
         HStack(alignment: .top, spacing: 10) {
           ForEach(columns) { section in
-            MeasuredColumn {
-              column(section).padding(.top, 10).padding(.bottom, 4)
+            let piles = PRStacks.piles(section.pullRequests, links: store.stackLinks)
+            let visible = piles.prefix(shortened(section) ? 8 : piles.count)
+            // Even one card from each of these piles fills a tall column.
+            let fixedHeight = CGFloat(visible.count) * 60 >= heightLimit ? heightLimit : nil
+            MeasuredColumn(fixedHeight: fixedHeight) {
+              column(section, piles: visible, hidden: piles.count - visible.count)
+                .padding(.top, 10).padding(.bottom, 4)
             } onHeight: { height in
               var next = heights
               next[section.group] = height
@@ -644,8 +710,10 @@ private struct BoardView: View {
     store.stateFilter.isEmpty && !store.needsYouOnly && !expanded.contains(section.group)
   }
 
-  private func column(_ section: PRSection) -> some View {
-    VStack(alignment: .leading, spacing: 8) {
+  private func column(_ section: PRSection, piles: ArraySlice<[PullRequest]>, hidden: Int)
+    -> some View
+  {
+    LazyVStack(alignment: .leading, spacing: 8) {
       HStack(spacing: 6) {
         GlyphView(glyph: section.group.glyph, size: 12).foregroundStyle(section.group.color)
         Text(section.group.label).font(.system(size: 11.5, weight: .semibold))
@@ -654,9 +722,7 @@ private struct BoardView: View {
         Spacer(minLength: 0)
       }
       .padding(.horizontal, 4).padding(.top, 4)
-      let piles = PRStacks.piles(section.pullRequests, links: store.stackLinks)
-      let limit = shortened(section) ? 8 : piles.count
-      ForEach(piles.prefix(limit), id: \.first?.id) { pile in
+      ForEach(piles, id: \.first?.id) { pile in
         if pile.count > 1, let bottom = pile.first {
           StackPile(pile: pile, fanned: !store.foldedStacks.contains(bottom.id)) {
             withAnimation(Motion.snappy) { store.toggleStack(bottom.id) }
@@ -666,8 +732,8 @@ private struct BoardView: View {
           PRCard(pr: pr).transition(.opacity)
         }
       }
-      if piles.count > limit {
-        ShowMoreButton(hidden: piles.count - limit) {
+      if hidden > 0 {
+        ShowMoreButton(hidden: hidden) {
           withAnimation(Motion.snappy) { _ = expanded.insert(section.group) }
         }
       }

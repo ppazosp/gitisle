@@ -492,21 +492,29 @@ struct RepoAvatar: View {
   }
 }
 
-/// A vertically scrolling column that reports its content's natural height,
-/// so the island can grow to fit and only scroll once it reaches its maximum.
+/// Fits short content to the island, or lets long content scroll in an already full island.
 struct MeasuredColumn<Content: View>: View {
+  var fixedHeight: CGFloat? = nil
   @ViewBuilder let content: Content
   let onHeight: (CGFloat) -> Void
 
   var body: some View {
     ScrollView {
-      content.onGeometryChange(for: CGFloat.self) {
-        $0.size.height
-      } action: {
-        onHeight($0)
+      if fixedHeight != nil {
+        content
+      } else {
+        content.onGeometryChange(for: CGFloat.self) {
+          $0.size.height
+        } action: {
+          onHeight($0)
+        }
       }
     }
     .scrollIndicators(.never)
+    .frame(height: fixedHeight, alignment: .top)
+    .onChange(of: fixedHeight, initial: true) { _, height in
+      if let height { onHeight(height) }
+    }
   }
 }
 

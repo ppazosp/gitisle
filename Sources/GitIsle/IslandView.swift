@@ -761,6 +761,9 @@ private struct ExpandedIsland: View {
       }
       .frame(height: Self.footerHeight(store))
     }
+    .environment(
+      \.activityHeightLimit, metrics.maxExpandedHeight - Self.chromeHeight(metrics, store: store)
+    )
     .overlayPreferenceValue(RepositoryButtonBounds.self) { anchor in
       GeometryReader { proxy in
         if Self.showsRepositoryPicker(store), let anchor {
