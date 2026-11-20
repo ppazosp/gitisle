@@ -3,6 +3,10 @@
 Reviewed on 11 October 2026. A separate native app keeps GitHub as the main view
 while reusing an established token-accounting library.
 
+GitIsle later dropped agent usage to focus on GitHub, so it no longer depends on
+CodexBar or reads Codex and Claude Code history. The notes below are kept as the
+original research.
+
 | Project | Relevant parts | Source license | Decision |
 | --- | --- | --- | --- |
 | [CodexBar](https://github.com/steipete/CodexBar) | public Swift usage library, model accounting, local history, cached tokens and fork handling | MIT | use CodexBarCore at `79831b47517f3e3e340886be63157f582ab13d41` |

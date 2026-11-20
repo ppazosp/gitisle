@@ -393,13 +393,16 @@ public actor GitHubService {
     return url
   }
 
-  /// Personal PR counts for today, 7 days, and 30 days, plus daily contributions.
-  /// Search counts include organizations that the contribution graph may hide.
-  public func stats(now: Date = Date(), calendar: Calendar = .current) async throws -> GitHubStats {
+  /// Personal PR counts for today, 7 days, and 30 days, in `repositories`, or everywhere when
+  /// it's empty. Search counts include organizations that the contribution graph may hide.
+  public func stats(
+    repositories: Set<String> = [], now: Date = Date(), calendar: Calendar = .current
+  ) async throws -> GitHubStats {
     let windows = [1, 7, 30]
+    let scope = repositories.sorted().map { " repo:\($0)" }.joined()
     var variables: [String: Any] = [:]
     var fields: [String] = []
-    var declarations = ["$from: DateTime!", "$to: DateTime!"]
+    var declarations: [String] = []
     let today = calendar.startOfDay(for: now)
     for days in windows {
       let start = calendar.date(byAdding: .day, value: -(days - 1), to: today)!
@@ -411,19 +414,14 @@ public actor GitHubService {
       ]
       for (name, search) in searches {
         let key = "\(name)\(days)"
-        variables[key] = search
+        variables[key] = search + scope
         declarations.append("$\(key): String!")
         fields.append("\(key): search(query: $\(key), type: ISSUE, first: 0) { issueCount }")
       }
     }
-    let first = calendar.date(byAdding: .day, value: -29, to: today)!
-    variables["from"] = first.formatted(.iso8601)
-    variables["to"] = now.formatted(.iso8601)
     let query = """
       query(\(declarations.joined(separator: ", "))) {
-        viewer { login contributionsCollection(from: $from, to: $to) {
-          contributionCalendar { weeks { contributionDays { date contributionCount } } }
-        } }
+        viewer { login }
         \(fields.joined(separator: "\n  "))
       }
       """
@@ -442,16 +440,8 @@ public actor GitHubService {
         days: days, opened: try count("opened\(days)"), merged: try count("merged\(days)"),
         reviewed: try count("reviewed\(days)"))
     }
-    let collection = viewer["contributionsCollection"] as? [String: Any]
-    let weeks =
-      (collection?["contributionCalendar"] as? [String: Any])?["weeks"] as? [[String: Any]] ?? []
-    let daily = weeks.flatMap { $0["contributionDays"] as? [[String: Any]] ?? [] }
-      .compactMap { day -> DailyValue? in
-        guard let date = day["date"] as? String, let count = day["contributionCount"] as? Int
-        else { return nil }
-        return DailyValue(day: date, value: Double(count))
-      }
-    return GitHubStats(login: login, windows: results, daily: daily, fetchedAt: now)
+    return GitHubStats(
+      login: login, windows: results, repositories: repositories, fetchedAt: now)
   }
 }
 

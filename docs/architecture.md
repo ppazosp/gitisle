@@ -8,17 +8,16 @@ or performs a GitHub write.
 ```mermaid
 flowchart LR
   GH[GitHub API through gh] --> G[PR collector]
-  LOG[Local agent history] --> C[CodexBarCore usage scanner]
   G --> S[Island store]
-  C --> S
   S --> U[SwiftUI island in AppKit panel]
   S --> N[Local event ledger and notifications]
   U --> B[Open PR in browser]
 ```
 
 `IslandCore` owns normalized PRs, PR grouping by state and repository, time
-windows, GitHub queries, bounded subprocess execution, and event comparisons. Its tests use local fixtures.
-`GitIsle` owns the usage-library adapter, UI, settings, cache, and notifications.
+windows, GitHub queries, bounded subprocess execution, event comparisons, and
+the PR trends derived from loaded PRs. Its tests use local fixtures.
+`GitIsle` owns the UI, settings, cache, and notifications.
 
 Each collector runs independently. GitHub queries have a process deadline and
 an output limit. A failed query leaves the previous snapshot available. The
@@ -43,8 +42,10 @@ connection and account or repository changes establish a new baseline. A new
 requested review can notify after that baseline. Failed-check notifications are
 identified by PR and commit. Merge notifications use the observed merge time.
 
-The usage scanner reads Codex and Claude Code history and handles provider
-accounting, caches, and fork history.
+Statistics cost one query: GitHub's search counts of PRs opened, merged and
+reviewed, limited to the chosen repositories and asked again when the choice
+changes. The charts, from PRs per day to lines and hours of the day, are computed
+from the PRs the collector already keeps for 30 days.
 
 The island has four presentations: idle, which covers only the notch; live,
 while your PRs merge or run checks; a temporary event banner; and expanded. One shape morphs between them with a spring; content fades in after
@@ -59,6 +60,5 @@ the rest of the transparent window passes clicks through. Full-screen visibility
 is optional. The auto-hide menu bar can affect macOS full-screen detection;
 enable Show in full screen if your menu bar is always hidden.
 
-Caches and settings are local JSON files. Agent usage history stays in its
-existing location. Changing a data source prevents an in-flight result from publishing
-against the new selection.
+Caches and settings are local JSON files. Changing a data source prevents an
+in-flight result from publishing against the new selection.

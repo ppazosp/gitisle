@@ -133,14 +133,6 @@ struct IslandCoreTests {
       ).count == 1)
   }
 
-  @Test func missingOrOverflowingUsageRemainsUnavailable() {
-    #expect(UsageMath.tokens([Int.max, 1]) == nil)
-    #expect(UsageMath.tokens([10, nil]) == nil)
-    #expect(UsageMath.tokens([0, 0]) == 0)
-    #expect(UsageMath.costs([1, Double.infinity]) == nil)
-    #expect(UsageMath.costs([1, nil]) == nil)
-  }
-
   @Test func subprocessDrainsOutputAndEnforcesDeadline() async throws {
     let output = try await ProcessRunner.run(
       URL(fileURLWithPath: "/bin/echo"), arguments: ["hello"])

@@ -272,24 +272,8 @@ struct GitHubServiceTests {
     #expect(GitHubService.avatar(nil) == nil)
   }
 
-  @Test func statsReadEachWindowAndTheContributionCalendar() async throws {
-    var data: [String: Any] = [
-      "viewer": [
-        "login": "person",
-        "contributionsCollection": [
-          "contributionCalendar": [
-            "weeks": [
-              [
-                "contributionDays": [
-                  ["date": "2026-10-10", "contributionCount": 2],
-                  ["date": "2026-10-11", "contributionCount": 5],
-                ]
-              ]
-            ]
-          ]
-        ],
-      ]
-    ]
+  @Test func statsReadEachWindowInTheChosenRepositories() async throws {
+    var data: [String: Any] = ["viewer": ["login": "person"]]
     for days in [1, 7, 30] {
       data["opened\(days)"] = ["issueCount": days]
       data["merged\(days)"] = ["issueCount": days * 2]
@@ -297,10 +281,16 @@ struct GitHubServiceTests {
     }
     let fixture = try FixtureTransport([JSONSerialization.data(withJSONObject: ["data": data])])
     let service = GitHubService(transport: { try await fixture.send($0) })
-    let stats = try await service.stats()
+    let stats = try await service.stats(repositories: ["b/api", "a/web"])
     #expect(stats.login == "person")
     #expect(stats.window(days: 7) == .init(days: 7, opened: 7, merged: 14, reviewed: 21))
-    #expect(stats.daily.map(\.value) == [2, 5])
+    #expect(stats.repositories == ["a/web", "b/api"])
+    // Every search is limited to the chosen repositories.
+    let sent = try JSONSerialization.jsonObject(with: Data((await fixture.sent.first ?? "").utf8))
+    let searches = ((sent as? [String: Any])?["variables"] as? [String: Any])?.values
+      .compactMap { $0 as? String }
+    #expect(searches?.count == 9)
+    #expect(searches?.allSatisfy { $0.hasSuffix(" repo:a/web repo:b/api") } == true)
   }
 
   @Test func incompleteStatsAreRejected() async throws {
