@@ -307,6 +307,7 @@ private struct StateChip: View {
   @State private var hovered = false
 
   var body: some View {
+    let capsule = Capsule(style: .circular)
     Button(action: action) {
       HStack(spacing: 5) {
         GlyphView(glyph: group.glyph, size: 11)
@@ -318,14 +319,13 @@ private struct StateChip: View {
       .foregroundStyle(group.color)
       .padding(.horizontal, 8).padding(.vertical, 4)
       .background(
-        Capsule().fill(group.color.opacity(selected ? 0.28 : hovered ? 0.2 : 0.11))
+        capsule.fill(group.color.opacity(selected ? 0.28 : hovered ? 0.2 : 0.11))
       )
       .overlay(
-        Capsule().inset(by: 0.5)
-          .stroke(group.color.opacity(selected ? 0.9 : dimmed ? 0 : 0.6), lineWidth: 1)
+        capsule.strokeBorder(group.color.opacity(selected ? 0.9 : dimmed ? 0 : 0.6), lineWidth: 1)
       )
       .opacity(dimmed && !hovered ? 0.45 : 1)
-      .contentShape(Capsule())
+      .contentShape(capsule)
     }
     .buttonStyle(.plain)
     .overlay {
