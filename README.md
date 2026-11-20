@@ -39,8 +39,6 @@ shows what's merging, which checks are running, and what needs you.
 - **Activity.** Hover to open your PRs by repository, or as a board of GitHub
   states: draft, open, merging, merged. Filter by state, by what needs you,
   by repository, and by today, 7 days, or 30 days.
-- **Stats.** PRs opened, merged, and reviewed, plus local Claude Code and Codex
-  token usage and estimated cost, as bars, lines, areas, or running totals.
 
 GitIsle only reads from GitHub. It never merges, reviews, comments, or marks
 notifications as read.
@@ -111,7 +109,7 @@ To uninstall, quit GitIsle (right-click the island), then delete
 | Open the island | Hover the notch for a moment, or click it |
 | Open a live or announced PR | Click the top row or the banner |
 | See a PR's checks, errors, reviews, and files | Click it in Activity; ⌘-click opens GitHub |
-| Share a merged PR | Right-click it, or use Share on its page, to copy or save a card with its stats |
+| Share a merged PR | Right-click it, or use Share on its page, to copy or save a card summarizing its changes |
 | Follow a stack of PRs | Stacked PRs sit together, each "on #N"; a PR's page shows its stack |
 | Open a PR's preview deploy | Click its Preview chip (Vercel, Netlify, Railway, and other hosts that report to GitHub) |
 | Switch between list and board | Use the toggle at the top right |
@@ -122,12 +120,7 @@ To uninstall, quit GitIsle (right-click the island), then delete
 
 GitIsle works on Macs with a notch and on external displays. In Settings you
 can choose the display, the hover delay, extra repositories to watch, system
-notifications, which events to announce, launch at login, and euros or
-dollars for costs.
-
-<p align="center">
-  <img src="docs/images/stats.png" width="560" alt="Stats with GitHub activity and Claude Code and Codex usage charts">
-</p>
+notifications, which events to announce, and launch at login.
 
 ## How the numbers work
 
@@ -140,20 +133,15 @@ dollars for costs.
   error, the last snapshot stays on screen marked as cached.
 - **Needs you** flags open PRs with a review request, failed checks, conflicts,
   requested changes, or that are ready to merge, behind, or blocked.
-- **Claude Code and Codex usage** comes from the history files on your Mac,
-  read by [CodexBar](https://github.com/steipete/CodexBar)'s usage library.
-  Costs are estimates at API prices, separate from your subscription. To show
-  euros, set the rate in Settings; GitIsle doesn't fetch exchange rates.
 
 ## Privacy
 
 GitIsle talks to GitHub through your existing `gh` login, and loads avatars
 from GitHub's avatar host. Installed releases check GitHub for a newer GitIsle
 every hour and when your Mac wakes; updating downloads it from the release and
-installs it only if it carries GitIsle's release signature. Usage statistics
-never leave your Mac. There is no telemetry, account, or GitIsle server.
-Settings and caches live in `~/Library/Application Support/GitIsle/`, and
-GitIsle never writes to agent configuration, transcripts, or credentials.
+installs it only if it carries GitIsle's release signature. There is no
+telemetry, account, or GitIsle server. Settings and caches live in
+`~/Library/Application Support/GitIsle/`.
 
 ## Contributing
 
@@ -164,12 +152,10 @@ for how it fits together. To report a security issue, see
 
 ## Credits and license
 
-[CodexBar](https://github.com/steipete/CodexBar) provides the usage library.
 [Agents Island](https://github.com/mustafahalabi/agents-island) provided the
 notch geometry and window pattern, and [Magpie](https://github.com/fmguerreiro/magpie)
 the idea of reusing the GitHub CLI login. Pull request icons are GitHub
-[Octicons](https://github.com/primer/octicons); provider marks come from
-[Simple Icons](https://simpleicons.org).
+[Octicons](https://github.com/primer/octicons).
 
 GitIsle is released under the [MIT license](LICENSE). See
 [third-party notices](THIRD_PARTY_NOTICES.md).

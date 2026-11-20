@@ -30,7 +30,7 @@ GITISLE_PREVIEW_LABEL="Updated just now" dist/GitIsle.app/Contents/MacOS/GitIsle
   --snapshot "$PWD/.artifacts/list.png" -AppleLocale en_US -AppleLanguages "(en)"
 ```
 
-Use `--collapsed`, `--board`, or `--stats` for the other states. The banner
+Use `--collapsed` or `--board` for the other states. The banner
 step plays five announcements; capture each with `--event opened`, `ready`,
 `merged`, `failed`, and `review`, saved as `banner-<kind>.png`. Then crop each capture to the island body: 52 px from each side and 32 px from
 the bottom (the capture's margin plus the notch corners), and update

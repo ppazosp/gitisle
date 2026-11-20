@@ -4,7 +4,7 @@ name: Release
 # merges; pushing a version tag by hand still works too:
 #   git tag v0.2.0 && git push origin v0.2.0
 #
-# Building runs third-party code (Swift packages, dmgbuild), so it gets neither the signing
+# Building runs third-party code (dmgbuild), so it gets neither the signing
 # key nor write access. A separate job signs the result from a clean checkout and publishes.
 on:
   push:

@@ -99,7 +99,6 @@ enum Palette {
   static let merging = Color(red: 0.82, green: 0.60, blue: 0.13)
   static let failed = Color(red: 0.97, green: 0.32, blue: 0.29)
   static let attention = Color(red: 0.94, green: 0.62, blue: 0.27)
-  static let claude = Color(red: 0.85, green: 0.47, blue: 0.34)
   static let update = Color(red: 0.24, green: 0.56, blue: 1.0)
   static let surface = Color.white.opacity(0.055)
   static let hairline = Color.white.opacity(0.09)
@@ -254,17 +253,7 @@ extension PRStatus {
   }
 }
 
-extension AgentProvider {
-  var glyph: Glyph { self == .codex ? .openai : .claude }
-  var tint: Color { self == .codex ? .white : Palette.claude }
-}
-
 enum Format {
-  static func count(_ value: Int?) -> String {
-    guard let value else { return "—" }
-    return value.formatted(.number.notation(.compactName).precision(.fractionLength(0...1)))
-  }
-
   /// A short duration such as "48s", "5m 1s", or "1h 12m".
   static func duration(_ seconds: TimeInterval) -> String {
     let total = Int(max(0, seconds).rounded())

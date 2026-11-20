@@ -133,10 +133,10 @@ struct IslandView: View {
     case .expanded:
       let chrome = ExpandedIsland.chromeHeight(metrics, store: store)
       let board =
-        store.tab == .activity && store.activityLayout == .board && !store.showingSettings
+        store.activityLayout == .board && !store.showingSettings
         && !store.showingOnboarding && store.detailsPullRequest == nil
       let details =
-        store.tab == .activity && store.detailsPullRequest != nil && !store.showingSettings
+        store.detailsPullRequest != nil && !store.showingSettings
         && !store.showingOnboarding
       let width =
         store.showingSettings && !store.showingOnboarding
@@ -144,14 +144,10 @@ struct IslandView: View {
         : board
           ? metrics.boardWidth(columns: store.sections.count)
           : details ? metrics.detailsWidth : metrics.expandedWidth
-      // Stats and Settings grow with the screen, so their cards fit without scrolling.
-      let tall =
-        store.showingSettings
-        || (store.tab == .stats && !store.showingOnboarding)
       return CGSize(
         width: width + 2 * metrics.ear,
         height: min(
-          tall ? metrics.maxStatsHeight : metrics.maxExpandedHeight,
+          store.showingSettings ? metrics.maxSettingsHeight : metrics.maxExpandedHeight,
           chrome + max(contentHeight, ExpandedIsland.repositoryPickerHeight(store))))
     }
   }
@@ -700,7 +696,7 @@ private struct ExpandedIsland: View {
 
   /// State filters belong to Activity, in both layouts.
   static func showsFilterBar(_ store: IslandStore) -> Bool {
-    store.tab == .activity && !store.showingSettings && !store.showingOnboarding
+    !store.showingSettings && !store.showingOnboarding
       && store.detailsPullRequest == nil
   }
 
@@ -742,20 +738,17 @@ private struct ExpandedIsland: View {
           OnboardingView(store: store, contentHeight: $contentHeight)
         } else if store.showingSettings {
           SettingsView(store: store, contentHeight: $contentHeight)
-        } else if store.tab == .activity, let pr = store.detailsPullRequest {
+        } else if let pr = store.detailsPullRequest {
           PRDetailsView(store: store, pr: pr, contentHeight: $contentHeight)
         } else {
-          switch store.tab {
-          case .activity: ActivityView(store: store, contentHeight: $contentHeight)
-          case .stats: StatsView(store: store, contentHeight: $contentHeight)
-          }
+          ActivityView(store: store, contentHeight: $contentHeight)
         }
       }
       .id(
         store.showingOnboarding
           ? "onboarding"
           : store.showingSettings
-            ? "settings" : store.detailsPullRequest.map { "pr-\($0.id)" } ?? store.tab.rawValue
+            ? "settings" : store.detailsPullRequest.map { "pr-\($0.id)" } ?? "activity"
       )
       .transition(.opacity.animation(.easeOut(duration: 0.12)))
       .frame(maxHeight: .infinity, alignment: .top)
@@ -840,7 +833,7 @@ private struct ExpandedIsland: View {
       }
       .padding(.horizontal, 22)
       .frame(height: Self.headerHeight)
-    } else if store.tab == .activity, let pr = store.detailsPullRequest {
+    } else if let pr = store.detailsPullRequest {
       HStack(spacing: 10) {
         FooterButton(glyph: nil, systemImage: "chevron.left", label: "Back") {
           withAnimation(Motion.snappy) { store.closeDetails() }
@@ -868,28 +861,19 @@ private struct ExpandedIsland: View {
       .padding(.leading, 22).padding(.trailing, 22)
       .frame(height: Self.headerHeight)
     } else {
-      tabsHeader
+      activityHeader
     }
   }
 
-  private var tabsHeader: some View {
+  private var activityHeader: some View {
     HStack(spacing: 8) {
-      PillPicker(
-        options: IslandStore.IslandTab.allCases.map { ($0, $0.rawValue) },
-        selection: $store.tab)
+      Text("Activity").font(.system(size: 14, weight: .semibold))
       Spacer(minLength: 8)
-      switch store.tab {
-      case .activity:
-        RepositoryButton(store: store)
-        PillPicker(
-          options: ActivityWindow.allCases.map { ($0, $0.label) },
-          selection: $store.activityWindow, fontSize: 11)
-        LayoutToggle(layout: $store.activityLayout)
-      case .stats:
-        PillPicker(
-          options: [(1, "Today"), (7, "7 days"), (30, "30 days")],
-          selection: $store.usageDays, fontSize: 11)
-      }
+      RepositoryButton(store: store)
+      PillPicker(
+        options: ActivityWindow.allCases.map { ($0, $0.label) },
+        selection: $store.activityWindow, fontSize: 11)
+      LayoutToggle(layout: $store.activityLayout)
     }
     .padding(.horizontal, 28)
     .frame(height: Self.headerHeight)
@@ -897,14 +881,10 @@ private struct ExpandedIsland: View {
 
   /// Refresh sits with the status it updates; settings and app updates sit on the right.
   private var footer: some View {
-    HStack(spacing: 4) {
+    let refreshing = store.githubRefreshing
+    return HStack(spacing: 4) {
       FooterButton(glyph: .sync, label: "Refresh", spinning: refreshing) {
-        Task {
-          async let github: Void = store.refreshGitHub()
-          async let usage: Void = store.refreshUsage()
-          async let stats: Void = store.refreshStats()
-          _ = await (github, usage, stats)
-        }
+        Task { await store.refreshGitHub() }
       }
       .disabled(refreshing || store.isDemo)
       status.font(.system(size: 10.5)).foregroundStyle(.white.opacity(0.4)).lineLimit(1)
@@ -925,8 +905,6 @@ private struct ExpandedIsland: View {
     .padding(.horizontal, 18)
     .animation(Motion.snappy, value: store.updater.available)
   }
-
-  private var refreshing: Bool { store.githubRefreshing || store.usageRefreshing }
 
   @ViewBuilder private var status: some View {
     if let note = store.footerNote {

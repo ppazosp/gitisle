@@ -11,11 +11,6 @@ final class IslandStore {
   private(set) var github: GitHubSnapshot?
   var githubError: String?
   var githubRefreshing = false
-  var githubStats: GitHubStats?
-  var githubStatsError: String?
-  var usage: [AgentProvider: [UsageSummary]] = [:]
-  var usageErrors: [AgentProvider: String] = [:]
-  var usageRefreshing = false
   var events: [IslandEvent] = []
   var recentEvent: IslandEvent?
   /// How long a banner shows.
@@ -33,7 +28,6 @@ final class IslandStore {
       }
     }
   }
-  var tab: IslandTab = .activity
   /// Settings replace the expanded content. They save as they change, so collapsing the island
   /// never loses an edit.
   var showingSettings = false
@@ -50,7 +44,6 @@ final class IslandStore {
   var activityWindow: ActivityWindow = .month {
     didSet { if activityWindow != oldValue { regroupActivity() } }
   }
-  var usageDays = 1
   var hovered = false
   var persistenceError: String?
   var isDemo: Bool
@@ -391,7 +384,6 @@ final class IslandStore {
 
   @ObservationIgnored private let githubService = GitHubService()
   let updater = Updater()
-  @ObservationIgnored private let usageService: UsageService
   @ObservationIgnored private var loops: [Task<Void, Never>] = []
   @ObservationIgnored private var hoverTask: Task<Void, Never>?
   @ObservationIgnored private var notificationTask: Task<Void, Never>?
@@ -410,15 +402,6 @@ final class IslandStore {
   /// The Mac is asleep, its screens are off, or the session is locked: nobody is looking.
   @ObservationIgnored private var away = false
   @ObservationIgnored private var systemObservers: [NSObjectProtocol] = []
-  @ObservationIgnored private var lastUsageRefresh = Date.distantPast
-  @ObservationIgnored private var lastStatsRefresh = Date.distantPast
-  @ObservationIgnored private var statsRefreshing = false
-
-  enum IslandTab: String, CaseIterable {
-    case activity = "Activity"
-    case stats = "Stats"
-  }
-
   enum ActivityLayout: String {
     case list, board
   }
@@ -600,11 +583,6 @@ final class IslandStore {
     }
   }
 
-  /// Stats is open in the expanded island, so its usage figures are on screen.
-  var showingStats: Bool {
-    expanded && tab == .stats && !showingSettings && !showingOnboarding
-  }
-
   var presentation: Presentation {
     if expanded { return .expanded }
     if recentEvent != nil { return .banner }
@@ -614,7 +592,6 @@ final class IslandStore {
   init(demo: Bool = false) {
     isDemo = demo
     settings = demo ? AppSettings() : AppSettings.load(from: AppFiles.settings)
-    usageService = UsageService(cacheRoot: AppFiles.directory.appendingPathComponent("usage-cache"))
     if demo {
       // Previews must not depend on this Mac's remembered choices.
       repositoryFilter = []
@@ -758,34 +735,6 @@ final class IslandStore {
           do { try await Task.sleep(for: .seconds(1)) } catch { return }
         }
       })
-    loops.append(
-      Task { [weak self] in
-        while !Task.isCancelled {
-          guard let self else { return }
-          // Usage is read only while Stats is on screen: each read scans the agents' local
-          // history and rewrites its cache. A new day changes what "today" means, so it's
-          // stale after midnight too.
-          if showingStats,
-            Date().timeIntervalSince(lastUsageRefresh) > 120
-              || !Calendar.current.isDateInToday(lastUsageRefresh)
-          {
-            await refreshUsage()
-          }
-          do { try await Task.sleep(for: .seconds(1)) } catch { return }
-        }
-      })
-    loops.append(
-      Task { [weak self] in
-        while !Task.isCancelled {
-          guard let self else { return }
-          if Date().timeIntervalSince(lastStatsRefresh) > 600
-            || !Calendar.current.isDateInToday(lastStatsRefresh)
-          {
-            await refreshStats()
-          }
-          do { try await Task.sleep(for: .seconds(30)) } catch { return }
-        }
-      })
   }
 
   /// Seconds since the last keyboard, mouse, or trackpad input.
@@ -853,19 +802,6 @@ final class IslandStore {
     notificationTask?.cancel()
     liveCycle?.cancel()
     liveCycle = nil
-  }
-
-  func refreshStats() async {
-    guard !isDemo, !statsRefreshing else { return }
-    statsRefreshing = true
-    defer {
-      statsRefreshing = false
-      lastStatsRefresh = Date()
-    }
-    do {
-      githubStats = try await githubService.stats()
-      githubStatsError = nil
-    } catch { githubStatsError = error.localizedDescription }
   }
 
   /// Every 10 minutes, and whenever there's nothing to compare against, every search runs in
@@ -1026,50 +962,22 @@ final class IslandStore {
     for event in announced { notify(event) }
   }
 
-  func refreshUsage() async {
-    guard !usageRefreshing, !isDemo else { return }
-    usageRefreshing = true
-    defer {
-      usageRefreshing = false
-      lastUsageRefresh = Date()
-    }
-    let paths = (settings.codexHome, settings.claudeHome)
-    for provider in AgentProvider.allCases {
-      do {
-        let fresh = try await usageService.summaries(
-          provider: provider,
-          codexHome: NSString(string: paths.0).expandingTildeInPath,
-          claudeHome: NSString(string: paths.1).expandingTildeInPath)
-        guard settings.codexHome == paths.0, settings.claudeHome == paths.1 else { return }
-        usage[provider] = fresh
-        usageErrors[provider] = nil
-      } catch { usageErrors[provider] = error.localizedDescription }
-    }
-  }
-
   /// Applies and saves settings edited in the island. Only changes to what is fetched start a
   /// refetch; display preferences apply as they are.
   func applySettings(_ proposed: AppSettings) {
     do {
       _ = try RepositorySelection(text: proposed.repositories)
-      guard !proposed.codexHome.isEmpty, !proposed.claudeHome.isEmpty else {
-        throw ProcessFailure.failed("Choose a home directory for each agent.")
-      }
       let previous = settings
       settings = proposed
       saveSettings()
       if proposed.repositories != previous.repositories {
         lastGitHubRefresh = .distantPast
-        lastStatsRefresh = .distantPast
-      }
-      if proposed.codexHome != previous.codexHome || proposed.claudeHome != previous.claudeHome {
-        lastUsageRefresh = .distantPast
       }
       NotificationCenter.default.post(name: .islandSettingsChanged, object: nil)
     } catch { persistenceError = error.localizedDescription }
   }
 
-  /// Applies a display preference, such as a chart style, and saves it without refetching.
+  /// Applies a display preference and saves it without refetching.
   func update(_ change: (inout AppSettings) -> Void) {
     change(&settings)
     guard !isDemo else { return }
@@ -1289,19 +1197,13 @@ final class IslandStore {
           try await step(3.2) { self?.recentEvent = nil }
           // Open the island on the PR list, filter to what needs you, then back.
           try await step(1.4) {
-            self?.tab = .activity
             self?.activityLayout = .list
             self?.expanded = true
           }
           try await step(2.6) { self?.needsYouOnly = true }
           try await step(1.8) { self?.needsYouOnly = false }
-          // The board, then stats.
           try await step(1.4) { self?.activityLayout = .board }
-          try await step(2.8) {
-            self?.tab = .stats
-            self?.activityLayout = .list
-          }
-          try await step(3.0) { self?.expanded = false }
+          try await step(2.8) { self?.expanded = false }
           if let failed { try await step(1.6) { self?.showEvent(failed) } }
           try await step(3.2) { self?.recentEvent = nil }
         } catch {}
@@ -1333,7 +1235,6 @@ final class IslandStore {
           try await step(3.6) { self?.recentEvent = nil }
           // Open the list, then a PR's page, a file, and the diff side by side.
           try await step(1.2) {
-            self?.tab = .activity
             self?.activityLayout = .list
             self?.expanded = true
           }
@@ -1384,7 +1285,6 @@ final class IslandStore {
           }
           // Open on the inbox, then a failure lands in the activity row.
           try await step(10.5) {
-            self?.tab = .activity
             self?.activityLayout = .list
             self?.expanded = true
           }
@@ -1614,52 +1514,6 @@ final class IslandStore {
       return event
     }
     dismissed = []
-    let calendar = Calendar.current
-    let formatter = DateFormatter()
-    formatter.dateFormat = "yyyy-MM-dd"
-    func series(_ seed: Double) -> [DailyValue] {
-      (0..<30).reversed().map { offset in
-        let day = calendar.date(byAdding: .day, value: -offset, to: now)!
-        let wave = (sin(Double(offset) * 0.9 + seed) + 1.2) * (offset % 7 > 4 ? 0.3 : 1)
-        return DailyValue(day: formatter.string(from: day), value: (wave * 900_000).rounded())
-      }
-    }
-    for provider in AgentProvider.allCases {
-      let daily = series(provider == .codex ? 0.4 : 2.1)
-      usage[provider] = [1, 7, 30].map { days in
-        let window = Array(daily.suffix(days))
-        let tokens = Int(window.reduce(0) { $0 + $1.value })
-        let cost = Double(tokens) / 1_000_000 * (provider == .codex ? 4.1 : 6.3)
-        let models =
-          provider == .codex
-          ? [
-            UsageModel(name: "gpt-6", tokens: tokens * 7 / 10, estimatedCost: cost * 0.8),
-            UsageModel(name: "gpt-6-mini", tokens: tokens * 3 / 10, estimatedCost: cost * 0.2),
-          ]
-          : [
-            UsageModel(
-              name: "claude-opus-5-5", tokens: tokens * 6 / 10, estimatedCost: cost * 0.75),
-            UsageModel(
-              name: "claude-sonnet-5-5", tokens: tokens * 4 / 10, estimatedCost: cost * 0.25),
-          ]
-        return UsageSummary(
-          provider: provider, days: days, tokens: tokens, inputTokens: tokens * 85 / 100,
-          outputTokens: tokens * 15 / 100, cachedTokens: tokens * 55 / 100,
-          cacheCreationTokens: tokens / 20, estimatedCost: cost, models: models, daily: window,
-          dailyCost: window.map {
-            DailyValue(day: $0.day, value: $0.value / 1_000_000 * (provider == .codex ? 4.1 : 6.3))
-          },
-          partial: false, updatedAt: now)
-      }
-    }
-    githubStats = GitHubStats(
-      login: "maya",
-      windows: [
-        .init(days: 1, opened: 3, merged: 2, reviewed: 1),
-        .init(days: 7, opened: 14, merged: 11, reviewed: 6),
-        .init(days: 30, opened: 52, merged: 44, reviewed: 23),
-      ],
-      daily: series(4.2).map { DailyValue(day: $0.day, value: ($0.value / 120_000).rounded()) })
   }
 }
 
