@@ -48,7 +48,7 @@ final class IslandStore {
   /// A recorded tour drives the island itself; the pointer must not open or close it.
   @ObservationIgnored private var touring = false
   var activityWindow: ActivityWindow = .month {
-    didSet { if activityWindow != oldValue { regroup() } }
+    didSet { if activityWindow != oldValue { regroupActivity() } }
   }
   var usageDays = 1
   var hovered = false
@@ -355,11 +355,18 @@ final class IslandStore {
   private(set) var needsYouCount = 0
   /// Shows only PRs that need you; combines with `stateFilter`.
   var needsYouOnly = false {
-    didSet { if needsYouOnly != oldValue { regroup() } }
+    didSet { if needsYouOnly != oldValue { regroupActivity() } }
   }
-  /// PR states selected in the filter bar. Empty shows every state.
-  var stateFilter: Set<PRGroup> = [] {
-    didSet { if stateFilter != oldValue { regroup() } }
+  private var selectedStates: Set<PRGroup> = []
+  /// All is stored as an empty set so there is one unfiltered state.
+  var stateFilter: Set<PRGroup> {
+    get { selectedStates }
+    set {
+      let selection = newValue.count == PRGroup.allCases.count ? [] : newValue
+      guard selection != selectedStates else { return }
+      selectedStates = selection
+      regroupActivity()
+    }
   }
   var activityLayout: ActivityLayout =
     ActivityLayout(rawValue: UserDefaults.standard.string(forKey: "activityLayout") ?? "") ?? .list
@@ -667,6 +674,11 @@ final class IslandStore {
     {
       repositoryChoices = choices
     }
+    regroupActivity()
+  }
+
+  private func regroupActivity() {
+    let all = github?.pullRequests ?? []
     let scoped = repositoryFilter.isEmpty ? all : all.filter { shows($0.repository) }
     let fresh = PRGrouping.repositories(
       scoped, window: activityWindow, states: stateFilter, needsYouOnly: needsYouOnly)
@@ -695,7 +707,14 @@ final class IslandStore {
   }
 
   func toggleState(_ group: PRGroup) {
-    if stateFilter.remove(group) == nil { stateFilter.insert(group) }
+    var selected = stateFilter
+    if selected.remove(group) == nil { selected.insert(group) }
+    stateFilter = selected
+  }
+
+  func excludeState(_ group: PRGroup) {
+    guard stateFilter.isEmpty else { return }
+    stateFilter = Set(PRGroup.allCases.filter { $0 != group })
   }
 
   func toggleCollapsed(_ repository: String) {
