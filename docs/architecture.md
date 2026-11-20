@@ -1,16 +1,13 @@
 # Architecture
 
-Activity is the default view: PRs grouped by repository, each showing its
+Activity shows PRs grouped by repository, each showing its
 state, or a board with one column per state, optionally limited to one
-repository. Statistics have their own tab. The island window never starts an agent
-or performs a GitHub write.
+repository. The island window reads from GitHub.
 
 ```mermaid
 flowchart LR
   GH[GitHub API through gh] --> G[PR collector]
-  LOG[Local agent history] --> C[CodexBarCore usage scanner]
   G --> S[Island store]
-  C --> S
   S --> U[SwiftUI island in AppKit panel]
   S --> N[Local event ledger and notifications]
   U --> B[Open PR in browser]
@@ -18,9 +15,9 @@ flowchart LR
 
 `IslandCore` owns normalized PRs, PR grouping by state and repository, time
 windows, GitHub queries, bounded subprocess execution, and event comparisons. Its tests use local fixtures.
-`GitIsle` owns the usage-library adapter, UI, settings, cache, and notifications.
+`GitIsle` owns the UI, settings, cache, and notifications.
 
-Each collector runs independently. GitHub queries have a process deadline and
+GitHub queries have a process deadline and
 an output limit. A failed query leaves the previous snapshot available. The
 collector checks missing open PR identities before treating them as merged or
 closed. Unknown mergeability and successful checks alone never imply readiness.
@@ -43,9 +40,6 @@ connection and account or repository changes establish a new baseline. A new
 requested review can notify after that baseline. Failed-check notifications are
 identified by PR and commit. Merge notifications use the observed merge time.
 
-The usage scanner reads Codex and Claude Code history and handles provider
-accounting, caches, and fork history.
-
 The island has four presentations: idle, which covers only the notch; live,
 while your PRs merge or run checks; a temporary event banner; and expanded. One shape morphs between them with a spring; content fades in after
 the shape starts growing and leaves before it shrinks. The expanded height
@@ -59,6 +53,5 @@ the rest of the transparent window passes clicks through. Full-screen visibility
 is optional. The auto-hide menu bar can affect macOS full-screen detection;
 enable Show in full screen if your menu bar is always hidden.
 
-Caches and settings are local JSON files. Agent usage history stays in its
-existing location. Changing a data source prevents an in-flight result from publishing
-against the new selection.
+Caches and settings are local JSON files. Changing a data source prevents an
+in-flight result from publishing against the new selection.

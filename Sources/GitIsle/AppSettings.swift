@@ -1,29 +1,5 @@
 import Foundation
 
-enum ChartStyle: String, Codable, CaseIterable {
-  case bars, line, area, cumulative
-
-  var label: String { rawValue.capitalized }
-  var symbol: String {
-    switch self {
-    case .bars: "chart.bar.fill"
-    case .line: "chart.xyaxis.line"
-    case .area: "chart.line.uptrend.xyaxis"
-    case .cumulative: "sum"
-    }
-  }
-}
-
-enum UsageMetric: String, Codable, CaseIterable {
-  case tokens, cost
-  var label: String { self == .tokens ? "Tokens" : "Cost" }
-}
-
-enum CostCurrency: String, Codable, CaseIterable {
-  case usd, eur
-  var code: String { rawValue.uppercased() }
-}
-
 struct AppSettings: Codable, Equatable {
   var repositories = ""
   /// How long the pointer rests on the notch before the island opens.
@@ -37,9 +13,6 @@ struct AppSettings: Codable, Equatable {
   var displayID: UInt32?
   var showInFullscreen = false
   var notificationsEnabled = false
-  var codexHome = ProcessInfo.processInfo.environment["CODEX_HOME"] ?? NSHomeDirectory() + "/.codex"
-  var claudeHome =
-    ProcessInfo.processInfo.environment["CLAUDE_CONFIG_DIR"] ?? NSHomeDirectory() + "/.claude"
   /// Island banners for changes, separate from system notifications.
   var bannersEnabled = true
   /// A banner shows its time running out: along the closed island's edge, and as a bar in the
@@ -59,12 +32,6 @@ struct AppSettings: Codable, Equatable {
     "mergeFailed", "failed",
     "review",
   ]
-  /// Costs are recorded in US dollars; euros use `usdToEur`, which the person sets.
-  var currency: CostCurrency = .usd
-  var usdToEur = 0.86
-  var githubChart: ChartStyle = .bars
-  var usageChart: ChartStyle = .bars
-  var usageMetric: UsageMetric = .tokens
   /// First-run setup has been finished or skipped.
   var onboardingCompleted = false
 
@@ -85,8 +52,6 @@ struct AppSettings: Codable, Equatable {
     displayID = value(.displayID, defaults.displayID)
     showInFullscreen = value(.showInFullscreen, defaults.showInFullscreen)
     notificationsEnabled = value(.notificationsEnabled, defaults.notificationsEnabled)
-    codexHome = value(.codexHome, defaults.codexHome)
-    claudeHome = value(.claudeHome, defaults.claudeHome)
     bannersEnabled = value(.bannersEnabled, defaults.bannersEnabled)
     bannerTimer = value(.bannerTimer, defaults.bannerTimer)
     notificationSound = value(.notificationSound, defaults.notificationSound)
@@ -96,11 +61,6 @@ struct AppSettings: Codable, Equatable {
       .offeredKinds, ["ready", "queued", "merged", "failed", "review"])
     announcedKinds.formUnion(defaults.offeredKinds.subtracting(offered))
     offeredKinds = offered.union(defaults.offeredKinds)
-    currency = value(.currency, defaults.currency)
-    usdToEur = value(.usdToEur, defaults.usdToEur)
-    githubChart = value(.githubChart, defaults.githubChart)
-    usageChart = value(.usageChart, defaults.usageChart)
-    usageMetric = value(.usageMetric, defaults.usageMetric)
     // Settings saved before onboarding existed belong to someone already set up.
     onboardingCompleted = value(.onboardingCompleted, true)
   }
@@ -118,13 +78,6 @@ struct AppSettings: Codable, Equatable {
     try JSONEncoder().encode(self).write(to: url, options: .atomic)
   }
 
-  /// Formats a cost recorded in US dollars in the chosen currency.
-  func cost(_ usd: Double?) -> String {
-    guard let usd else { return "—" }
-    let value = currency == .eur ? usd * usdToEur : usd
-    return value.formatted(
-      .currency(code: currency.code).precision(.fractionLength(value < 100 ? 2 : 0)))
-  }
 }
 
 enum AppFiles {

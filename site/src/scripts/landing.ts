@@ -40,7 +40,6 @@ if (hero && stage && frame && island) {
     banner('story-merged', 'live'),
     { id: 'list', ...sizes.list, r: 32, caption: 'list' },
     { id: 'board', ...sizes.board, r: 32, caption: 'board' },
-    { id: 'stats', ...sizes.stats, r: 32, caption: 'stats' },
   ];
   const image = (id: string) => island.querySelector<HTMLImageElement>(`img[data-state="${id}"]`);
   const caption = (id: string) => hero.querySelector<HTMLElement>(`[data-step="${id}"]`);

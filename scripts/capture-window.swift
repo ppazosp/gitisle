@@ -8,7 +8,7 @@
 //   swiftc -O scripts/capture-window.swift -o /tmp/capture-window
 //   open -n dist/GitIsle.app --args --tour pages -AppleLocale en_US -AppleLanguages "(en)"
 //   /tmp/capture-window "$(pgrep -n -f GitIsle.app/Contents/MacOS/GitIsle)" 34 tour.mov
-// `--tour` plays every state of the island (about 25 s); `--tour pages` plays a PR's page,
+// `--tour` plays a tour of the island; `--tour pages` plays a PR's page,
 // its diff, a stack and a failed merge (about 32 s).
 import AVFoundation
 import AppKit

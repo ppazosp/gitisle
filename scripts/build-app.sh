@@ -11,9 +11,6 @@ stage="dist/build-$(date +%s)-$$"
 bundle="$stage/GitIsle.app"
 mkdir -p "$bundle/Contents/MacOS" "$bundle/Contents/Resources"
 cp "$binary_directory/GitIsle" "$bundle/Contents/MacOS/GitIsle"
-for resource in "$binary_directory"/*.bundle; do
-    if [ -d "$resource" ]; then cp -R "$resource" "$bundle/Contents/Resources/"; fi
-done
 cp Resources/Info.plist "$bundle/Contents/Info.plist"
 # Release builds stamp the version from the tag, for example GITISLE_VERSION=0.2.0, and
 # update themselves from later releases. Builds from source update with `git pull`.
@@ -28,11 +25,6 @@ cp THIRD_PARTY_NOTICES.md "$bundle/Contents/Resources/ThirdPartyNotices.md"
 # The share card signs itself with the transparent logo.
 cp assets/logo.png "$bundle/Contents/Resources/Logo.png"
 cp LICENSE "$bundle/Contents/Resources/LICENSE"
-mkdir -p "$bundle/Contents/Resources/DependencyLicenses"
-while IFS= read -r license; do
-    dependency="$(basename "$(dirname "$license")")"
-    cp "$license" "$bundle/Contents/Resources/DependencyLicenses/${dependency}-$(basename "$license")"
-done < <(find .build/checkouts -maxdepth 2 -type f \( -iname 'LICENSE*' -o -iname 'NOTICE*' -o -iname 'COPYING*' \))
 codesign --force --deep --sign - "$bundle"
 codesign --verify --deep --strict "$bundle"
 if [ -e dist/GitIsle.app ]; then

@@ -12,32 +12,22 @@ struct SettingsView: View {
   /// Text fields edit these and commit to `draft` on Return or when they lose focus, so a
   /// half-typed value (an `owner/` with no repository yet) is never applied.
   @State private var repositoriesText: String
-  @State private var codexHomeText: String
-  @State private var claudeHomeText: String
-  @FocusState private var focusedField: TextSetting?
+  @FocusState private var repositoriesFocused: Bool
   @State private var pendingApply: Task<Void, Never>?
   @State private var cardsHeight: CGFloat = 0
   @State private var footerHeight: CGFloat = 0
-
-  private enum TextSetting { case repositories, codexHome, claudeHome }
 
   init(store: IslandStore, contentHeight: Binding<CGFloat>) {
     self.store = store
     _contentHeight = contentHeight
     _draft = State(initialValue: store.settings)
     _repositoriesText = State(initialValue: store.settings.repositories)
-    _codexHomeText = State(initialValue: store.settings.codexHome)
-    _claudeHomeText = State(initialValue: store.settings.claudeHome)
   }
 
-  /// The draft with the preferences that apply outside this page (system permission and
-  /// chart choices) taken from the live settings, so saving never reverts them.
+  /// Read the notification preference from the store so saving a draft never reverts it.
   private var merged: AppSettings {
     var result = draft
     result.notificationsEnabled = store.settings.notificationsEnabled
-    result.githubChart = store.settings.githubChart
-    result.usageChart = store.settings.usageChart
-    result.usageMetric = store.settings.usageMetric
     return result
   }
 
@@ -45,8 +35,6 @@ struct SettingsView: View {
 
   private func commitText() {
     draft.repositories = repositoriesText
-    draft.codexHome = codexHomeText
-    draft.claudeHome = claudeHomeText
   }
 
   /// Saves shortly after the last change, so dragging the slider doesn't write on every step.
@@ -73,10 +61,7 @@ struct SettingsView: View {
           HStack(alignment: .top, spacing: 12) {
             github
             notifications
-            VStack(spacing: 12) {
-              island
-              usage
-            }
+            island
           }
           .fixedSize(horizontal: false, vertical: true)
         }
@@ -109,7 +94,7 @@ struct SettingsView: View {
       }
     }
     .onChange(of: draft) { scheduleApply() }
-    .onChange(of: focusedField) { commitText() }
+    .onChange(of: repositoriesFocused) { commitText() }
     .onDisappear {
       commitText()
       applyNow()
@@ -132,7 +117,7 @@ struct SettingsView: View {
       SettingsRow("Also watch") {
         TextField("owner/repo, owner/another-repo", text: $repositoriesText)
           .islandField()
-          .focused($focusedField, equals: .repositories)
+          .focused($repositoriesFocused)
           .onSubmit(commitText)
       }
       SettingsRow("Active PRs") {
@@ -154,10 +139,9 @@ struct SettingsView: View {
   }
 
   /// Rough share of GitHub's 5,000 points an hour while a PR is active: an active refresh and
-  /// a check for new PRs cost 1 point each, and the full searches every 10 minutes and the
-  /// stats add about 30.
+  /// a check for new PRs cost 1 point each, and full searches every 10 minutes add about 24.
   private var budgetShare: Int {
-    let points = 3600 / draft.activeRefreshSeconds + 3600 / draft.githubRefreshSeconds + 30
+    let points = 3600 / draft.activeRefreshSeconds + 3600 / draft.githubRefreshSeconds + 24
     return max(1, Int((points / 5000 * 100).rounded()))
   }
 
@@ -251,40 +235,6 @@ struct SettingsView: View {
     }
   }
 
-  private var usage: some View {
-    SettingsCard(glyph: .claude, title: "Usage statistics") {
-      SettingsRow("Codex home") {
-        TextField("~/.codex", text: $codexHomeText).islandField()
-          .focused($focusedField, equals: .codexHome)
-          .onSubmit(commitText)
-      }
-      SettingsRow("Claude Code home") {
-        TextField("~/.claude", text: $claudeHomeText).islandField()
-          .focused($focusedField, equals: .claudeHome)
-          .onSubmit(commitText)
-      }
-      SettingsRow("Currency") {
-        PillPicker(
-          options: [(CostCurrency.usd, "$ USD"), (.eur, "€ EUR")], selection: $draft.currency,
-          fontSize: 11)
-      }
-      if draft.currency == .eur {
-        SettingsRow("Rate") {
-          HStack(spacing: 6) {
-            Text("1 USD =").foregroundStyle(.white.opacity(0.5))
-            TextField(
-              "0.86", value: $draft.usdToEur, format: .number.precision(.fractionLength(0...4))
-            )
-            .islandField().frame(width: 70)
-            Text("EUR").foregroundStyle(.white.opacity(0.5))
-          }
-          .font(.system(size: 12))
-        }
-        .transition(.opacity)
-      }
-    }
-    .animation(Motion.snappy, value: draft.currency)
-  }
 }
 
 /// The signed-in GitHub account: avatar, handle, and a connected check. Opens the profile.
