@@ -2,6 +2,14 @@
 
 Notable changes to GitIsle. Releases follow [semantic versioning](https://semver.org).
 
+## [0.3.6](https://github.com/ppazosp/gitisle/compare/v0.3.5...v0.3.6) (2026-11-20)
+
+
+### Bug Fixes
+
+* bound Activity layout work during island animations ([#74](https://github.com/ppazosp/gitisle/issues/74)) ([dc3ccd7](https://github.com/ppazosp/gitisle/commit/dc3ccd74ce08df63ca614637c60cec38c94d99a8))
+* remove Stats and agent usage tracking ([#73](https://github.com/ppazosp/gitisle/issues/73)) ([10c1f81](https://github.com/ppazosp/gitisle/commit/10c1f811fd8bbb0581928b39f225203151ec9689))
+
 ## [0.3.5](https://github.com/ppazosp/gitisle/compare/v0.3.4...v0.3.5) (2026-11-20)
 
 
