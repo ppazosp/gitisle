@@ -13,6 +13,11 @@ the MIT license below. The OpenAI and Claude marks are path data from
 under CC0 1.0. The marks remain trademarks of their owners and only identify
 each provider's sessions and usage.
 
+The Pi provider mark is the original SVG from Pi's official
+[press kit](https://pi.dev/press-kit), downloaded unchanged from
+[pi.dev/logo.svg](https://pi.dev/logo.svg). It identifies Pi in GitIsle; the
+source does not state a standalone license, and Pi's brand rights remain with Pi.
+
 The website's buttons recreate the "Download for Mac", "Star on GitHub" and
 "Copy" interactions from [Amicro](https://github.com/Subhan-code/Amicro--Micro-transitions-)
 in CSS, under the MIT license below. Their arrow, star, copy and check icons are

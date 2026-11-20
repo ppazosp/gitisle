@@ -6,15 +6,25 @@ actor UsageService {
   private let fetcher: CostUsageFetcher
   init(cacheRoot: URL) { fetcher = CostUsageFetcher(cacheRoot: cacheRoot) }
 
-  func summaries(provider: AgentProvider, codexHome: String, claudeHome: String) async throws
-    -> [UsageSummary]
-  {
-    var environment = ProcessInfo.processInfo.environment
+  func summaries(
+    provider: AgentProvider, codexHome: String, claudeHome: String, piHome: String? = nil,
+    environment: [String: String] = ProcessInfo.processInfo.environment
+  ) async throws -> [UsageSummary] {
+    var environment = environment
     environment["CODEX_HOME"] = codexHome
     environment["CLAUDE_CONFIG_DIR"] = claudeHome
+    environment["PI_CODING_AGENT_DIR"] =
+      piHome ?? AppSettings.defaultPiHome(environment: environment)
+    let usageProvider: UsageProvider =
+      switch provider {
+      case .codex: .codex
+      case .claude: .claude
+      case .pi: .pi
+      }
     let snapshot = try await fetcher.loadTokenSnapshot(
-      provider: provider == .codex ? .codex : .claude, environment: environment,
-      codexHomePath: codexHome, historyDays: 30, allowPricingRefresh: false,
+      provider: usageProvider, environment: environment,
+      codexHomePath: provider == .codex ? codexHome : nil, historyDays: 30,
+      allowPricingRefresh: false,
       includePiSessions: false
     )
     return [1, 7, 30].map { window in

@@ -6,16 +6,24 @@ struct StatsView: View {
   @Binding var contentHeight: CGFloat
 
   var body: some View {
+    let providers = store.visibleUsageProviders
     MeasuredColumn {
       VStack(spacing: 10) {
         GitHubStatsCard(store: store)
-        // Equal-height columns: each card stretches to the taller one.
-        HStack(alignment: .top, spacing: 10) {
-          ForEach([AgentProvider.claude, .codex], id: \.self) { provider in
-            UsageCard(store: store, provider: provider)
+        if !providers.isEmpty {
+          LazyVGrid(
+            columns: Array(
+              repeating: GridItem(.flexible(), spacing: 10, alignment: .top),
+              count: providers.count),
+            alignment: .leading,
+            spacing: 10
+          ) {
+            ForEach(providers, id: \.self) { provider in
+              UsageCard(store: store, provider: provider, providerCount: providers.count)
+            }
           }
+          .fixedSize(horizontal: false, vertical: true)
         }
-        .fixedSize(horizontal: false, vertical: true)
         Text(costNote)
           .font(.system(size: 10)).foregroundStyle(.white.opacity(0.35))
           .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 6)
@@ -36,11 +44,6 @@ struct StatsView: View {
 
 private let wideMetricColumns = Array(
   repeating: GridItem(.flexible(), spacing: 8, alignment: .leading), count: 4)
-
-private let metricColumns = [
-  GridItem(.flexible(), spacing: 8, alignment: .leading),
-  GridItem(.flexible(), spacing: 8, alignment: .leading),
-]
 
 private struct Card<Accessory: View, Content: View>: View {
   let glyph: Glyph
@@ -126,6 +129,7 @@ private struct GitHubStatsCard: View {
 private struct UsageCard: View {
   let store: IslandStore
   let provider: AgentProvider
+  let providerCount: Int
 
   var body: some View {
     let days = store.usageDays
@@ -134,7 +138,7 @@ private struct UsageCard: View {
     let settings = store.settings
     Card(
       glyph: provider.glyph, tint: provider.tint,
-      title: provider == .claude ? "Claude Code" : "Codex",
+      title: provider.label,
       badge: summary?.partial == true ? "Partial history" : nil,
       badgeColor: Palette.attention
     ) {
@@ -144,7 +148,12 @@ private struct UsageCard: View {
         setMetric: { metric in store.update { $0.usageMetric = metric } })
     } content: {
       if let summary {
-        LazyVGrid(columns: metricColumns, alignment: .leading, spacing: 10) {
+        LazyVGrid(
+          columns: Array(
+            repeating: GridItem(.flexible(), spacing: 8, alignment: .leading),
+            count: providerCount == 1 ? 3 : 2),
+          alignment: .leading, spacing: 10
+        ) {
           Metric(
             label: "Tokens", value: Format.count(summary.tokens),
             numeric: summary.tokens.map(Double.init))
