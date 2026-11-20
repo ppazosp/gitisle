@@ -2,10 +2,14 @@ import AppKit
 import IslandCore
 import SwiftUI
 
+extension EnvironmentValues {
+  @Entry var activityHeightLimit: CGFloat = .infinity
+}
+
 struct ActivityView: View {
   let store: IslandStore
   @Binding var contentHeight: CGFloat
-  let heightLimit: CGFloat
+  @Environment(\.activityHeightLimit) private var heightLimit
 
   var body: some View {
     Group {

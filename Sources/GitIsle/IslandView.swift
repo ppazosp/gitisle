@@ -746,10 +746,7 @@ private struct ExpandedIsland: View {
           PRDetailsView(store: store, pr: pr, contentHeight: $contentHeight)
         } else {
           switch store.tab {
-          case .activity:
-            ActivityView(
-              store: store, contentHeight: $contentHeight,
-              heightLimit: metrics.maxExpandedHeight - Self.chromeHeight(metrics, store: store))
+          case .activity: ActivityView(store: store, contentHeight: $contentHeight)
           case .stats: StatsView(store: store, contentHeight: $contentHeight)
           }
         }
@@ -771,6 +768,9 @@ private struct ExpandedIsland: View {
       }
       .frame(height: Self.footerHeight(store))
     }
+    .environment(
+      \.activityHeightLimit, metrics.maxExpandedHeight - Self.chromeHeight(metrics, store: store)
+    )
     .overlayPreferenceValue(RepositoryButtonBounds.self) { anchor in
       GeometryReader { proxy in
         if Self.showsRepositoryPicker(store), let anchor {
