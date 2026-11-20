@@ -321,7 +321,8 @@ private struct StateChip: View {
         Capsule().fill(group.color.opacity(selected ? 0.28 : hovered ? 0.2 : 0.11))
       )
       .overlay(
-        Capsule().inset(by: 0.5).stroke(group.color.opacity(selected ? 0.9 : 0), lineWidth: 1)
+        Capsule().inset(by: 0.5)
+          .stroke(group.color.opacity(selected ? 0.9 : dimmed ? 0 : 0.6), lineWidth: 1)
       )
       .opacity(dimmed && !hovered ? 0.45 : 1)
       .contentShape(Capsule())
