@@ -262,14 +262,14 @@ final class IslandPanel: NSPanel {
     guard panel.isVisible else { return }
     let point = NSEvent.mouseLocation
     let size = islandSize
+    let frame = panel.frame
     let rect = NSRect(
-      x: panel.frame.midX - size.width / 2, y: panel.frame.maxY - metrics.topGap - size.height,
+      x: frame.midX - size.width / 2, y: frame.maxY - metrics.topGap - size.height,
       width: size.width, height: size.height)
-    let radius = metrics.cornerRadius(for: store.presentation)
-    let inside = NSBezierPath(roundedRect: rect, xRadius: radius, yRadius: radius).contains(point)
+    let inside = rect.contains(point) && containsRoundedPoint(point, in: rect)
     let moved = point != lastPointer
     lastPointer = point
-    panel.ignoresMouseEvents = !inside
+    if panel.ignoresMouseEvents == inside { panel.ignoresMouseEvents = !inside }
     guard inside != mouseWasInside else { return }
     // When the island narrows under a still pointer (for example switching from the board
     // to the list), the island left the pointer, not the other way round. Stay open until
@@ -277,6 +277,11 @@ final class IslandPanel: NSPanel {
     if !inside && !moved && store.expanded { return }
     mouseWasInside = inside
     store.setHovered(inside)
+  }
+
+  private func containsRoundedPoint(_ point: NSPoint, in rect: NSRect) -> Bool {
+    let radius = metrics.cornerRadius(for: store.presentation)
+    return NSBezierPath(roundedRect: rect, xRadius: radius, yRadius: radius).contains(point)
   }
 
   private var islandSize: CGSize {

@@ -261,9 +261,12 @@ public enum ActivityWindow: String, CaseIterable, Codable, Sendable {
   }
 
   public func includes(_ date: Date, now: Date = Date(), calendar: Calendar = .current) -> Bool {
-    let start = calendar.date(
+    date >= firstIncludedDay(at: now, calendar: calendar)
+  }
+
+  fileprivate func firstIncludedDay(at now: Date, calendar: Calendar) -> Date {
+    calendar.date(
       byAdding: .day, value: -(days - 1), to: calendar.startOfDay(for: now))!
-    return date >= start
   }
 }
 
@@ -332,8 +335,9 @@ public enum PRGrouping {
     _ pullRequests: [PullRequest], window: ActivityWindow, states: Set<PRGroup> = [],
     needsYouOnly: Bool = false, now: Date = Date(), calendar: Calendar = .current
   ) -> [RepoSection] {
+    let start = window.firstIncludedDay(at: now, calendar: calendar)
     let recent = pullRequests.filter {
-      $0.group != nil && window.includes($0.activityDate, now: now, calendar: calendar)
+      $0.group != nil && $0.activityDate >= start
     }
     let buckets = Dictionary(grouping: recent, by: \.repository)
     let sections = buckets.compactMap { repository, prs -> RepoSection? in
@@ -364,10 +368,11 @@ public enum PRGrouping {
     _ pullRequests: [PullRequest], window: ActivityWindow, now: Date = Date(),
     calendar: Calendar = .current
   ) -> [PRSection] {
+    let start = window.firstIncludedDay(at: now, calendar: calendar)
     var buckets: [PRGroup: [PullRequest]] = [:]
     for pr in pullRequests {
       guard let group = pr.group else { continue }
-      guard window.includes(pr.activityDate, now: now, calendar: calendar) else { continue }
+      guard pr.activityDate >= start else { continue }
       buckets[group, default: []].append(pr)
     }
     return PRGroup.allCases.compactMap { group in

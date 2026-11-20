@@ -746,7 +746,10 @@ private struct ExpandedIsland: View {
           PRDetailsView(store: store, pr: pr, contentHeight: $contentHeight)
         } else {
           switch store.tab {
-          case .activity: ActivityView(store: store, contentHeight: $contentHeight)
+          case .activity:
+            ActivityView(
+              store: store, contentHeight: $contentHeight,
+              heightLimit: metrics.maxExpandedHeight - Self.chromeHeight(metrics, store: store))
           case .stats: StatsView(store: store, contentHeight: $contentHeight)
           }
         }
