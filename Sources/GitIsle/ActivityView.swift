@@ -44,23 +44,40 @@ private struct ActivityList: View {
   let heightLimit: CGFloat
   @State private var expandedMerged: Set<String> = []
 
-  private struct Repository: Identifiable {
-    let section: RepoSection
-    let piles: [[PullRequest]]
-    let hiddenMerges: Int
-    let collapsed: Bool
-    var id: String { section.id }
+  private enum Row: Identifiable {
+    enum ID: Hashable {
+      case header(String)
+      case pile(String)
+      case more(String)
+    }
+
+    case header(RepoSection, collapsed: Bool, separated: Bool)
+    case pile([PullRequest], bottom: PullRequest, trailingSpace: Bool)
+    case more(repository: String, count: Int)
+
+    var id: ID {
+      switch self {
+      case .header(let section, _, _): .header(section.id)
+      case .pile(_, let bottom, _): .pile(bottom.id)
+      case .more(let repository, _): .more(repository)
+      }
+    }
   }
 
   var body: some View {
-    let repositories = store.repositories.map(repository)
+    let rows = store.repositories.enumerated().flatMap { index, section in
+      self.rows(for: section, separated: index > 0)
+    }
     // Count only the rows that are actually shown. At this lower bound the list
     // already fills the island, so it can scroll without measuring every row.
-    let rowCount =
-      repositories.count
-      + repositories.reduce(0) { count, repository in
-        count + repository.piles.reduce(0) { $0 + visibleRows(in: $1) }
+    let rowCount = rows.reduce(0) { count, row in
+      switch row {
+      case .header: count + 1
+      case .pile(let pile, let bottom, _):
+        count + (store.foldedStacks.contains(bottom.id) ? 1 : pile.count)
+      case .more: count
       }
+    }
     MeasuredColumn(fixedHeight: CGFloat(rowCount) * 36 >= heightLimit ? heightLimit : nil) {
       LazyVStack(alignment: .leading, spacing: 0) {
         notices
@@ -72,17 +89,9 @@ private struct ActivityList: View {
               : store.activityWindow == .month
                 ? "You're all caught up" : "No PR activity \(windowPhrase)")
         }
-        ForEach(repositories) { repository in
-          Section {
-            if !repository.collapsed { rows(in: repository) }
-          } header: {
-            RepositoryHeader(
-              section: repository.section, collapsed: repository.collapsed,
-              separated: repository.id != repositories.first?.id
-            ) {
-              withAnimation(Motion.snappy) { store.toggleCollapsed(repository.id) }
-            }
-          }
+        ForEach(rows) { item in
+          // One view per item gives the lazy stack stable scroll positions across repositories.
+          VStack(spacing: 0) { row(item) }
         }
       }
       .padding(.horizontal, 14).padding(.top, 8).padding(.bottom, 4)
@@ -92,41 +101,50 @@ private struct ActivityList: View {
     .animation(Motion.snappy, value: store.repositories)
   }
 
-  private func repository(_ section: RepoSection) -> Repository {
-    if store.collapsedRepositories.contains(section.id) {
-      return Repository(section: section, piles: [], hiddenMerges: 0, collapsed: true)
-    }
+  private func rows(for section: RepoSection, separated: Bool) -> [Row] {
+    let collapsed = store.collapsedRepositories.contains(section.id)
+    var rows: [Row] = [.header(section, collapsed: collapsed, separated: separated)]
+    guard !collapsed else { return rows }
     let showAll =
       !store.stateFilter.isEmpty || store.needsYouOnly
       || expandedMerged.contains(section.id)
     let visible = showAll ? section.pullRequests : newestMergesAndOpen(section.pullRequests)
-    return Repository(
-      section: section, piles: PRStacks.piles(visible, links: store.stackLinks),
-      hiddenMerges: section.pullRequests.count - visible.count, collapsed: false)
+    let hidden = section.pullRequests.count - visible.count
+    let piles = PRStacks.piles(visible, links: store.stackLinks)
+    for (index, pile) in piles.enumerated() {
+      if let bottom = pile.first {
+        rows.append(
+          .pile(pile, bottom: bottom, trailingSpace: hidden == 0 && index == piles.count - 1))
+      }
+    }
+    if hidden > 0 { rows.append(.more(repository: section.id, count: hidden)) }
+    return rows
   }
 
-  private func visibleRows(in pile: [PullRequest]) -> Int {
-    pile.first.map { store.foldedStacks.contains($0.id) ? 1 : pile.count } ?? 0
-  }
-
-  @ViewBuilder private func rows(in repository: Repository) -> some View {
-    ForEach(repository.piles, id: \.first?.id) { pile in
-      if pile.count > 1, let bottom = pile.first {
-        ListStack(pile: pile, unfolded: !store.foldedStacks.contains(bottom.id)) {
-          withAnimation(Motion.snappy) { store.toggleStack(bottom.id) }
+  @ViewBuilder private func row(_ item: Row) -> some View {
+    switch item {
+    case .header(let section, let collapsed, let separated):
+      RepositoryHeader(section: section, collapsed: collapsed, separated: separated) {
+        withAnimation(Motion.snappy) { store.toggleCollapsed(section.id) }
+      }
+    case .pile(let pile, let bottom, let trailingSpace):
+      Group {
+        if pile.count > 1 {
+          ListStack(pile: pile, unfolded: !store.foldedStacks.contains(bottom.id)) {
+            withAnimation(Motion.snappy) { store.toggleStack(bottom.id) }
+          }
+        } else {
+          PRRow(pr: bottom)
         }
-        .transition(.opacity)
-      } else if let pr = pile.first {
-        PRRow(pr: pr).transition(.opacity)
       }
-    }
-    if repository.hiddenMerges > 0 {
-      ShowMoreButton(hidden: repository.hiddenMerges) {
-        withAnimation(Motion.snappy) { _ = expandedMerged.insert(repository.id) }
+      .padding(.bottom, trailingSpace ? 8 : 0)
+      .transition(.opacity)
+    case .more(let repository, let count):
+      ShowMoreButton(hidden: count) {
+        withAnimation(Motion.snappy) { _ = expandedMerged.insert(repository) }
       }
-      .padding(.horizontal, 8).padding(.top, 2)
+      .padding(.horizontal, 8).padding(.top, 2).padding(.bottom, 8)
     }
-    Color.clear.frame(height: 8).accessibilityHidden(true)
   }
 
   /// Merged PRs are history. Show a few alongside current work until asked for more.
@@ -314,6 +332,7 @@ private struct NeedsYouChip: View {
         GlyphView(glyph: .eye, size: 11)
         Text("Needs you").lineLimit(1).fixedSize()
         Text("\(count)").monospacedDigit().opacity(0.7)
+          .lineLimit(1).fixedSize()
           .contentTransition(.numericText(value: Double(count)))
       }
       .font(.system(size: 11, weight: .semibold))
@@ -353,6 +372,7 @@ private struct StateChip: View {
         GlyphView(glyph: group.glyph, size: 11)
         Text(group.label).lineLimit(1).fixedSize()
         Text(capped ? "\(count)+" : "\(count)").monospacedDigit().opacity(0.7)
+          .lineLimit(1).fixedSize()
           .contentTransition(.numericText(value: Double(count)))
       }
       .font(.system(size: 11, weight: .semibold))
