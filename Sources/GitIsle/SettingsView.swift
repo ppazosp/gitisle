@@ -192,35 +192,40 @@ struct SettingsView: View {
     VStack(alignment: .leading, spacing: 7) {
       Text("Announce").font(.system(size: 12)).foregroundStyle(.white.opacity(0.75))
       LazyVGrid(
-        columns: Array(repeating: GridItem(.flexible(), spacing: 6), count: 3), spacing: 6
+        columns: Array(
+          repeating: GridItem(.flexible(), spacing: 12, alignment: .leading), count: 2),
+        spacing: 4
       ) {
         ForEach(Self.announcements, id: \.label) { item in
           let kinds = Set(item.kinds.map(\.rawValue))
-          AnnouncementChip(
-            glyph: item.glyph, label: item.label, color: item.kinds[0].color,
-            selected: kinds.isSubset(of: draft.announcedKinds)
-          ) {
-            if kinds.isSubset(of: draft.announcedKinds) {
-              draft.announcedKinds.subtract(kinds)
-            } else {
-              draft.announcedKinds.formUnion(kinds)
-            }
-          }
+          Toggle(
+            item.label,
+            isOn: Binding(
+              get: { kinds.isSubset(of: draft.announcedKinds) },
+              set: { enabled in
+                if enabled {
+                  draft.announcedKinds.formUnion(kinds)
+                } else {
+                  draft.announcedKinds.subtract(kinds)
+                }
+              })
+          )
         }
       }
+      .toggleStyle(.checkbox)
+      .font(.system(size: 12))
     }
     .frame(maxWidth: .infinity, alignment: .leading)
   }
 
   /// Your own PRs as they head to merge, then what can go wrong or wait on you.
-  /// One chip can cover several kinds: "New PR" is opening a PR, ready or draft, and marking a
+  /// One checkbox can cover several kinds: "New PR" is opening a PR, ready or draft, and marking a
   /// draft ready for review; "Failed" is checks failing on the PR or in the merge queue.
-  private static let announcements: [(kinds: [PRStatus], glyph: Glyph, label: String)] = [
-    ([.opened, .draft, .readyForReview], .pullRequest, "New PR"),
-    ([.ready], .checkFill, "Ready"), ([.previewReady], .globe, "Preview"),
-    ([.queued], .mergeQueue, "Merging"),
-    ([.merged], .merge, "Merged"), ([.failed, .mergeFailed], .failFill, "Failed"),
-    ([.review], .eye, "Review"),
+  private static let announcements: [(kinds: [PRStatus], label: String)] = [
+    ([.opened, .draft, .readyForReview], "New PR"),
+    ([.ready], "Ready"), ([.previewReady], "Preview"), ([.queued], "Merging"),
+    ([.merged], "Merged"), ([.failed, .mergeFailed], "Failed"),
+    ([.review], "Review"),
   ]
 
   private var island: some View {
@@ -281,36 +286,6 @@ struct AccountChip: View {
     .onHover { inside in withAnimation(.easeOut(duration: 0.12)) { hovered = inside } }
     .help("Signed in with the GitHub CLI. Opens your profile.")
     .accessibilityLabel("Signed in to GitHub as \(login)")
-  }
-}
-
-/// A toggle chip for one kind of announcement.
-private struct AnnouncementChip: View {
-  let glyph: Glyph
-  let label: String
-  let color: Color
-  let selected: Bool
-  let action: () -> Void
-
-  var body: some View {
-    let capsule = Capsule(style: .circular)
-    Button(action: action) {
-      HStack(spacing: 5) {
-        GlyphView(glyph: glyph, size: 10)
-        Text(label).lineLimit(1).fixedSize()
-      }
-      .font(.system(size: 11, weight: .semibold))
-      .foregroundStyle(selected ? color : .white.opacity(0.4))
-      .padding(.vertical, 5)
-      // Stretch after padding so the capsule fills the grid cell without overflowing it.
-      .frame(maxWidth: .infinity)
-      .background(capsule.fill(selected ? color.opacity(0.16) : .white.opacity(0.05)))
-      .overlay(capsule.strokeBorder(color.opacity(selected ? 0.6 : 0), lineWidth: 1))
-      .contentShape(capsule)
-    }
-    .buttonStyle(.plain)
-    .accessibilityLabel(label)
-    .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
   }
 }
 
