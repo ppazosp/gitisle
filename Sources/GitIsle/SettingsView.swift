@@ -354,7 +354,7 @@ private struct NotificationEventRow: View {
         Spacer(minLength: 8)
         checkbox
       }
-      .padding(.trailing, 1)
+      .padding(.horizontal, 8)
       .frame(height: Self.height)
       .background(RoundedRectangle(cornerRadius: 6).fill(.white.opacity(hovered ? 0.08 : 0)))
       .contentShape(Rectangle())
