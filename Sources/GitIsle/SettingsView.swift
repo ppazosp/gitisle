@@ -56,14 +56,13 @@ struct SettingsView: View {
     // The cards scroll; the status row stays pinned below them.
     VStack(spacing: 0) {
       MeasuredColumn {
-        VStack(spacing: 12) {
-          // Three columns, so Settings grows wider rather than taller.
-          HStack(alignment: .top, spacing: 12) {
+        VStack(spacing: 10) {
+          HStack(alignment: .top, spacing: 10) {
             github
-            notifications
             island
           }
           .fixedSize(horizontal: false, vertical: true)
+          notifications
         }
         .padding(.horizontal, 16).padding(.top, 12).padding(.bottom, 6)
       } onHeight: {
@@ -74,7 +73,7 @@ struct SettingsView: View {
         if let error = store.persistenceError ?? store.loginItemError {
           Text(error).font(.system(size: 11)).foregroundStyle(Palette.failed).lineLimit(2)
         } else {
-          Text("Changes save automatically. GitIsle reads GitHub through your gh login.")
+          Text("Changes save automatically.")
             .font(.system(size: 10.5)).foregroundStyle(.white.opacity(0.35))
         }
         Spacer()
@@ -131,7 +130,7 @@ struct SettingsView: View {
           selection: $draft.githubRefreshSeconds, fontSize: 11)
       }
       Text(
-        "Active PRs (checks running, merging, or just updated) refresh most often. About \(budgetShare)% of your hourly GitHub API budget, which other gh tools share."
+        "While a PR is active, GitIsle uses about \(budgetShare)% of your shared hourly GitHub API budget."
       )
       .font(.system(size: 10.5)).foregroundStyle(.white.opacity(0.4))
       .fixedSize(horizontal: false, vertical: true)
@@ -147,6 +146,16 @@ struct SettingsView: View {
 
   private var notifications: some View {
     SettingsCard(glyph: .eye, title: "Notifications") {
+      HStack(alignment: .top, spacing: 20) {
+        notificationToggles
+        notificationAnnouncements
+      }
+      if store.notificationsBlocked { NotificationsBlockedNote() }
+    }
+  }
+
+  private var notificationToggles: some View {
+    VStack(spacing: 10) {
       SettingsRow("Island banner") {
         Toggle("", isOn: $draft.bannersEnabled).islandToggle()
       }
@@ -170,34 +179,37 @@ struct SettingsView: View {
         )
         .islandToggle()
       }
-      if store.notificationsBlocked { NotificationsBlockedNote() }
       SettingsRow("Sound") {
         Toggle("", isOn: $draft.notificationSound).islandToggle()
       }
       .disabled(!store.settings.notificationsEnabled)
       .opacity(store.settings.notificationsEnabled ? 1 : 0.45)
-      VStack(alignment: .leading, spacing: 7) {
-        Text("Announce").font(.system(size: 12)).foregroundStyle(.white.opacity(0.75))
-        LazyVGrid(
-          columns: [GridItem(.flexible(), spacing: 6), GridItem(.flexible(), spacing: 6)],
-          spacing: 6
-        ) {
-          ForEach(Self.announcements, id: \.label) { item in
-            let kinds = Set(item.kinds.map(\.rawValue))
-            AnnouncementChip(
-              glyph: item.glyph, label: item.label, color: item.kinds[0].color,
-              selected: kinds.isSubset(of: draft.announcedKinds)
-            ) {
-              if kinds.isSubset(of: draft.announcedKinds) {
-                draft.announcedKinds.subtract(kinds)
-              } else {
-                draft.announcedKinds.formUnion(kinds)
-              }
+    }
+    .frame(maxWidth: .infinity)
+  }
+
+  private var notificationAnnouncements: some View {
+    VStack(alignment: .leading, spacing: 7) {
+      Text("Announce").font(.system(size: 12)).foregroundStyle(.white.opacity(0.75))
+      LazyVGrid(
+        columns: Array(repeating: GridItem(.flexible(), spacing: 6), count: 3), spacing: 6
+      ) {
+        ForEach(Self.announcements, id: \.label) { item in
+          let kinds = Set(item.kinds.map(\.rawValue))
+          AnnouncementChip(
+            glyph: item.glyph, label: item.label, color: item.kinds[0].color,
+            selected: kinds.isSubset(of: draft.announcedKinds)
+          ) {
+            if kinds.isSubset(of: draft.announcedKinds) {
+              draft.announcedKinds.subtract(kinds)
+            } else {
+              draft.announcedKinds.formUnion(kinds)
             }
           }
         }
       }
     }
+    .frame(maxWidth: .infinity, alignment: .leading)
   }
 
   /// Your own PRs as they head to merge, then what can go wrong or wait on you.
@@ -281,6 +293,7 @@ private struct AnnouncementChip: View {
   let action: () -> Void
 
   var body: some View {
+    let capsule = Capsule(style: .circular)
     Button(action: action) {
       HStack(spacing: 5) {
         GlyphView(glyph: glyph, size: 10)
@@ -291,9 +304,9 @@ private struct AnnouncementChip: View {
       .padding(.vertical, 5)
       // Stretch after padding so the capsule fills the grid cell without overflowing it.
       .frame(maxWidth: .infinity)
-      .background(Capsule().fill(selected ? color.opacity(0.16) : .white.opacity(0.05)))
-      .overlay(Capsule().inset(by: 0.5).stroke(color.opacity(selected ? 0.6 : 0), lineWidth: 1))
-      .contentShape(Capsule())
+      .background(capsule.fill(selected ? color.opacity(0.16) : .white.opacity(0.05)))
+      .overlay(capsule.strokeBorder(color.opacity(selected ? 0.6 : 0), lineWidth: 1))
+      .contentShape(capsule)
     }
     .buttonStyle(.plain)
     .accessibilityLabel(label)
@@ -307,7 +320,7 @@ struct SettingsCard<Content: View>: View {
   @ViewBuilder let content: Content
 
   var body: some View {
-    VStack(alignment: .leading, spacing: 12) {
+    VStack(alignment: .leading, spacing: 10) {
       HStack(spacing: 8) {
         GlyphView(glyph: glyph, size: 13).foregroundStyle(.white.opacity(0.6))
         Text(title).font(.system(size: 12.5, weight: .semibold))
