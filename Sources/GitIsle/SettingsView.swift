@@ -315,7 +315,9 @@ struct AccountChip: View {
 }
 
 private struct NotificationEventRow: View {
-  static let height: CGFloat = 23
+  private static let checkboxSize: CGFloat = 13
+  private static let inset: CGFloat = 8
+  static let height = checkboxSize + 2 * inset
 
   let label: String
   let glyph: Glyph
@@ -337,7 +339,7 @@ private struct NotificationEventRow: View {
             .foregroundStyle(.white)
         }
       }
-      .frame(width: 13, height: 13)
+      .frame(width: Self.checkboxSize, height: Self.checkboxSize)
   }
 
   var body: some View {
@@ -354,7 +356,7 @@ private struct NotificationEventRow: View {
         Spacer(minLength: 8)
         checkbox
       }
-      .padding(.horizontal, 8)
+      .padding(.horizontal, Self.inset)
       .frame(height: Self.height)
       .background(RoundedRectangle(cornerRadius: 6).fill(.white.opacity(hovered ? 0.08 : 0)))
       .contentShape(Rectangle())
