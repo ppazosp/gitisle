@@ -2,6 +2,13 @@
 
 Notable changes to GitIsle. Releases follow [semantic versioning](https://semver.org).
 
+## [0.3.7](https://github.com/ppazosp/gitisle/compare/v0.3.6...v0.3.7) (2026-11-21)
+
+
+### Bug Fixes
+
+* make Settings more compact ([#76](https://github.com/ppazosp/gitisle/issues/76)) ([2510de1](https://github.com/ppazosp/gitisle/commit/2510de19bd5267474649ca95368dfddc6063b4c2))
+
 ## [0.3.6](https://github.com/ppazosp/gitisle/compare/v0.3.5...v0.3.6) (2026-11-20)
 
 
