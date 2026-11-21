@@ -708,9 +708,20 @@ private struct ExpandedIsland: View {
       : store.isLive ? metrics.closedHeight : 10
   }
 
+  private var contentID: String {
+    if store.showingOnboarding { return "onboarding" }
+    if store.showingSettings { return "settings" }
+    return store.detailsPullRequest.map { "pr-\($0.id)" } ?? "activity"
+  }
+
   var body: some View {
     let activity = Self.showsActivity(store)
     let inset = Self.topInset(metrics, store: store)
+    let page = contentID
+    // Outgoing pages can still measure while fading out. Only the current page can resize us.
+    let pageHeight = Binding(
+      get: { contentHeight },
+      set: { if contentID == page { contentHeight = $0 } })
     VStack(spacing: 0) {
       if activity {
         // As wide as the default island at most, centered under the notch, so a wide board or
@@ -735,21 +746,16 @@ private struct ExpandedIsland: View {
       Rectangle().fill(Palette.hairline).frame(height: 1).padding(.horizontal, 28)
       Group {
         if store.showingOnboarding {
-          OnboardingView(store: store, contentHeight: $contentHeight)
+          OnboardingView(store: store, contentHeight: pageHeight)
         } else if store.showingSettings {
-          SettingsView(store: store, contentHeight: $contentHeight)
+          SettingsView(store: store, contentHeight: pageHeight)
         } else if let pr = store.detailsPullRequest {
-          PRDetailsView(store: store, pr: pr, contentHeight: $contentHeight)
+          PRDetailsView(store: store, pr: pr, contentHeight: pageHeight)
         } else {
-          ActivityView(store: store, contentHeight: $contentHeight)
+          ActivityView(store: store, contentHeight: pageHeight)
         }
       }
-      .id(
-        store.showingOnboarding
-          ? "onboarding"
-          : store.showingSettings
-            ? "settings" : store.detailsPullRequest.map { "pr-\($0.id)" } ?? "activity"
-      )
+      .id(page)
       .transition(.opacity.animation(.easeOut(duration: 0.12)))
       .frame(maxHeight: .infinity, alignment: .top)
       Group {
