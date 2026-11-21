@@ -146,7 +146,7 @@ struct SettingsView: View {
 
   private var notifications: some View {
     SettingsCard(glyph: .eye, title: "Notifications") {
-      HStack(alignment: .top, spacing: 20) {
+      HStack(alignment: .top, spacing: 24) {
         notificationToggles
         notificationAnnouncements
       }
@@ -155,77 +155,102 @@ struct SettingsView: View {
   }
 
   private var notificationToggles: some View {
-    VStack(spacing: 10) {
-      SettingsRow("Island banner") {
-        Toggle("", isOn: $draft.bannersEnabled).islandToggle()
-      }
-      SettingsRow("Banner timer") {
-        Toggle("", isOn: $draft.bannerTimer).islandToggle()
-      }
-      .disabled(!store.settings.bannersEnabled)
-      .opacity(store.settings.bannersEnabled ? 1 : 0.45)
-      SettingsRow("System notifications") {
-        Toggle(
-          "",
-          isOn: Binding(
-            get: { store.settings.notificationsEnabled },
-            set: { enabled in
-              if enabled {
-                Task { await store.requestNotifications() }
-              } else {
-                store.update { $0.notificationsEnabled = false }
-              }
-            })
-        )
-        .islandToggle()
-      }
-      SettingsRow("Sound") {
-        Toggle("", isOn: $draft.notificationSound).islandToggle()
-      }
-      .disabled(!store.settings.notificationsEnabled)
-      .opacity(store.settings.notificationsEnabled ? 1 : 0.45)
-    }
-    .frame(maxWidth: .infinity)
-  }
-
-  private var notificationAnnouncements: some View {
-    VStack(alignment: .leading, spacing: 7) {
-      Text("Announce").font(.system(size: 12)).foregroundStyle(.white.opacity(0.75))
-      LazyVGrid(
-        columns: Array(
-          repeating: GridItem(.flexible(), spacing: 12, alignment: .leading), count: 2),
-        spacing: 4
-      ) {
-        ForEach(Self.announcements, id: \.label) { item in
-          let kinds = Set(item.kinds.map(\.rawValue))
+    VStack(alignment: .leading, spacing: 5) {
+      notificationHeading("Delivery")
+      VStack(spacing: 2) {
+        SettingsRow("Island banner") {
+          Toggle("", isOn: $draft.bannersEnabled).islandToggle()
+        }
+        .frame(height: NotificationEventRow.height)
+        SettingsRow("Banner timer") {
+          Toggle("", isOn: $draft.bannerTimer).islandToggle()
+        }
+        .frame(height: NotificationEventRow.height)
+        .disabled(!store.settings.bannersEnabled)
+        .opacity(store.settings.bannersEnabled ? 1 : 0.45)
+        SettingsRow("System notifications") {
           Toggle(
-            item.label,
+            "",
             isOn: Binding(
-              get: { kinds.isSubset(of: draft.announcedKinds) },
+              get: { store.settings.notificationsEnabled },
               set: { enabled in
                 if enabled {
-                  draft.announcedKinds.formUnion(kinds)
+                  Task { await store.requestNotifications() }
                 } else {
-                  draft.announcedKinds.subtract(kinds)
+                  store.update { $0.notificationsEnabled = false }
                 }
               })
           )
+          .islandToggle()
         }
+        .frame(height: NotificationEventRow.height)
+        SettingsRow("Sound") {
+          Toggle("", isOn: $draft.notificationSound).islandToggle()
+        }
+        .frame(height: NotificationEventRow.height)
+        .disabled(!store.settings.notificationsEnabled)
+        .opacity(store.settings.notificationsEnabled ? 1 : 0.45)
       }
-      .toggleStyle(.checkbox)
-      .font(.system(size: 12))
+    }
+    .frame(width: 222)
+    .accessibilityElement(children: .contain)
+  }
+
+  private var notificationAnnouncements: some View {
+    VStack(alignment: .leading, spacing: 5) {
+      notificationHeading("PR events")
+      HStack(alignment: .top, spacing: 16) {
+        announcementColumn(Self.announcements.prefix(4))
+        announcementColumn(Self.announcements.dropFirst(4))
+      }
+    }
+    .frame(maxWidth: .infinity, alignment: .leading)
+    .accessibilityElement(children: .contain)
+  }
+
+  private func notificationHeading(_ title: String) -> some View {
+    HStack(spacing: 8) {
+      Text(title)
+        .font(.system(size: 11.5, weight: .medium))
+        .foregroundStyle(.white.opacity(0.62))
+        .accessibilityAddTraits(.isHeader)
+      Rectangle().fill(Palette.hairline).frame(height: 1)
+        .accessibilityHidden(true)
+    }
+    .frame(height: 16)
+  }
+
+  private func announcementColumn(_ announcements: ArraySlice<Announcement>) -> some View {
+    VStack(spacing: 2) {
+      ForEach(announcements, id: \.label) { item in
+        let kinds = Set(item.kinds.map(\.rawValue))
+        NotificationEventRow(
+          label: item.label, glyph: item.glyph, color: item.kinds[0].color,
+          isOn: Binding(
+            get: { kinds.isSubset(of: draft.announcedKinds) },
+            set: { enabled in
+              if enabled {
+                draft.announcedKinds.formUnion(kinds)
+              } else {
+                draft.announcedKinds.subtract(kinds)
+              }
+            })
+        )
+      }
     }
     .frame(maxWidth: .infinity, alignment: .leading)
   }
 
+  private typealias Announcement = (kinds: [PRStatus], glyph: Glyph, label: String)
+
   /// Your own PRs as they head to merge, then what can go wrong or wait on you.
   /// One checkbox can cover several kinds: "New PR" is opening a PR, ready or draft, and marking a
   /// draft ready for review; "Failed" is checks failing on the PR or in the merge queue.
-  private static let announcements: [(kinds: [PRStatus], label: String)] = [
-    ([.opened, .draft, .readyForReview], "New PR"),
-    ([.ready], "Ready"), ([.previewReady], "Preview"), ([.queued], "Merging"),
-    ([.merged], "Merged"), ([.failed, .mergeFailed], "Failed"),
-    ([.review], "Review"),
+  private static let announcements: [Announcement] = [
+    ([.opened, .draft, .readyForReview], .pullRequest, "New PR"),
+    ([.ready], .checkFill, "Ready"), ([.previewReady], .globe, "Preview"),
+    ([.queued], .mergeQueue, "Merging"), ([.merged], .merge, "Merged"),
+    ([.failed, .mergeFailed], .failFill, "Failed"), ([.review], .eye, "Review"),
   ]
 
   private var island: some View {
@@ -286,6 +311,57 @@ struct AccountChip: View {
     .onHover { inside in withAnimation(.easeOut(duration: 0.12)) { hovered = inside } }
     .help("Signed in with the GitHub CLI. Opens your profile.")
     .accessibilityLabel("Signed in to GitHub as \(login)")
+  }
+}
+
+private struct NotificationEventRow: View {
+  static let height: CGFloat = 23
+
+  let label: String
+  let glyph: Glyph
+  let color: Color
+  @Binding var isOn: Bool
+  @State private var hovered = false
+
+  private var checkbox: some View {
+    // Like the switches, keep the accent in the island's non-activating panel.
+    let shape = RoundedRectangle(cornerRadius: 3)
+    return
+      shape
+      .fill(isOn ? Color(nsColor: .systemBlue) : .white.opacity(0.035))
+      .overlay(shape.strokeBorder(.white.opacity(isOn ? 0 : 0.21), lineWidth: 1))
+      .overlay {
+        if isOn {
+          Image(systemName: "checkmark")
+            .font(.system(size: 8, weight: .semibold))
+            .foregroundStyle(.white)
+        }
+      }
+      .frame(width: 13, height: 13)
+  }
+
+  var body: some View {
+    Button {
+      isOn.toggle()
+    } label: {
+      HStack(spacing: 8) {
+        GlyphView(glyph: glyph, size: 12)
+          .foregroundStyle(color.opacity(isOn ? 1 : 0.65))
+          .frame(width: 15, height: 14)
+        Text(label)
+          .font(.system(size: 12))
+          .foregroundStyle(.white.opacity(0.75))
+        Spacer(minLength: 8)
+        checkbox
+      }
+      .padding(.trailing, 1)
+      .frame(height: Self.height)
+      .background(RoundedRectangle(cornerRadius: 6).fill(.white.opacity(hovered ? 0.08 : 0)))
+      .contentShape(Rectangle())
+    }
+    .buttonStyle(.plain)
+    .onHover { hovered = $0 }
+    .accessibilityRepresentation { Toggle(label, isOn: $isOn).toggleStyle(.checkbox) }
   }
 }
 
