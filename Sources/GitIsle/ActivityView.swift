@@ -268,15 +268,14 @@ private struct RepositoryHeader: View {
   }
 }
 
-/// State filters for Activity, shared by the list and the board. Pressing a state shows
-/// only PRs in it; pressing again clears it, and several states combine.
+/// State filters for Activity, shared by the list and the board. Click to include a
+/// state and secondary-click to exclude it. Several states can be shown together.
 struct StateFilterBar: View {
   let store: IslandStore
 
   var body: some View {
     let canExclude =
-      store.stateFilter.isEmpty && !store.repositoryPickerOpen
-      && store.dropdown == nil && store.checksPreview == nil
+      !store.repositoryPickerOpen && store.dropdown == nil && store.checksPreview == nil
     HStack(spacing: 6) {
       NeedsYouChip(
         count: store.needsYouCount, selected: store.needsYouOnly
@@ -293,7 +292,7 @@ struct StateFilterBar: View {
         StateChip(
           group: group, count: count, capped: capped, selected: selected,
           dimmed: !store.stateFilter.isEmpty && !selected,
-          action: { store.toggleState(group) },
+          action: { store.includeState(group) },
           exclude: canExclude ? { store.excludeState(group) } : nil)
       }
       Spacer(minLength: 4)
@@ -400,17 +399,23 @@ private struct StateChip: View {
     .accessibilityLabel("\(group.label), \(count)")
     .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
     .accessibilityActions {
-      if let exclude {
-        Button("Show all states except \(group.label)", action: exclude)
+      if let exclude, !dimmed {
+        Button(
+          selected
+            ? "Remove \(group.label) from selection" : "Show all states except \(group.label)",
+          action: exclude)
       }
     }
   }
 
   private var helpText: String {
     let state = group.label.lowercased()
-    if selected { return "Stop filtering by \(state)" }
-    if exclude != nil { return "Filter by \(state). Right-click to exclude \(state)." }
-    return "Filter by \(state)"
+    if selected {
+      return exclude == nil ? "Showing \(state) PRs." : "Right-click to remove \(state)."
+    }
+    if dimmed { return "Click to include \(state)." }
+    if exclude != nil { return "Click to show only \(state). Right-click to exclude \(state)." }
+    return "Filter by \(state)."
   }
 }
 
