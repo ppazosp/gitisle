@@ -6,6 +6,8 @@ extension EnvironmentValues {
   @Entry var activityHeightLimit: CGFloat = .infinity
 }
 
+private let activityListInsets = EdgeInsets(top: 8, leading: 14, bottom: 4, trailing: 14)
+
 struct ActivityView: View {
   let store: IslandStore
   @Binding var contentHeight: CGFloat
@@ -94,7 +96,7 @@ private struct ActivityList: View {
           VStack(spacing: 0) { row(item) }
         }
       }
-      .padding(.horizontal, 14).padding(.top, 8).padding(.bottom, 4)
+      .padding(activityListInsets)
     } onHeight: {
       contentHeight = $0
     }
@@ -658,6 +660,7 @@ private struct BoardView: View {
           text: store.stateFilter.isEmpty && !store.needsYouOnly
             ? "No PRs here" : "No PRs match these filters"
         )
+        .padding(activityListInsets)
         .onGeometryChange(for: CGFloat.self) {
           $0.size.height
         } action: {
