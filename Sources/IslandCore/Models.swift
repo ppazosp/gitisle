@@ -242,7 +242,7 @@ public enum ActivityWindow: String, CaseIterable, Codable, Sendable {
 
   public var label: String {
     switch self {
-    case .day: "1d"
+    case .day: "24h"
     case .week: "7d"
     case .all: "All"
     }
