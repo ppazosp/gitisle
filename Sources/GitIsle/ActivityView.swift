@@ -379,7 +379,7 @@ private struct StateChip: View {
       .foregroundStyle(group.color)
       .padding(.horizontal, 8).padding(.vertical, 4)
       .background(
-        capsule.fill(group.color.opacity(selected ? 0.28 : hovered ? 0.2 : 0.11))
+        capsule.fill(group.color.opacity(hovered ? 0.2 : 0.11))
       )
       .overlay(
         capsule.strokeBorder(group.color.opacity(selected ? 0.9 : dimmed ? 0 : 0.6), lineWidth: 1)
