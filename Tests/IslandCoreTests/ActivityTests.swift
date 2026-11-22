@@ -5,11 +5,6 @@ import Testing
 
 struct ActivityTests {
   private let now = Date(timeIntervalSince1970: 1_791_720_000)
-  private var calendar: Calendar {
-    var calendar = Calendar(identifier: .gregorian)
-    calendar.timeZone = TimeZone(identifier: "Europe/Madrid")!
-    return calendar
-  }
 
   private func pr(_ id: String, updated: TimeInterval = 0) -> PullRequest {
     PullRequest(
@@ -62,7 +57,7 @@ struct ActivityTests {
     var review = pr("review")
     review.reviewRequested = true
     let sections = PRGrouping.sections(
-      [second, review, first], window: .month, now: now, calendar: calendar)
+      [second, review, first], window: .all, now: now)
     #expect(sections.map(\.group) == [.open, .merging])
     #expect(sections[1].pullRequests.map(\.id) == ["first", "second"])
   }
@@ -83,7 +78,7 @@ struct ActivityTests {
     let older = make("older", "c/older", updated: 900)
 
     let sections = PRGrouping.repositories(
-      [draft, open, review, merged, older], window: .month, now: now, calendar: calendar)
+      [draft, open, review, merged, older], window: .all, now: now)
     #expect(sections.map(\.repository) == ["a/recent", "b/history", "c/older"])
     #expect(sections[0].pullRequests.map(\.id) == ["draft", "open"])
     #expect(sections[1].pullRequests.map(\.id) == ["merged", "review"])
@@ -91,8 +86,7 @@ struct ActivityTests {
     #expect(sections[1].owner == "b" && sections[1].name == "history")
 
     let drafts = PRGrouping.repositories(
-      [draft, open, review, merged, older], window: .month, states: [.draft], now: now,
-      calendar: calendar)
+      [draft, open, review, merged, older], window: .all, states: [.draft], now: now)
     #expect(drafts.map(\.repository) == ["a/recent"])
     #expect(drafts[0].pullRequests.map(\.id) == ["draft"])
     // Counts ignore the state filter so other states can still be selected.
@@ -100,8 +94,7 @@ struct ActivityTests {
 
     // a's draft is newer than b's merge.
     let combined = PRGrouping.repositories(
-      [draft, open, review, merged, older], window: .month, states: [.draft, .merged], now: now,
-      calendar: calendar)
+      [draft, open, review, merged, older], window: .all, states: [.draft, .merged], now: now)
     #expect(combined.map(\.repository) == ["a/recent", "b/history"])
   }
 
@@ -116,7 +109,7 @@ struct ActivityTests {
     child.baseRefName = "base"
 
     let sections = PRGrouping.repositories(
-      [olderOpen, base, child], window: .week, now: now, calendar: calendar)
+      [olderOpen, base, child], window: .week, now: now)
     let rows = sections.flatMap(\.pullRequests)
     let piles = PRStacks.piles(rows, links: PRStacks.links([olderOpen, base, child]))
     #expect(piles.map { $0.map(\.id) } == [["base", "child"], ["older-open"]])
@@ -138,7 +131,7 @@ struct ActivityTests {
     let quiet = make("quiet", "c/quiet", days: 3)
 
     let sections = PRGrouping.repositories(
-      [stale, draft, merged, quiet], window: .month, now: now, calendar: calendar)
+      [stale, draft, merged, quiet], window: .all, now: now)
     #expect(sections.map(\.repository) == ["b/busy", "c/quiet", "a/stale"])
   }
 
@@ -157,10 +150,10 @@ struct ActivityTests {
       make("b-draft", "b/draft-first", updated: 600, draft: true),
       make("b-open", "b/draft-first", updated: 3600, draft: false),
     ]
-    let all = PRGrouping.repositories(prs, window: .month, now: now, calendar: calendar)
+    let all = PRGrouping.repositories(prs, window: .all, now: now)
     #expect(all.map(\.repository) == ["a/open-first", "b/draft-first"])
     let drafts = PRGrouping.repositories(
-      prs, window: .month, states: [.draft], now: now, calendar: calendar)
+      prs, window: .all, states: [.draft], now: now)
     #expect(drafts.map(\.repository) == ["b/draft-first", "a/open-first"])
     // Counts still cover every state.
     #expect(drafts[0].counts.map(\.group) == [.open, .draft])
@@ -171,40 +164,32 @@ struct ActivityTests {
     var review = pr("review", updated: 600)
     review.reviewRequested = true
     let sections = PRGrouping.sections(
-      [quiet, review], window: .month, now: now, calendar: calendar)
+      [quiet, review], window: .all, now: now)
     #expect(sections.map(\.group) == [.open])
     #expect(sections[0].pullRequests.map(\.id) == ["quiet", "review"])
   }
 
-  @Test func activityWindowUsesLocalDaysAndMergeTime() {
-    let startOfToday = calendar.startOfDay(for: now)
-    var mergedToday = pr("merged", updated: 0)
-    mergedToday.state = "MERGED"
-    mergedToday.mergedAt = startOfToday.addingTimeInterval(60)
-    var mergedLastWeek = mergedToday
-    mergedLastWeek.id = "old"
-    mergedLastWeek.mergedAt = startOfToday.addingTimeInterval(-3 * 86_400)
-    let yesterday = pr("yesterday", updated: now.timeIntervalSince(startOfToday) + 60)
-    let all = [mergedToday, mergedLastWeek, yesterday]
+  @Test func activityRangesUseRollingDaysAndMergeTime() {
+    let day: TimeInterval = 86_400
+    let recent = pr("recent", updated: day)
+    var olderMerge = pr("older-merge")
+    olderMerge.state = "MERGED"
+    olderMerge.mergedAt = now.addingTimeInterval(-day - 1)
+    let weekBoundary = pr("week-boundary", updated: 7 * day)
+    let older = pr("older", updated: 7 * day + 1)
+    let requests = [recent, olderMerge, weekBoundary, older]
 
-    let today = PRGrouping.sections(all, window: .today, now: now, calendar: calendar)
-    #expect(today.flatMap(\.pullRequests).map(\.id) == ["merged"])
-    let week = PRGrouping.sections(all, window: .week, now: now, calendar: calendar)
-    #expect(week.flatMap(\.pullRequests).count == 3)
-    let repositoryList = PRGrouping.repositories(all, window: .week, now: now, calendar: calendar)
-    #expect(repositoryList.flatMap(\.pullRequests).map(\.id) == ["merged", "yesterday", "old"])
-    #expect(
-      ActivityWindow.week.includes(
-        startOfToday.addingTimeInterval(-6 * 86_400), now: now, calendar: calendar))
-    #expect(
-      ActivityWindow.month.includes(
-        startOfToday.addingTimeInterval(-29 * 86_400), now: now, calendar: calendar))
-    #expect(
-      !ActivityWindow.month.includes(
-        startOfToday.addingTimeInterval(-29 * 86_400 - 1), now: now, calendar: calendar))
-    #expect(
-      !ActivityWindow.week.includes(
-        startOfToday.addingTimeInterval(-6 * 86_400 - 1), now: now, calendar: calendar))
+    let expected: [(ActivityWindow, Set<String>)] = [
+      (.day, ["recent"]),
+      (.week, ["recent", "older-merge", "week-boundary"]),
+      (.all, ["recent", "older-merge", "week-boundary", "older"]),
+    ]
+    for (window, ids) in expected {
+      let columns = PRGrouping.sections(requests, window: window, now: now)
+      let repositories = PRGrouping.repositories(requests, window: window, now: now)
+      #expect(Set(columns.flatMap(\.pullRequests).map(\.id)) == ids)
+      #expect(Set(repositories.flatMap(\.pullRequests).map(\.id)) == ids)
+    }
   }
 
   @Test func checkCountsSeparatePassingFailingAndRunning() {

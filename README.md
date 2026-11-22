@@ -38,8 +38,9 @@ shows what's merging, which checks are running, and which PRs need review.
   passed, or failed, the merge queue's too, and click one for its log.
 - **Activity.** Hover to open your PRs by repository, or as a board of GitHub
   states: draft, open, merging, merged. Search by title, repository, or PR number.
-  Click a state to toggle it, or right-click to show only that state. Use
-  **Load more PRs** to see more results.
+  Activity defaults to **24h**. Choose **7d** for the past seven days or
+  **All** for the full history. Click a state to toggle it, or right-click to show
+  only that state. Use **Load more PRs** to see more results.
 
 GitIsle only reads from GitHub. It never merges, reviews, comments, or marks
 notifications as read.

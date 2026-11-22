@@ -27,7 +27,7 @@ struct ActivityView: View {
     .transaction(
       value: ActivityFilters(
         layout: store.activityLayout, states: store.stateFilter, query: store.activityQuery,
-        repositories: store.repositoryFilter)
+        repositories: store.repositoryFilter, window: store.activityWindow)
     ) { transaction in
       transaction.animation = nil
       transaction.disablesAnimations = true
@@ -163,6 +163,7 @@ private struct ActivityFilters: Equatable {
   let states: Set<PRGroup>
   let query: String
   let repositories: Set<String>
+  let window: ActivityWindow
 }
 
 private struct Notice: View {
@@ -189,7 +190,7 @@ private struct ActivityEmptyState: View {
         } else {
           HStack(spacing: 8) {
             GlyphView(glyph: .checkFill, size: 14).foregroundStyle(Palette.open)
-            Text(store.stateFilter.isEmpty ? "You're all caught up" : "No PRs match these filters")
+            Text(emptyMessage)
               .font(.system(size: 12.5)).foregroundStyle(.white.opacity(0.7))
           }
         }
@@ -202,6 +203,11 @@ private struct ActivityEmptyState: View {
           .padding(.vertical, 5)
       }
     }
+  }
+
+  private var emptyMessage: String {
+    if !store.stateFilter.isEmpty { return "No PRs match these filters" }
+    return store.activityWindow == .all ? "You're all caught up" : "No PRs in this date range"
   }
 }
 
@@ -318,7 +324,7 @@ struct StateFilterBar: View {
         let count = store.stateCounts.first { $0.group == group }?.count ?? 0
         let selected = store.stateFilter.contains(group)
         let capped =
-          group == .merged && store.activityQuery.isEmpty
+          group == .merged && store.activityWindow == .all && store.activityQuery.isEmpty
           && store.repositoryFilter.isEmpty && store.github?.mergedHistory?.nextCursor != nil
         StateChip(
           group: group, count: count, capped: capped, selected: selected,

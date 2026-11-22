@@ -340,8 +340,12 @@ final class IslandStore {
     }
     lastActiveRefresh = .distantPast
   }
-  /// PR counts per state after the repository filter and search, for the state filter bar.
+  /// PR counts per state after the date range, repository filter, and search.
   private(set) var stateCounts: [StateCount] = []
+  var activityWindow: ActivityWindow = .day {
+    didSet { if activityWindow != oldValue { regroupActivity() } }
+  }
+  @ObservationIgnored private var activityGroupedAt = Date.distantPast
   var activitySearch = "" {
     didSet { if activitySearch != oldValue { regroupActivity() } }
   }
@@ -649,7 +653,8 @@ final class IslandStore {
     regroupActivity()
   }
 
-  private func regroupActivity() {
+  private func regroupActivity(now: Date = Date()) {
+    activityGroupedAt = now
     let all = github?.pullRequests ?? []
     let scoped = repositoryFilter.isEmpty ? all : all.filter { shows($0.repository) }
     let query = activityQuery
@@ -662,9 +667,10 @@ final class IslandStore {
           || $0.repository.localizedStandardContains(query)
           || String($0.number).hasPrefix(numberQuery)
       }
-    let fresh = PRGrouping.repositories(matches, window: nil, states: stateFilter)
+    let fresh = PRGrouping.repositories(
+      matches, window: activityWindow, states: stateFilter, now: now)
     if fresh != repositories { repositories = fresh }
-    let unfiltered = PRGrouping.sections(matches, window: nil)
+    let unfiltered = PRGrouping.sections(matches, window: activityWindow, now: now)
     let counts = unfiltered.map { StateCount(group: $0.group, count: $0.pullRequests.count) }
     if counts != stateCounts { stateCounts = counts }
     let columns =
@@ -707,6 +713,10 @@ final class IslandStore {
       Task { [weak self] in
         while !Task.isCancelled {
           guard let self else { return }
+          let now = Date()
+          if expanded && activityWindow != .all && now.timeIntervalSince(activityGroupedAt) >= 60 {
+            regroupActivity(now: now)
+          }
           if canRefreshGitHub {
             let discovery =
               githubBudgetLow
@@ -716,9 +726,9 @@ final class IslandStore {
             let active =
               Self.idleSeconds >= 300
               ? max(settings.activeRefreshSeconds, 60) : settings.activeRefreshSeconds
-            if Date().timeIntervalSince(lastGitHubRefresh) >= discovery {
+            if now.timeIntervalSince(lastGitHubRefresh) >= discovery {
               await discover()
-            } else if !githubBudgetLow, Date().timeIntervalSince(lastActiveRefresh) >= active {
+            } else if !githubBudgetLow, now.timeIntervalSince(lastActiveRefresh) >= active {
               await refreshActive()
             }
           }

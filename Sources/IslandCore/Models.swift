@@ -236,34 +236,26 @@ public enum PRGroup: String, CaseIterable, Sendable {
   }
 }
 
-/// A time filter for activity. `days` counts today as the first day.
+/// Rolling windows based on the PR's activity date.
 public enum ActivityWindow: String, CaseIterable, Codable, Sendable {
-  case today, week, month
+  case day, week, all
 
   public var label: String {
     switch self {
-    case .today: "Today"
-    case .week: "7 days"
-    case .month: "30 days"
+    case .day: "24h"
+    case .week: "7d"
+    case .all: "All"
     }
   }
 
-  public var days: Int {
+  fileprivate func cutoff(at now: Date) -> Date {
     switch self {
-    case .today: 1
-    case .week: 7
-    case .month: 30
+    case .day: now.addingTimeInterval(-86_400)
+    case .week: now.addingTimeInterval(-7 * 86_400)
+    case .all: .distantPast
     }
   }
 
-  public func includes(_ date: Date, now: Date = Date(), calendar: Calendar = .current) -> Bool {
-    date >= firstIncludedDay(at: now, calendar: calendar)
-  }
-
-  fileprivate func firstIncludedDay(at now: Date, calendar: Calendar) -> Date {
-    calendar.date(
-      byAdding: .day, value: -(days - 1), to: calendar.startOfDay(for: now))!
-  }
 }
 
 public struct PRSection: Identifiable, Equatable, Sendable {
@@ -324,10 +316,10 @@ public enum PRGrouping {
   /// hiding a repository's newest PR moves it down; counts ignore the filters, so every state
   /// stays selectable.
   public static func repositories(
-    _ pullRequests: [PullRequest], window: ActivityWindow?, states: Set<PRGroup> = [],
-    now: Date = Date(), calendar: Calendar = .current
+    _ pullRequests: [PullRequest], window: ActivityWindow, states: Set<PRGroup> = [],
+    now: Date = Date()
   ) -> [RepoSection] {
-    let start = window?.firstIncludedDay(at: now, calendar: calendar) ?? .distantPast
+    let start = window.cutoff(at: now)
     let recent = pullRequests.filter {
       $0.group != nil && $0.activityDate >= start
     }
@@ -355,10 +347,9 @@ public enum PRGrouping {
   }
 
   public static func sections(
-    _ pullRequests: [PullRequest], window: ActivityWindow?, now: Date = Date(),
-    calendar: Calendar = .current
+    _ pullRequests: [PullRequest], window: ActivityWindow, now: Date = Date()
   ) -> [PRSection] {
-    let start = window?.firstIncludedDay(at: now, calendar: calendar) ?? .distantPast
+    let start = window.cutoff(at: now)
     var buckets: [PRGroup: [PullRequest]] = [:]
     for pr in pullRequests {
       guard let group = pr.group else { continue }
