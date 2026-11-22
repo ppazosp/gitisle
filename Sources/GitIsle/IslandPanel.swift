@@ -265,7 +265,11 @@ final class IslandPanel: NSPanel {
     let rect = NSRect(
       x: frame.midX - size.width / 2, y: frame.maxY - metrics.topGap - size.height,
       width: size.width, height: size.height)
-    let inside = rect.contains(point) && containsRoundedPoint(point, in: rect)
+    // CGRect.contains excludes maxY, which the pointer can reach at the top of the screen.
+    let insideBounds =
+      point.x >= rect.minX && point.x <= rect.maxX
+      && point.y >= rect.minY && point.y <= rect.maxY
+    let inside = insideBounds && containsRoundedPoint(point, in: rect)
     let moved = point != lastPointer
     lastPointer = point
     if panel.ignoresMouseEvents == inside { panel.ignoresMouseEvents = !inside }
