@@ -683,15 +683,14 @@ final class IslandStore {
     if columns != sections { sections = columns }
   }
 
-  func toggleState(_ group: PRGroup) {
-    var selected = stateFilter
-    if selected.remove(group) == nil { selected.insert(group) }
-    stateFilter = selected
+  func includeState(_ group: PRGroup) {
+    stateFilter.insert(group)
   }
 
   func excludeState(_ group: PRGroup) {
-    guard stateFilter.isEmpty else { return }
-    stateFilter = Set(PRGroup.allCases.filter { $0 != group })
+    var selected = stateFilter.isEmpty ? Set(PRGroup.allCases) : stateFilter
+    selected.remove(group)
+    stateFilter = selected
   }
 
   func toggleCollapsed(_ repository: String) {
