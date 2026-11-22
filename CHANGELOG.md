@@ -2,6 +2,13 @@
 
 Notable changes to GitIsle. Releases follow [semantic versioning](https://semver.org).
 
+## [0.3.10](https://github.com/ppazosp/gitisle/compare/v0.3.9...v0.3.10) (2026-11-22)
+
+
+### Bug Fixes
+
+* restore Activity date filters ([#84](https://github.com/ppazosp/gitisle/issues/84)) ([a9b5d95](https://github.com/ppazosp/gitisle/commit/a9b5d95f93793442067eb06b5f95f1d657c0e34e))
+
 ## [0.3.9](https://github.com/ppazosp/gitisle/compare/v0.3.8...v0.3.9) (2026-11-22)
 
 
