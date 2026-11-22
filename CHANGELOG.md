@@ -2,6 +2,14 @@
 
 Notable changes to GitIsle. Releases follow [semantic versioning](https://semver.org).
 
+## [0.3.8](https://github.com/ppazosp/gitisle/compare/v0.3.7...v0.3.8) (2026-11-22)
+
+
+### Bug Fixes
+
+* match selected Activity filter backgrounds ([#80](https://github.com/ppazosp/gitisle/issues/80)) ([575af54](https://github.com/ppazosp/gitisle/commit/575af549dcb31ab538e5b0b7aa78ac4f51e71d95))
+* restore hover at the top screen edge ([#78](https://github.com/ppazosp/gitisle/issues/78)) ([10883f2](https://github.com/ppazosp/gitisle/commit/10883f2f8aea7c28e6feb82a45e7999320dd60ef))
+
 ## [0.3.7](https://github.com/ppazosp/gitisle/compare/v0.3.6...v0.3.7) (2026-11-21)
 
 
