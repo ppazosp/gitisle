@@ -120,7 +120,7 @@ private struct WelcomeStep: View {
       Image(nsImage: NSApp.applicationIconImage).resizable().frame(width: 64, height: 64)
       VStack(alignment: .leading, spacing: 8) {
         StepText(
-          "GitIsle turns your notch into a live view of your pull requests: what's merging, what's failing and what needs you."
+          "GitIsle turns your notch into a live view of your pull requests, checks, and reviews."
         )
         StepText(
           "It reads GitHub through the GitHub CLI and never writes to it. Setup takes a minute.")

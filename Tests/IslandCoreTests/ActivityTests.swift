@@ -40,18 +40,18 @@ struct ActivityTests {
     #expect(queued.group == .merging)
     // Set to merge while checks run: still waiting, not merging yet.
     #expect(autoMerge.group == .open && autoMerge.isWaitingToMerge)
-    #expect(review.group == .open && review.needsYou)
-    #expect(waiting.group == .open && !waiting.needsYou)
+    #expect(review.group == .open && review.status == .review)
+    #expect(waiting.group == .open && waiting.status == .waiting)
     #expect(merged.group == .merged)
     #expect(closed.group == nil)
   }
 
-  @Test func failingAutoMergeNeedsAttentionInsteadOfLookingMerged() {
+  @Test func failingAutoMergeStaysOpen() {
     var request = pr("auto")
     request.autoMerge = true
     request.checks = "FAILURE"
     #expect(!request.isMerging)
-    #expect(request.group == .open && request.needsYou)
+    #expect(request.group == .open && request.status == .failed)
   }
 
   @Test func sectionsKeepGroupOrderAndQueueOrder() {
@@ -76,20 +76,19 @@ struct ActivityTests {
     var draft = make("draft", "a/recent", updated: 0)
     draft.isDraft = true
     let open = make("open", "a/recent", updated: 5)
-    var review = make("review", "b/needs-you", updated: 500)
+    var review = make("review", "b/history", updated: 500)
     review.reviewRequested = true
-    var merged = make("merged", "b/needs-you", updated: 1)
+    var merged = make("merged", "b/history", updated: 1)
     merged.state = "MERGED"
     let older = make("older", "c/older", updated: 900)
 
     let sections = PRGrouping.repositories(
       [draft, open, review, merged, older], window: .month, now: now, calendar: calendar)
-    #expect(sections.map(\.repository) == ["a/recent", "b/needs-you", "c/older"])
+    #expect(sections.map(\.repository) == ["a/recent", "b/history", "c/older"])
     #expect(sections[0].pullRequests.map(\.id) == ["draft", "open"])
     #expect(sections[1].pullRequests.map(\.id) == ["merged", "review"])
     #expect(sections[1].counts.map(\.group) == [.open, .merged])
-    #expect(sections[1].needsYou == 1)
-    #expect(sections[1].owner == "b" && sections[1].name == "needs-you")
+    #expect(sections[1].owner == "b" && sections[1].name == "history")
 
     let drafts = PRGrouping.repositories(
       [draft, open, review, merged, older], window: .month, states: [.draft], now: now,
@@ -103,12 +102,7 @@ struct ActivityTests {
     let combined = PRGrouping.repositories(
       [draft, open, review, merged, older], window: .month, states: [.draft, .merged], now: now,
       calendar: calendar)
-    #expect(combined.map(\.repository) == ["a/recent", "b/needs-you"])
-
-    let waiting = PRGrouping.repositories(
-      [draft, open, review, merged, older], window: .month, needsYouOnly: true, now: now,
-      calendar: calendar)
-    #expect(waiting.flatMap(\.pullRequests).map(\.id) == ["review"])
+    #expect(combined.map(\.repository) == ["a/recent", "b/history"])
   }
 
   @Test func aRecentlyUpdatedStackLeadsAnOlderOpenPRAndKeepsItsBaseFirst() {
@@ -128,7 +122,7 @@ struct ActivityTests {
     #expect(piles.map { $0.map(\.id) } == [["base", "child"], ["older-open"]])
   }
 
-  @Test func anOldPRThatNeedsYouDoesNotOutrankTodaysWork() {
+  @Test func oldFailedChecksDoNotOutrankTodaysWork() {
     func make(_ id: String, _ repository: String, days: Double) -> PullRequest {
       var request = pr(id, updated: days * 86_400)
       request.repository = repository
@@ -146,8 +140,6 @@ struct ActivityTests {
     let sections = PRGrouping.repositories(
       [stale, draft, merged, quiet], window: .month, now: now, calendar: calendar)
     #expect(sections.map(\.repository) == ["b/busy", "c/quiet", "a/stale"])
-    // The badge still counts it.
-    #expect(sections[2].needsYou == 1)
   }
 
   @Test func repositoryOrderFollowsTheFilters() {
@@ -174,14 +166,14 @@ struct ActivityTests {
     #expect(drafts[0].counts.map(\.group) == [.open, .draft])
   }
 
-  @Test func prsWaitingOnYouLeadTheReadyForReviewColumn() {
+  @Test func openBoardColumnFollowsActivityTime() {
     let quiet = pr("quiet", updated: 0)
     var review = pr("review", updated: 600)
     review.reviewRequested = true
     let sections = PRGrouping.sections(
       [quiet, review], window: .month, now: now, calendar: calendar)
     #expect(sections.map(\.group) == [.open])
-    #expect(sections[0].pullRequests.map(\.id) == ["review", "quiet"])
+    #expect(sections[0].pullRequests.map(\.id) == ["quiet", "review"])
   }
 
   @Test func activityWindowUsesLocalDaysAndMergeTime() {

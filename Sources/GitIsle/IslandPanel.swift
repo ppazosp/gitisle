@@ -102,8 +102,35 @@ struct IslandMetrics: Equatable {
 }
 
 final class IslandPanel: NSPanel {
+  weak var activitySearchField: ActivitySearchTextField?
+  weak var activitySearchRegion: NSView?
+
   override var canBecomeKey: Bool { true }
   override var canBecomeMain: Bool { false }
+
+  override func sendEvent(_ event: NSEvent) {
+    let clickedOutsideSearch = Self.mouseDownEvents.contains(event.type) && !isSearchClick(event)
+    super.sendEvent(event)
+    // Let the click reach its control first. SwiftUI can move the first responder during dispatch.
+    if clickedOutsideSearch { activitySearchField?.endSearchEditing() }
+  }
+
+  override func resignKey() {
+    activitySearchField?.endSearchEditing()
+    super.resignKey()
+  }
+
+  fileprivate static let mouseDownEvents: Set<NSEvent.EventType> = [
+    .leftMouseDown, .rightMouseDown, .otherMouseDown,
+  ]
+
+  private func isSearchClick(_ event: NSEvent) -> Bool {
+    if let region = activitySearchRegion, region.window === self, !region.bounds.isEmpty {
+      return region.bounds.contains(region.convert(event.locationInWindow, from: nil))
+    }
+    guard let field = activitySearchField else { return false }
+    return field.bounds.contains(field.convert(event.locationInWindow, from: nil))
+  }
 }
 
 @MainActor final class IslandPanelController {
@@ -136,9 +163,14 @@ final class IslandPanel: NSPanel {
       .canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle,
     ]
     reposition()
-    mouseMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.mouseMoved, .leftMouseDragged]) {
-      [weak self] _ in
-      Task { @MainActor in self?.trackPointer() }
+    mouseMonitor = NSEvent.addGlobalMonitorForEvents(matching: [
+      .mouseMoved, .leftMouseDragged, .leftMouseDown, .rightMouseDown, .otherMouseDown,
+    ]) { [weak self] event in
+      let clicked = IslandPanel.mouseDownEvents.contains(event.type)
+      Task { @MainActor in
+        if clicked { self?.panel.activitySearchField?.endSearchEditing() }
+        self?.trackPointer()
+      }
     }
     localMouseMonitor = NSEvent.addLocalMonitorForEvents(matching: [
       .mouseMoved, .leftMouseDown, .keyDown,
@@ -225,6 +257,7 @@ final class IslandPanel: NSPanel {
     // The window keeps a fixed size; the island animates inside it without window resizes.
     host.sizingOptions = []
     panel.contentView = host
+    panel.initialFirstResponder = host
     placePanel(on: screen)
   }
 

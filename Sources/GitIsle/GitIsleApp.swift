@@ -77,6 +77,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     if let index = arguments.firstIndex(of: "--repos"), arguments.count > index + 1, store.isDemo {
       store.repositoryFilter = Set(arguments[index + 1].split(separator: ",").map(String.init))
     }
+    if store.isDemo, let index = arguments.firstIndex(of: "--activity-search"),
+      arguments.count > index + 1
+    {
+      store.activitySearch = arguments[index + 1]
+    }
     if arguments.contains("--repo-picker"), store.isDemo { store.repositoryPickerOpen = true }
     // `--dropdown <id>` opens a dropdown once its control is laid out.
     if let index = arguments.firstIndex(of: "--dropdown"), arguments.count > index + 1,

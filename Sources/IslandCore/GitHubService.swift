@@ -62,41 +62,31 @@ public actor GitHubService {
   public func fetch(selection: RepositorySelection, previous: GitHubSnapshot?) async throws
     -> GitHubSnapshot
   {
-    let query = """
-      query($search: String!, $after: String) {
-        viewer { login }
-        rateLimit { remaining resetAt }
-        search(query: $search, type: ISSUE, first: \(Self.searchPage), after: $after) {
-          nodes { ...PRFields }
-          pageInfo { hasNextPage endCursor }
-        }
-      }
-      \(Self.fields)
-      """
-    // Merged history covers the longest activity window, 30 days. It rarely changes, so between
-    // daily full sweeps only merges since the day before the last refresh are read.
     let now = Date()
-    let sameAccount = previous.map { $0.selection == selection.fingerprint } ?? false
-    let sweptAt = sameAccount ? previous?.mergedSweptAt : nil
-    let incremental = sweptAt.map { now.timeIntervalSince($0) < 86_400 } ?? false
-    let mergedFrom =
-      incremental
-      ? (previous?.fetchedAt ?? now).addingTimeInterval(-86_400)
-      : now.addingTimeInterval(-30 * 86_400)
-    let since = mergedFrom.formatted(.iso8601.year().month().day().dateSeparator(.dash))
+    let since = (previous?.mergedSweptAt ?? now).addingTimeInterval(-86_400)
+      .formatted(.iso8601.year().month().day().dateSeparator(.dash))
     let groups =
       Self.openSearches(selection)
       + [("merged", "is:pr is:merged author:@me merged:>=\(since) sort:updated-desc")]
+    var history: MergedHistory?
+    var openSearchProgress: [String: OpenSearchProgress] = [:]
     var login = ""
     var prs: [String: PullRequest] = [:]
     var limited = false
-    var mergedLimited = false
     var fingerprint: SearchFingerprint? = SearchFingerprint()
-    for (name, search) in groups {
+    for (name, recentSearch) in groups {
+      let isHistory = name == "merged"
+      if isHistory, previous?.login == login, previous?.selection == selection.fingerprint {
+        history = previous?.mergedHistory
+      }
+      let initialHistory = isHistory && history == nil
+      let search = initialHistory ? Self.mergedSearch : recentSearch
+      let pageCount = isHistory ? 1 : Self.searchPages
+      let query = Self.searchQuery(first: isHistory ? Self.mergedPageSize : Self.searchPage)
       var cursor: String?
       var seenCursors = Set<String>()
       var found = 0
-      for page in 0..<Self.searchPages {
+      for page in 0..<pageCount {
         var variables: [String: Any] = ["search": search]
         if let cursor { variables["after"] = cursor }
         let response = try await request(query: query, variables: variables)
@@ -124,15 +114,32 @@ public actor GitHubService {
         found += nodes.count
         // The one-point check sees one page per search; past that it can't stand in for this.
         if name != "merged", found > SearchFingerprint.pageSize { fingerprint = nil }
-        guard more else { break }
-        if page == Self.searchPages - 1 {
-          // Merged PRs are sorted newest first, so a cap keeps the most recent ones;
-          // that is history, not missing open work.
-          if name == "merged" { mergedLimited = true } else { limited = true }
+        if isHistory {
+          if initialHistory {
+            let next = more ? info["endCursor"] as? String : nil
+            guard !more || next != nil else {
+              throw ProcessFailure.failed("GitHub returned an invalid merge history cursor.")
+            }
+            history = MergedHistory(nextCursor: next)
+          }
           break
         }
+        guard more else { break }
         guard let next = info["endCursor"] as? String, seenCursors.insert(next).inserted else {
           throw ProcessFailure.failed("GitHub returned an invalid pagination cursor.")
+        }
+        if page == pageCount - 1 {
+          let saved = previous?.openSearchProgress?[name]
+          if previous?.login == login, previous?.selection == selection.fingerprint,
+            let saved, saved.pages > pageCount
+          {
+            openSearchProgress[name] = saved
+            limited = limited || saved.nextCursor != nil
+          } else {
+            openSearchProgress[name] = OpenSearchProgress(nextCursor: next, pages: pageCount)
+            limited = true
+          }
+          break
         }
         cursor = next
       }
@@ -159,13 +166,11 @@ public actor GitHubService {
           prs[pr.id] = pr
         }
       }
-      // Keep history from the same day the full sweep starts at, so a PR merged just over
-      // 30 days ago doesn't drop out between sweeps and come back.
-      let format = Date.ISO8601FormatStyle().year().month().day().dateSeparator(.dash)
-      let monthAgo = now.addingTimeInterval(-30 * 86_400)
-      let monthStart = (try? Date(monthAgo.formatted(format), strategy: format)) ?? monthAgo
-      for pr in previous.pullRequests where pr.state != "OPEN" && prs[pr.id] == nil {
-        if (pr.mergedAt ?? pr.updatedAt) >= monthStart { prs[pr.id] = pr }
+      // Older pages are added on demand and belong to this account.
+      if previous.mergedHistory != nil {
+        for pr in previous.pullRequests where pr.state == "MERGED" && prs[pr.id] == nil {
+          prs[pr.id] = pr
+        }
       }
     }
     // Searches don't read previews; keep those read for the same commit.
@@ -186,11 +191,63 @@ public actor GitHubService {
     return GitHubSnapshot(
       login: login, pullRequests: prs.values.sorted { $0.updatedAt > $1.updatedAt },
       selection: selection.fingerprint, isLimited: limited,
-      mergedLimited: incremental
-        ? (previous?.mergedLimited ?? false) || mergedLimited : mergedLimited,
-      // A different account behind gh needs its own full sweep next time.
-      mergedSweptAt: incremental ? (previous?.login == login ? sweptAt : nil) : now,
-      searchFingerprint: fingerprint)
+      mergedLimited: history?.nextCursor != nil, mergedSweptAt: now,
+      searchFingerprint: fingerprint, mergedHistory: history, openSearchProgress: openSearchProgress
+    )
+  }
+
+  /// The existing search fragment costs one point with 74 merges, and two with 75.
+  static let mergedPageSize = 74
+  private static let mergedSearch = "is:pr is:merged author:@me sort:updated-desc"
+
+  private static func searchQuery(first: Int) -> String {
+    """
+    query($search: String!, $after: String) {
+      viewer { login }
+      rateLimit { remaining resetAt }
+      search(query: $search, type: ISSUE, first: \(first), after: $after) {
+        nodes { ...PRFields }
+        pageInfo { hasNextPage endCursor }
+      }
+    }
+    \(fields)
+    """
+  }
+
+  public func morePullRequests(
+    after cursor: String, login: String, selection: RepositorySelection, openSearch: String? = nil
+  ) async throws
+    -> (pullRequests: [PullRequest], nextCursor: String?)
+  {
+    let searchQuery: String
+    if let openSearch {
+      guard let search = Self.openSearches(selection).first(where: { $0.0 == openSearch }) else {
+        throw ProcessFailure.failed("The repository list changed. Refresh and try again.")
+      }
+      searchQuery = search.1
+    } else {
+      searchQuery = Self.mergedSearch
+    }
+    let response = try await request(
+      query: Self.searchQuery(first: Self.mergedPageSize),
+      variables: ["search": searchQuery, "after": cursor])
+    guard let data = response["data"] as? [String: Any],
+      (data["viewer"] as? [String: Any])?["login"] as? String == login,
+      let search = data["search"] as? [String: Any],
+      let nodes = search["nodes"] as? [[String: Any]],
+      let info = search["pageInfo"] as? [String: Any],
+      let more = info["hasNextPage"] as? Bool
+    else { throw ProcessFailure.failed("GitHub couldn't read more pull requests.") }
+    let next = more ? info["endCursor"] as? String : nil
+    guard !more || (next != nil && next != cursor) else {
+      throw ProcessFailure.failed("GitHub returned an invalid pagination cursor.")
+    }
+    let pulls = try nodes.map { node in
+      var pr = try Self.decode(node)
+      pr.reviewRequested = openSearch == "reviews"
+      return pr
+    }
+    return (pulls, next)
   }
 
   /// Search pages of 50 cost one point each where 100 cost two, and most searches fit in one.
