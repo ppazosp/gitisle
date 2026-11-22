@@ -21,6 +21,12 @@ private actor RecordingTransport {
   }
   /// The search strings sent, in order.
   func searches() -> [String] { variables().compactMap { $0["search"] as? String } }
+  func cursors() -> [String] { variables().compactMap { $0["after"] as? String } }
+  func queries() -> [String] {
+    requests.compactMap {
+      (try? JSONSerialization.jsonObject(with: $0) as? [String: Any])?["query"] as? String
+    }
+  }
   /// The PR IDs sent with the first request.
   func ids() -> [String]? { variables().first?["ids"] as? [String] }
   enum Failure: Error { case exhausted }
@@ -38,12 +44,17 @@ struct TrackedRefreshTests {
     ]
   }
 
-  private func page(_ rows: [[String: Any]], remaining: Int = 4_900) throws -> Data {
-    try JSONSerialization.data(withJSONObject: [
+  private func page(_ rows: [[String: Any]], remaining: Int = 4_900, cursor: String? = nil)
+    throws -> Data
+  {
+    let pageInfo: [String: Any] = [
+      "hasNextPage": cursor != nil, "endCursor": cursor as Any? ?? NSNull(),
+    ]
+    return try JSONSerialization.data(withJSONObject: [
       "data": [
         "viewer": ["login": "person"],
         "rateLimit": ["remaining": remaining, "resetAt": "2026-10-12T20:00:00Z"],
-        "search": ["nodes": rows, "pageInfo": ["hasNextPage": false, "endCursor": NSNull()]],
+        "search": ["nodes": rows, "pageInfo": pageInfo],
       ]
     ])
   }
@@ -106,7 +117,8 @@ struct TrackedRefreshTests {
     let swept = now.addingTimeInterval(-3_600)
     let previous = GitHubSnapshot(
       login: "person", pullRequests: [old], fetchedAt: now.addingTimeInterval(-60),
-      selection: try RepositorySelection(text: "").fingerprint, mergedSweptAt: swept)
+      selection: try RepositorySelection(text: "").fingerprint, mergedSweptAt: swept,
+      mergedHistory: MergedHistory(nextCursor: "cached-older"))
     let result = try await service.fetch(
       selection: RepositorySelection(text: ""), previous: previous)
     let searches = await transport.searches()
@@ -114,21 +126,54 @@ struct TrackedRefreshTests {
       .iso8601.year().month().day().dateSeparator(.dash))
     #expect(searches.contains { $0.contains("is:merged") && $0.contains("merged:>=\(yesterday)") })
     #expect(result.pullRequests.contains { $0.id == "old" })
-    #expect(result.mergedSweptAt == swept)
+    #expect(result.mergedHistory?.nextCursor == "cached-older")
   }
 
-  @Test func staleSweepReadsTheFullMonth() async throws {
-    let transport = RecordingTransport([try page([]), try page([]), try page([])])
+  @Test func firstHistoryPageUses74AndOlderPageAdvancesTheCursor() async throws {
+    let transport = RecordingTransport([
+      try page([]), try page([]),
+      try page([row("recent", state: "MERGED")], cursor: "history-2"),
+      try page([row("older", state: "MERGED")], cursor: "history-3"),
+    ])
     let service = GitHubService(transport: { try await transport.send($0) })
-    let previous = GitHubSnapshot(
-      login: "person", pullRequests: [], selection: try RepositorySelection(text: "").fingerprint,
-      mergedSweptAt: now.addingTimeInterval(-2 * 86_400))
-    let result = try await service.fetch(
-      selection: RepositorySelection(text: ""), previous: previous)
+    let snapshot = try await service.fetch(selection: RepositorySelection(text: ""), previous: nil)
     let searches = await transport.searches()
-    let month = now.addingTimeInterval(-30 * 86_400).formatted(
-      .iso8601.year().month().day().dateSeparator(.dash))
-    #expect(searches.contains { $0.contains("merged:>=\(month)") })
-    #expect(result.mergedSweptAt.map { abs($0.timeIntervalSince(now)) < 60 } == true)
+    #expect(searches.count == 3)
+    #expect(searches.last == "is:pr is:merged author:@me sort:updated-desc")
+    #expect(snapshot.pullRequests.map(\.id) == ["recent"])
+    let cursor = try #require(snapshot.mergedHistory?.nextCursor)
+    #expect(cursor == "history-2")
+    let older = try await service.morePullRequests(
+      after: cursor, login: "person", selection: RepositorySelection(text: ""))
+    #expect(older.pullRequests.map(\.id) == ["older"])
+    #expect(older.nextCursor == "history-3")
+    #expect(await transport.cursors() == ["history-2"])
+    let queries = await transport.queries()
+    #expect(queries.count == 4)
+    #expect(queries.prefix(2).allSatisfy { $0.contains("first: 50") })
+    #expect(queries.suffix(2).allSatisfy { $0.contains("first: 74") })
+  }
+
+  @Test func cappedReviewSearchCanFetchAnotherPage() async throws {
+    let selection = try RepositorySelection(text: "")
+    let reviewPages = try (1...GitHubService.searchPages).map { index in
+      try page([row("review-\(index)")], cursor: "page-\(index + 1)")
+    }
+    let transport = RecordingTransport(
+      [try page([])] + reviewPages + [try page([]), try page([row("more-review")])])
+    let service = GitHubService(transport: { try await transport.send($0) })
+    let snapshot = try await service.fetch(selection: selection, previous: nil)
+    let progress = try #require(snapshot.openSearchProgress?["reviews"])
+    let cursor = try #require(progress.nextCursor)
+    #expect(progress.pages == GitHubService.searchPages)
+    #expect(cursor == "page-9")
+    let next = try await service.morePullRequests(
+      after: cursor, login: "person", selection: selection, openSearch: "reviews")
+    #expect(next.pullRequests.map(\.id) == ["more-review"])
+    #expect(next.pullRequests.first?.reviewRequested == true)
+    #expect(next.nextCursor == nil)
+    #expect(await transport.searches().last == "is:pr is:open review-requested:@me")
+    #expect(await transport.cursors().last == "page-9")
+    #expect(await transport.queries().last?.contains("first: 74") == true)
   }
 }

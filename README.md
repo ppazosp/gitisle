@@ -21,7 +21,7 @@
 
 GitIsle is a native macOS app that turns your Mac's notch into a live view of
 your GitHub pull requests. It stays invisible until something happens, then
-shows what's merging, which checks are running, and what needs you.
+shows what's merging, which checks are running, and which PRs need review.
 
 - **Invisible at rest.** With nothing going on, the island is just the notch.
 - **Live work.** While your PRs merge or run checks, the island shows their
@@ -37,8 +37,9 @@ shows what's merging, which checks are running, and what needs you.
 - **Checks at a glance.** Rest on a check ring to see which checks are running,
   passed, or failed, the merge queue's too, and click one for its log.
 - **Activity.** Hover to open your PRs by repository, or as a board of GitHub
-  states: draft, open, merging, merged. Filter by state, by what needs you,
-  by repository, and by today, 7 days, or 30 days.
+  states: draft, open, merging, merged. Search by title, repository, or PR number.
+  Click a state to toggle it, or right-click to show only that state. Use
+  **Load more PRs** to see more results.
 
 GitIsle only reads from GitHub. It never merges, reviews, comments, or marks
 notifications as read.
@@ -131,8 +132,6 @@ notifications, which events to announce, and launch at login.
   minutes without keyboard or mouse input. While a PR is active this uses
   about 9% of your hourly GitHub API budget, and under 2% otherwise. On an
   error, the last snapshot stays on screen marked as cached.
-- **Needs you** flags open PRs with a review request, failed checks, conflicts,
-  requested changes, or that are ready to merge, behind, or blocked.
 
 ## Privacy
 

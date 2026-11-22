@@ -11,6 +11,8 @@ final class IslandStore {
   private(set) var github: GitHubSnapshot?
   var githubError: String?
   var githubRefreshing = false
+  private(set) var loadingMorePRs = false
+  private(set) var morePRsError: String?
   var events: [IslandEvent] = []
   var recentEvent: IslandEvent?
   /// How long a banner shows.
@@ -41,16 +43,12 @@ final class IslandStore {
   @ObservationIgnored var menuOpen = false
   /// A recorded tour drives the island itself; the pointer must not open or close it.
   @ObservationIgnored private var touring = false
-  var activityWindow: ActivityWindow = .month {
-    didSet { if activityWindow != oldValue { regroupActivity() } }
-  }
   var hovered = false
   var persistenceError: String?
   var isDemo: Bool
 
   // Derived once per GitHub snapshot so rendering never re-filters the PR list.
   private(set) var openPRs: [PullRequest] = []
-  private(set) var attention: [PullRequest] = []
   /// Your PRs that are merging, and your PRs with checks running. These make the island live.
   private(set) var merging: [PullRequest] = []
   private(set) var checking: [PullRequest] = []
@@ -342,14 +340,12 @@ final class IslandStore {
     }
     lastActiveRefresh = .distantPast
   }
-  /// PR counts per state after the repository and time filters, for the state filter bar.
+  /// PR counts per state after the repository filter and search, for the state filter bar.
   private(set) var stateCounts: [StateCount] = []
-  /// PRs that need you after the repository and time filters, for the filter bar.
-  private(set) var needsYouCount = 0
-  /// Shows only PRs that need you; combines with `stateFilter`.
-  var needsYouOnly = false {
-    didSet { if needsYouOnly != oldValue { regroupActivity() } }
+  var activitySearch = "" {
+    didSet { if activitySearch != oldValue { regroupActivity() } }
   }
+  var activityQuery: String { activitySearch.trimmingCharacters(in: .whitespacesAndNewlines) }
   private var selectedStates: Set<PRGroup> = []
   /// All is stored as an empty set so there is one unfiltered state.
   var stateFilter: Set<PRGroup> {
@@ -622,7 +618,6 @@ final class IslandStore {
     openPRs = open
     let links = PRStacks.links(all)
     if links != stackLinks { stackLinks = links }
-    attention = open.filter(\.needsYou)
     // The live bar follows the repository filter.
     let mine = open.filter {
       $0.author != nil && $0.author == github?.login && shows($0.repository)
@@ -657,41 +652,36 @@ final class IslandStore {
   private func regroupActivity() {
     let all = github?.pullRequests ?? []
     let scoped = repositoryFilter.isEmpty ? all : all.filter { shows($0.repository) }
-    let fresh = PRGrouping.repositories(
-      scoped, window: activityWindow, states: stateFilter, needsYouOnly: needsYouOnly)
+    let query = activityQuery
+    let numberQuery = query.first == "#" ? String(query.dropFirst()) : query
+    let matches =
+      query.isEmpty
+      ? scoped
+      : scoped.filter {
+        $0.title.localizedStandardContains(query)
+          || $0.repository.localizedStandardContains(query)
+          || String($0.number).hasPrefix(numberQuery)
+      }
+    let fresh = PRGrouping.repositories(matches, window: nil, states: stateFilter)
     if fresh != repositories { repositories = fresh }
-    let unfiltered = PRGrouping.sections(scoped, window: activityWindow)
-    // Each filter counts what the other one leaves, so an empty combination is never offered.
-    let counts = unfiltered.map { section in
-      StateCount(
-        group: section.group,
-        count: needsYouOnly
-          ? section.pullRequests.count(where: \.needsYou) : section.pullRequests.count)
-    }
+    let unfiltered = PRGrouping.sections(matches, window: nil)
+    let counts = unfiltered.map { StateCount(group: $0.group, count: $0.pullRequests.count) }
     if counts != stateCounts { stateCounts = counts }
-    let attention =
-      unfiltered
-      .filter { stateFilter.isEmpty || stateFilter.contains($0.group) }
-      .reduce(0) { $0 + $1.pullRequests.count(where: \.needsYou) }
-    if attention != needsYouCount { needsYouCount = attention }
-    let columns = unfiltered.compactMap { section -> PRSection? in
-      guard stateFilter.isEmpty || stateFilter.contains(section.group) else { return nil }
-      guard needsYouOnly else { return section }
-      let shown = section.pullRequests.filter(\.needsYou)
-      return shown.isEmpty ? nil : PRSection(group: section.group, pullRequests: shown)
-    }
+    let columns =
+      stateFilter.isEmpty
+      ? unfiltered
+      : unfiltered.filter {
+        stateFilter.contains($0.group)
+      }
     if columns != sections { sections = columns }
   }
 
   func toggleState(_ group: PRGroup) {
-    var selected = stateFilter
-    if selected.remove(group) == nil { selected.insert(group) }
-    stateFilter = selected
-  }
-
-  func excludeState(_ group: PRGroup) {
-    guard stateFilter.isEmpty else { return }
-    stateFilter = Set(PRGroup.allCases.filter { $0 != group })
+    if stateFilter.contains(group) {
+      stateFilter.remove(group)
+    } else {
+      stateFilter.insert(group)
+    }
   }
 
   func toggleCollapsed(_ repository: String) {
@@ -834,6 +824,99 @@ final class IslandStore {
       githubError = nil
     } catch {
       githubError = error.localizedDescription
+      await pace(after: error)
+    }
+  }
+
+  private struct PRPageSource {
+    var cursor: String
+    var openSearch: String?
+  }
+
+  func canLoadMorePRs(in group: PRGroup? = nil) -> Bool {
+    guard let github else { return false }
+    return nextPRPage(in: group, snapshot: github) != nil
+  }
+
+  private func nextPRPage(in group: PRGroup?, snapshot: GitHubSnapshot) -> PRPageSource? {
+    let groups = group.map { Set([$0]) } ?? stateFilter
+    if groups.isEmpty || groups.contains(where: { $0 != .merged }),
+      let searches = snapshot.openSearchProgress,
+      let name = searches.keys.filter({ searches[$0]?.nextCursor != nil }).min(by: {
+        (searches[$0]?.pages ?? 0, $0) < (searches[$1]?.pages ?? 0, $1)
+      }), let cursor = searches[name]?.nextCursor
+    {
+      return PRPageSource(cursor: cursor, openSearch: name)
+    }
+    if groups.isEmpty || groups.contains(.merged), let cursor = snapshot.mergedHistory?.nextCursor {
+      return PRPageSource(cursor: cursor)
+    }
+    return nil
+  }
+
+  func loadMorePRs(in group: PRGroup? = nil) async {
+    guard !githubRefreshing, var snapshot = github,
+      let source = nextPRPage(in: group, snapshot: snapshot)
+    else { return }
+    loadingMorePRs = true
+    githubRefreshing = true
+    morePRsError = nil
+    defer {
+      loadingMorePRs = false
+      githubRefreshing = false
+    }
+    if isDemo {
+      if var example = snapshot.pullRequests.first(where: { $0.state == "MERGED" }) {
+        example.id = "demo-older-merge"
+        example.number = 399
+        example.title = "Archive the release dashboard"
+        example.mergedAt = Date().addingTimeInterval(-40 * 86_400)
+        snapshot.pullRequests.append(example)
+      }
+      snapshot.mergedHistory = MergedHistory(nextCursor: nil)
+      setGitHub(snapshot)
+      return
+    }
+    do {
+      let selection = try RepositorySelection(text: settings.repositories)
+      guard selection.fingerprint == snapshot.selection else { return }
+      let page = try await githubService.morePullRequests(
+        after: source.cursor, login: snapshot.login, selection: selection,
+        openSearch: source.openSearch)
+      await pace()
+      guard var latest = github, latest.login == snapshot.login,
+        latest.selection == snapshot.selection,
+        (try? RepositorySelection(text: settings.repositories).fingerprint) == latest.selection
+      else { return }
+      if let name = source.openSearch {
+        guard var searches = latest.openSearchProgress, let progress = searches[name],
+          progress.nextCursor == source.cursor
+        else { return }
+        searches[name] = OpenSearchProgress(nextCursor: page.nextCursor, pages: progress.pages + 1)
+        latest.openSearchProgress = searches
+        latest.isLimited = searches.values.contains { $0.nextCursor != nil }
+      } else {
+        guard latest.mergedHistory?.nextCursor == source.cursor else { return }
+        latest.mergedHistory = MergedHistory(nextCursor: page.nextCursor)
+        latest.mergedLimited = page.nextCursor != nil
+      }
+      var known = Dictionary(
+        latest.pullRequests.enumerated().map { ($0.element.id, $0.offset) },
+        uniquingKeysWith: { first, _ in first })
+      for pr in page.pullRequests {
+        if let index = known[pr.id] {
+          if pr.reviewRequested { latest.pullRequests[index].reviewRequested = true }
+        } else {
+          known[pr.id] = latest.pullRequests.count
+          latest.pullRequests.append(pr)
+        }
+      }
+      let paged = MergeTiming.stamped(latest, previous: github)
+      try JSONEncoder().encode(paged).write(to: AppFiles.snapshot, options: .atomic)
+      // Paging should not produce live announcements or mark the snapshot refreshed.
+      setGitHub(paged)
+    } catch {
+      morePRsError = error.localizedDescription
       await pace(after: error)
     }
   }
@@ -1195,13 +1278,13 @@ final class IslandStore {
           // Live pill, then a merge banner that grows out of it.
           if let merged { try await step(3.0) { self?.showEvent(merged) } }
           try await step(3.2) { self?.recentEvent = nil }
-          // Open the island on the PR list, filter to what needs you, then back.
+          // Open the list, run a search, then switch to the board.
           try await step(1.4) {
             self?.activityLayout = .list
             self?.expanded = true
           }
-          try await step(2.6) { self?.needsYouOnly = true }
-          try await step(1.8) { self?.needsYouOnly = false }
+          try await step(2.6) { self?.activitySearch = "cache" }
+          try await step(1.8) { self?.activitySearch = "" }
           try await step(1.4) { self?.activityLayout = .board }
           try await step(2.8) { self?.expanded = false }
           if let failed { try await step(1.6) { self?.showEvent(failed) } }
@@ -1502,7 +1585,10 @@ final class IslandStore {
       (pr.additions, pr.deletions, pr.changedFiles, pr.commitCount) = (342, 61, 9, 6)
       return pr
     }
-    setGitHub(GitHubSnapshot(login: "maya", pullRequests: branched))
+    setGitHub(
+      GitHubSnapshot(
+        login: "maya", pullRequests: branched,
+        mergedHistory: MergedHistory(nextCursor: "demo-older")))
     // Recent notifications, newest first, for the open island's inbox.
     let recent: [(PRStatus, Double)] = [
       (.merged, 3), (.failed, 5), (.previewReady, 7), (.review, 20), (.opened, 26),

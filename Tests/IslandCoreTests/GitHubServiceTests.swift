@@ -61,9 +61,10 @@ struct GitHubServiceTests {
     // Merged history isn't part of the one-point check.
     #expect(fingerprint.entries.keys.sorted() == ["mine", "review"])
     #expect(fingerprint.found("mine", by: "mine") && fingerprint.found("mine", by: "reviews"))
-    // Pages of 50 cost GitHub one point; pages of 100 cost two.
     let sent = await fixture.sent
-    #expect(sent.count == 3 && sent.allSatisfy { $0.contains("first: 50") })
+    #expect(sent.count == 3)
+    #expect(sent.filter { $0.contains("first: 50") }.count == 2)
+    #expect(sent.filter { $0.contains("first: 74") }.count == 1)
   }
 
   @Test func aSearchTooBigForOneCheckLeavesNoFingerprint() async throws {

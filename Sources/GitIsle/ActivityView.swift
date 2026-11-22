@@ -6,6 +6,9 @@ extension EnvironmentValues {
   @Entry var activityHeightLimit: CGFloat = .infinity
 }
 
+private let activityListInsets = EdgeInsets(top: 8, leading: 14, bottom: 4, trailing: 14)
+private let activityPreviewLimit = 8
+
 struct ActivityView: View {
   let store: IslandStore
   @Binding var contentHeight: CGFloat
@@ -23,8 +26,7 @@ struct ActivityView: View {
     // Lay out the new content once. The island animates to that size.
     .transaction(
       value: ActivityFilters(
-        layout: store.activityLayout, states: store.stateFilter, needsYou: store.needsYouOnly,
-        window: store.activityWindow,
+        layout: store.activityLayout, states: store.stateFilter, query: store.activityQuery,
         repositories: store.repositoryFilter)
     ) { transaction in
       transaction.animation = nil
@@ -42,31 +44,33 @@ private struct ActivityList: View {
   let store: IslandStore
   @Binding var contentHeight: CGFloat
   let heightLimit: CGFloat
-  @State private var expandedMerged: Set<String> = []
+  @State private var showsAllPRs = false
 
   private enum Row: Identifiable {
     enum ID: Hashable {
       case header(String)
       case pile(String)
-      case more(String)
     }
 
     case header(RepoSection, collapsed: Bool, separated: Bool)
     case pile([PullRequest], bottom: PullRequest, trailingSpace: Bool)
-    case more(repository: String, count: Int)
 
     var id: ID {
       switch self {
       case .header(let section, _, _): .header(section.id)
       case .pile(_, let bottom, _): .pile(bottom.id)
-      case .more(let repository, _): .more(repository)
       }
     }
   }
 
   var body: some View {
-    let rows = store.repositories.enumerated().flatMap { index, section in
+    let sections = store.repositories.enumerated().map { index, section in
       self.rows(for: section, separated: index > 0)
+    }
+    let rows = sections.flatMap(\.rows)
+    let hasHiddenPRs = sections.contains { $0.hasHiddenPRs }
+    let hasExpandedRepo = store.repositories.contains {
+      !store.collapsedRepositories.contains($0.id)
     }
     // Count only the rows that are actually shown. At this lower bound the list
     // already fills the island, so it can scroll without measuring every row.
@@ -75,50 +79,55 @@ private struct ActivityList: View {
       case .header: count + 1
       case .pile(let pile, let bottom, _):
         count + (store.foldedStacks.contains(bottom.id) ? 1 : pile.count)
-      case .more: count
       }
     }
     MeasuredColumn(fixedHeight: CGFloat(rowCount) * 36 >= heightLimit ? heightLimit : nil) {
       LazyVStack(alignment: .leading, spacing: 0) {
         notices
         if store.github != nil && store.repositories.isEmpty {
-          EmptyState(
-            glyph: .checkFill,
-            text: !store.stateFilter.isEmpty || store.needsYouOnly
-              ? "No PRs match these filters"
-              : store.activityWindow == .month
-                ? "You're all caught up" : "No PR activity \(windowPhrase)")
+          ActivityEmptyState(store: store)
         }
         ForEach(rows) { item in
           // One view per item gives the lazy stack stable scroll positions across repositories.
           VStack(spacing: 0) { row(item) }
         }
+        if hasExpandedRepo && (hasHiddenPRs || store.canLoadMorePRs()) {
+          MorePRsRow(store: store, hasHiddenPRs: hasHiddenPRs) {
+            withAnimation(Motion.snappy) { showsAllPRs = true }
+          }
+          .padding(.horizontal, 8).padding(.bottom, 4)
+        }
       }
-      .padding(.horizontal, 14).padding(.top, 8).padding(.bottom, 4)
+      .padding(activityListInsets)
     } onHeight: {
       contentHeight = $0
     }
     .animation(Motion.snappy, value: store.repositories)
   }
 
-  private func rows(for section: RepoSection, separated: Bool) -> [Row] {
+  private func rows(for section: RepoSection, separated: Bool) -> (
+    rows: [Row], hasHiddenPRs: Bool
+  ) {
     let collapsed = store.collapsedRepositories.contains(section.id)
     var rows: [Row] = [.header(section, collapsed: collapsed, separated: separated)]
-    guard !collapsed else { return rows }
-    let showAll =
-      !store.stateFilter.isEmpty || store.needsYouOnly
-      || expandedMerged.contains(section.id)
-    let visible = showAll ? section.pullRequests : newestMergesAndOpen(section.pullRequests)
-    let hidden = section.pullRequests.count - visible.count
-    let piles = PRStacks.piles(visible, links: store.stackLinks)
-    for (index, pile) in piles.enumerated() {
+    guard !collapsed else { return (rows, false) }
+    let piles = PRStacks.piles(section.pullRequests, links: store.stackLinks)
+    var shownByState: [PRGroup: Int] = [:]
+    let visible =
+      showsAllPRs
+      ? piles
+      : piles.filter { pile in
+        guard let state = pile.first?.group else { return false }
+        shownByState[state, default: 0] += 1
+        return shownByState[state, default: 0] <= activityPreviewLimit
+      }
+    for (index, pile) in visible.enumerated() {
       if let bottom = pile.first {
         rows.append(
-          .pile(pile, bottom: bottom, trailingSpace: hidden == 0 && index == piles.count - 1))
+          .pile(pile, bottom: bottom, trailingSpace: index == visible.count - 1))
       }
     }
-    if hidden > 0 { rows.append(.more(repository: section.id, count: hidden)) }
-    return rows
+    return (rows, visible.count < piles.count)
   }
 
   @ViewBuilder private func row(_ item: Row) -> some View {
@@ -139,36 +148,12 @@ private struct ActivityList: View {
       }
       .padding(.bottom, trailingSpace ? 8 : 0)
       .transition(.opacity)
-    case .more(let repository, let count):
-      ShowMoreButton(hidden: count) {
-        withAnimation(Motion.snappy) { _ = expandedMerged.insert(repository) }
-      }
-      .padding(.horizontal, 8).padding(.top, 2).padding(.bottom, 8)
     }
-  }
-
-  /// Merged PRs are history. Show a few alongside current work until asked for more.
-  private func newestMergesAndOpen(_ pulls: [PullRequest]) -> [PullRequest] {
-    var merged = 0
-    return pulls.filter { pr in
-      guard pr.group == .merged else { return true }
-      merged += 1
-      return merged <= 5
-    }
-  }
-
-  private var windowPhrase: String {
-    store.activityWindow == .today ? "today" : "in the last \(store.activityWindow.days) days"
   }
 
   @ViewBuilder private var notices: some View {
     if let error = store.githubError {
       Notice(text: error)
-    }
-    if store.github?.isLimited == true {
-      Notice(
-        text:
-          "Showing the first 400 PRs in each group. Narrow the watched repositories in Settings.")
     }
   }
 }
@@ -176,8 +161,7 @@ private struct ActivityList: View {
 private struct ActivityFilters: Equatable {
   let layout: IslandStore.ActivityLayout
   let states: Set<PRGroup>
-  let needsYou: Bool
-  let window: ActivityWindow
+  let query: String
   let repositories: Set<String>
 }
 
@@ -192,15 +176,76 @@ private struct Notice: View {
   }
 }
 
-private struct EmptyState: View {
-  let glyph: Glyph
-  let text: String
+private struct ActivityEmptyState: View {
+  let store: IslandStore
+
   var body: some View {
-    HStack(spacing: 8) {
-      GlyphView(glyph: glyph, size: 14).foregroundStyle(Palette.open)
-      Text(text).font(.system(size: 12.5)).foregroundStyle(.white.opacity(0.6))
+    let searching = !store.activityQuery.isEmpty
+    VStack(spacing: 0) {
+      Group {
+        if searching {
+          Label("No matching PRs", systemImage: "xmark.circle")
+            .font(.system(size: 12)).foregroundStyle(.white.opacity(0.58))
+        } else {
+          HStack(spacing: 8) {
+            GlyphView(glyph: .checkFill, size: 14).foregroundStyle(Palette.open)
+            Text(store.stateFilter.isEmpty ? "You're all caught up" : "No PRs match these filters")
+              .font(.system(size: 12.5)).foregroundStyle(.white.opacity(0.7))
+          }
+        }
+      }
+      .frame(maxWidth: .infinity)
+      .padding(.vertical, searching ? 18 : 22)
+      if store.canLoadMorePRs() {
+        MorePRsRow(store: store)
+          .padding(.horizontal, 8)
+          .padding(.vertical, 5)
+      }
     }
-    .frame(maxWidth: .infinity).padding(.vertical, 22)
+  }
+}
+
+private struct MorePRsRow: View {
+  let store: IslandStore
+  var group: PRGroup?
+  var hasHiddenPRs = false
+  var reveal: (() -> Void)?
+  @State private var hovered = false
+
+  var body: some View {
+    let loading = store.loadingMorePRs && !hasHiddenPRs
+    VStack(spacing: 4) {
+      Button {
+        reveal?()
+        if !hasHiddenPRs { Task { await store.loadMorePRs(in: group) } }
+      } label: {
+        HStack(spacing: 6) {
+          Text(loading ? "Loading…" : "Load more PRs").lineLimit(1)
+          if loading {
+            ProgressView().controlSize(.mini)
+          } else {
+            GlyphView(glyph: .chevronDown, size: 9)
+          }
+        }
+        .font(.system(size: 11, weight: .medium))
+        .foregroundStyle(.white.opacity(hovered ? 0.95 : 0.7))
+        .padding(.horizontal, 10)
+        .frame(maxWidth: .infinity)
+        .frame(height: 26)
+        .background(RoundedRectangle(cornerRadius: 6).fill(.white.opacity(hovered ? 0.06 : 0)))
+        .contentShape(Rectangle())
+      }
+      .buttonStyle(.plain)
+      .onHover { hovered = $0 }
+      .disabled(!hasHiddenPRs && store.githubRefreshing)
+      .help(
+        hasHiddenPRs ? "Show more loaded pull requests" : "Fetch more pull requests from GitHub")
+      if !hasHiddenPRs, let error = store.morePRsError {
+        Text(error).font(.system(size: 11)).foregroundStyle(Palette.attention)
+          .lineLimit(2)
+      }
+    }
+    .frame(maxWidth: .infinity)
   }
 }
 
@@ -223,28 +268,19 @@ private struct RepositoryHeader: View {
           + Text(verbatim: section.name).foregroundStyle(.white))
           .font(.system(size: 13, weight: .semibold)).lineLimit(1)
         Spacer(minLength: 12)
-        if section.needsYou > 0 {
-          HStack(spacing: 4) {
-            GlyphView(glyph: .eye, size: 11)
-            Text("\(section.needsYou)").monospacedDigit()
+        ForEach(PRGroup.boardOrder, id: \.self) { group in
+          if let item = section.counts.first(where: { $0.group == group }) {
+            HStack(spacing: 4) {
+              GlyphView(glyph: group.glyph, size: 11)
+              Text("\(item.count)").monospacedDigit()
+                .contentTransition(.numericText(value: Double(item.count)))
+            }
+            .font(.system(size: 11, weight: .semibold))
+            .foregroundStyle(group.color)
+            .padding(.horizontal, 7).padding(.vertical, 3)
+            .background(Capsule().fill(group.color.opacity(0.13)))
+            .help("\(item.count) \(group.label.lowercased())")
           }
-          .font(.system(size: 11, weight: .semibold))
-          .foregroundStyle(Palette.attention)
-          .padding(.horizontal, 7).padding(.vertical, 3)
-          .background(Capsule().fill(Palette.attention.opacity(0.13)))
-          .help("\(section.needsYou) need you")
-        }
-        ForEach(section.counts, id: \.group) { item in
-          HStack(spacing: 4) {
-            GlyphView(glyph: item.group.glyph, size: 11)
-            Text("\(item.count)").monospacedDigit()
-              .contentTransition(.numericText(value: Double(item.count)))
-          }
-          .font(.system(size: 11, weight: .semibold))
-          .foregroundStyle(item.group.color)
-          .padding(.horizontal, 7).padding(.vertical, 3)
-          .background(Capsule().fill(item.group.color.opacity(0.13)))
-          .help("\(item.count) \(item.group.label.lowercased())")
         }
         GlyphView(glyph: .chevronDown, size: 12).foregroundStyle(.white.opacity(0.45))
           .rotationEffect(.degrees(collapsed ? -90 : 0))
@@ -268,39 +304,32 @@ private struct RepositoryHeader: View {
   }
 }
 
-/// State filters for Activity, shared by the list and the board. Pressing a state shows
-/// only PRs in it; pressing again clears it, and several states combine.
+/// State filters shared by List and Board. Click to toggle, or secondary-click to isolate.
 struct StateFilterBar: View {
-  let store: IslandStore
+  @Bindable var store: IslandStore
 
   var body: some View {
-    let canExclude =
-      store.stateFilter.isEmpty && !store.repositoryPickerOpen
-      && store.dropdown == nil && store.checksPreview == nil
+    let canIsolate =
+      !store.repositoryPickerOpen && store.dropdown == nil && store.checksPreview == nil
     HStack(spacing: 6) {
-      NeedsYouChip(
-        count: store.needsYouCount, selected: store.needsYouOnly
-      ) {
-        store.needsYouOnly.toggle()
-      }
+      ActivitySearchField(query: $store.activitySearch, expanded: store.expanded)
       Rectangle().fill(Palette.hairline).frame(width: 1, height: 16).padding(.horizontal, 2)
       ForEach(PRGroup.boardOrder, id: \.self) { group in
         let count = store.stateCounts.first { $0.group == group }?.count ?? 0
         let selected = store.stateFilter.contains(group)
-        // Merged history is capped at the newest 400; say so rather than undercount.
         let capped =
-          group == .merged && store.github?.mergedLimited == true && store.activityWindow == .month
+          group == .merged && store.activityQuery.isEmpty
+          && store.repositoryFilter.isEmpty && store.github?.mergedHistory?.nextCursor != nil
         StateChip(
           group: group, count: count, capped: capped, selected: selected,
           dimmed: !store.stateFilter.isEmpty && !selected,
           action: { store.toggleState(group) },
-          exclude: canExclude ? { store.excludeState(group) } : nil)
+          isolate: canIsolate ? { store.stateFilter = [group] } : nil)
       }
       Spacer(minLength: 4)
-      if !store.stateFilter.isEmpty || store.needsYouOnly {
+      if !store.stateFilter.isEmpty {
         Button {
           store.stateFilter = []
-          store.needsYouOnly = false
         } label: {
           Image(systemName: "xmark").font(.system(size: 9, weight: .bold))
             .foregroundStyle(.white.opacity(0.6))
@@ -315,43 +344,160 @@ struct StateFilterBar: View {
       }
     }
     .animation(Motion.snappy, value: store.stateFilter)
-    .animation(Motion.snappy, value: store.needsYouOnly)
   }
 }
 
-/// Shows only PRs waiting on you, within whichever states are selected.
-private struct NeedsYouChip: View {
-  let count: Int
-  let selected: Bool
-  let action: () -> Void
+private struct ActivitySearchField: View {
+  @Binding var query: String
+  let expanded: Bool
+  @State private var focus = ActivitySearchFocus()
   @State private var hovered = false
 
   var body: some View {
-    Button(action: action) {
-      HStack(spacing: 5) {
-        GlyphView(glyph: .eye, size: 11)
-        Text("Needs you").lineLimit(1).fixedSize()
-        Text("\(count)").monospacedDigit().opacity(0.7)
-          .lineLimit(1).fixedSize()
-          .contentTransition(.numericText(value: Double(count)))
+    let capsule = Capsule()
+    HStack(spacing: 6) {
+      Button {
+        focus.beginEditing()
+      } label: {
+        Image(systemName: "magnifyingglass")
+          .font(.system(size: 11, weight: .medium))
       }
-      .font(.system(size: 11, weight: .semibold))
-      .foregroundStyle(Palette.attention)
-      .padding(.horizontal, 8).padding(.vertical, 4)
-      .background(
-        Capsule().fill(Palette.attention.opacity(selected ? 0.28 : hovered ? 0.2 : 0.11))
-      )
-      .overlay(
-        Capsule().inset(by: 0.5).stroke(
-          Palette.attention.opacity(selected ? 0.9 : 0), lineWidth: 1)
-      )
-      .contentShape(Capsule())
+      .buttonStyle(.plain)
+      .accessibilityHidden(true)
+      NativeActivitySearchInput(query: $query, focus: focus, expanded: expanded)
+        .frame(height: 15)
+      if !query.isEmpty {
+        Button {
+          query = ""
+        } label: {
+          Image(systemName: "xmark.circle.fill")
+            .font(.system(size: 10))
+            .frame(width: 12, height: 12)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Clear search")
+      }
     }
-    .buttonStyle(.plain)
-    .onHover { inside in withAnimation(.easeOut(duration: 0.12)) { hovered = inside } }
-    .help(selected ? "Show every PR" : "Show only PRs waiting on you")
-    .accessibilityLabel("Needs you, \(count)")
-    .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
+    .font(.system(size: 11, weight: .medium))
+    .foregroundStyle(.white.opacity(0.6))
+    .padding(.horizontal, 10)
+    .frame(width: 130, height: 24)
+    .background(capsule.fill(.white.opacity(query.isEmpty ? hovered ? 0.1 : 0.06 : 0.14)))
+    .background {
+      ActivitySearchRegion()
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+    }
+    .contentShape(capsule)
+    .onHover { hovered = $0 }
+  }
+}
+
+@MainActor private final class ActivitySearchFocus {
+  weak var field: NSTextField?
+
+  func beginEditing() {
+    guard let field, let window = field.window else { return }
+    window.makeKey()
+    window.makeFirstResponder(field)
+  }
+}
+
+final class ActivitySearchTextField: NSTextField {
+  override func viewDidMoveToWindow() {
+    super.viewDidMoveToWindow()
+    (window as? IslandPanel)?.activitySearchField = self
+  }
+
+  override func viewWillMove(toWindow newWindow: NSWindow?) {
+    if window !== newWindow {
+      endSearchEditing()
+      if let panel = window as? IslandPanel, panel.activitySearchField === self {
+        panel.activitySearchField = nil
+      }
+    }
+    super.viewWillMove(toWindow: newWindow)
+  }
+
+  func endSearchEditing() {
+    guard let window else { return }
+    if let editor = currentEditor() {
+      if window.firstResponder === editor { window.makeFirstResponder(nil) }
+      if currentEditor() === editor { window.endEditing(for: self) }
+    }
+    if window.firstResponder === self { window.makeFirstResponder(nil) }
+  }
+}
+
+private struct NativeActivitySearchInput: NSViewRepresentable {
+  @Binding var query: String
+  let focus: ActivitySearchFocus
+  let expanded: Bool
+
+  func makeCoordinator() -> Coordinator { Coordinator(query: $query) }
+
+  func makeNSView(context: Context) -> ActivitySearchTextField {
+    let field = ActivitySearchTextField()
+    let font = NSFont.systemFont(ofSize: 11, weight: .medium)
+    field.isEditable = true
+    field.isSelectable = true
+    field.isBordered = false
+    field.isBezeled = false
+    field.drawsBackground = false
+    field.focusRingType = .none
+    field.cell?.usesSingleLineMode = true
+    field.font = font
+    field.textColor = .white.withAlphaComponent(0.95)
+    field.placeholderAttributedString = NSAttributedString(
+      string: "Title, repo, #123",
+      attributes: [.font: font, .foregroundColor: NSColor.white.withAlphaComponent(0.6)])
+    field.setAccessibilityLabel("Search pull requests")
+    field.setAccessibilityHelp("Search by pull request title, repository, or number")
+    field.setContentHuggingPriority(.defaultLow, for: .horizontal)
+    field.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+    field.delegate = context.coordinator
+    focus.field = field
+    return field
+  }
+
+  func updateNSView(_ field: ActivitySearchTextField, context: Context) {
+    context.coordinator.query = $query
+    if let editor = field.currentEditor() {
+      if editor.string != query { editor.string = query }
+    } else if field.stringValue != query {
+      field.stringValue = query
+    }
+    if !expanded { field.endSearchEditing() }
+  }
+
+  static func dismantleNSView(_ field: ActivitySearchTextField, coordinator: Coordinator) {
+    field.endSearchEditing()
+  }
+
+  final class Coordinator: NSObject, NSTextFieldDelegate {
+    var query: Binding<String>
+
+    init(query: Binding<String>) {
+      self.query = query
+    }
+
+    func controlTextDidChange(_ notification: Notification) {
+      guard let field = notification.object as? NSTextField else { return }
+      query.wrappedValue = field.stringValue
+    }
+  }
+}
+
+/// Give the panel the whole capsule's bounds, including the search and clear buttons.
+private struct ActivitySearchRegion: NSViewRepresentable {
+  func makeNSView(context: Context) -> ClickArea { ClickArea() }
+  func updateNSView(_ view: ClickArea, context: Context) {}
+
+  final class ClickArea: NSView {
+    override func viewDidMoveToWindow() {
+      super.viewDidMoveToWindow()
+      (window as? IslandPanel)?.activitySearchRegion = self
+    }
   }
 }
 
@@ -362,7 +508,7 @@ private struct StateChip: View {
   let selected: Bool
   let dimmed: Bool
   let action: () -> Void
-  let exclude: (() -> Void)?
+  let isolate: (() -> Void)?
   @State private var hovered = false
 
   var body: some View {
@@ -381,16 +527,18 @@ private struct StateChip: View {
       .background(
         capsule.fill(group.color.opacity(hovered ? 0.2 : 0.11))
       )
-      .overlay(
-        capsule.strokeBorder(group.color.opacity(selected ? 0.9 : dimmed ? 0 : 0.6), lineWidth: 1)
-      )
-      .opacity(dimmed && !hovered ? 0.45 : 1)
+      .overlay {
+        if selected {
+          capsule.strokeBorder(group.color.opacity(0.9), lineWidth: 1)
+        }
+      }
+      .opacity(dimmed && !hovered ? 0.58 : 1)
       .contentShape(capsule)
     }
     .buttonStyle(.plain)
     .overlay {
-      if let exclude {
-        StateChipSecondaryClick(action: exclude)
+      if let isolate {
+        StateChipSecondaryClick(action: isolate)
           .allowsHitTesting(false)
           .accessibilityHidden(true)
       }
@@ -400,17 +548,16 @@ private struct StateChip: View {
     .accessibilityLabel("\(group.label), \(count)")
     .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
     .accessibilityActions {
-      if let exclude {
-        Button("Show all states except \(group.label)", action: exclude)
+      if let isolate {
+        Button("Show only \(group.label)", action: isolate)
       }
     }
   }
 
   private var helpText: String {
     let state = group.label.lowercased()
-    if selected { return "Stop filtering by \(state)" }
-    if exclude != nil { return "Filter by \(state). Right-click to exclude \(state)." }
-    return "Filter by \(state)"
+    let toggle = selected ? "Click to remove \(state)." : "Click to include \(state)."
+    return isolate == nil ? toggle : "\(toggle) Right-click to show only \(state)."
   }
 }
 
@@ -442,6 +589,7 @@ private struct StateChipSecondaryClick: NSViewRepresentable {
         guard visibleRect.contains(point),
           NSBezierPath(roundedRect: bounds, xRadius: radius, yRadius: radius).contains(point)
         else { return event }
+        (window as? IslandPanel)?.activitySearchField?.endSearchEditing()
         action()
         return nil
       }
@@ -653,21 +801,19 @@ private struct BoardView: View {
   var body: some View {
     Group {
       if store.github != nil && store.sections.isEmpty {
-        EmptyState(
-          glyph: .checkFill,
-          text: store.stateFilter.isEmpty && !store.needsYouOnly
-            ? "No PRs here" : "No PRs match these filters"
-        )
-        .onGeometryChange(for: CGFloat.self) {
-          $0.size.height
-        } action: {
-          contentHeight = $0
-        }
+        ActivityEmptyState(store: store)
+          .padding(activityListInsets)
+          .onGeometryChange(for: CGFloat.self) {
+            $0.size.height
+          } action: {
+            contentHeight = $0
+          }
       } else {
         HStack(alignment: .top, spacing: 10) {
           ForEach(columns) { section in
             let piles = PRStacks.piles(section.pullRequests, links: store.stackLinks)
-            let visible = piles.prefix(shortened(section) ? 8 : piles.count)
+            let visible = piles.prefix(
+              expanded.contains(section.group) ? piles.count : activityPreviewLimit)
             // Even one card from each of these piles fills a tall column.
             let fixedHeight = CGFloat(visible.count) * 60 >= heightLimit ? heightLimit : nil
             MeasuredColumn(fixedHeight: fixedHeight) {
@@ -705,23 +851,12 @@ private struct BoardView: View {
     contentHeight = tallest
   }
 
-  /// Long columns show their newest cards first; a state filter or "show more" lifts that.
-  private func shortened(_ section: PRSection) -> Bool {
-    store.stateFilter.isEmpty && !store.needsYouOnly && !expanded.contains(section.group)
-  }
-
   private func column(_ section: PRSection, piles: ArraySlice<[PullRequest]>, hidden: Int)
     -> some View
   {
     LazyVStack(alignment: .leading, spacing: 8) {
-      HStack(spacing: 6) {
-        GlyphView(glyph: section.group.glyph, size: 12).foregroundStyle(section.group.color)
-        Text(section.group.label).font(.system(size: 11.5, weight: .semibold))
-        Text("\(section.pullRequests.count)").font(.system(size: 11, weight: .semibold))
-          .monospacedDigit().foregroundStyle(.white.opacity(0.35))
-        Spacer(minLength: 0)
-      }
-      .padding(.horizontal, 4).padding(.top, 4)
+      BoardColumnHeader(section: section)
+        .padding(.horizontal, 4).padding(.top, 4)
       ForEach(piles, id: \.first?.id) { pile in
         if pile.count > 1, let bottom = pile.first {
           StackPile(pile: pile, fanned: !store.foldedStacks.contains(bottom.id)) {
@@ -732,12 +867,58 @@ private struct BoardView: View {
           PRCard(pr: pr).transition(.opacity)
         }
       }
-      if hidden > 0 {
-        ShowMoreButton(hidden: hidden) {
+      if hidden > 0 || store.canLoadMorePRs(in: section.group) {
+        MorePRsRow(store: store, group: section.group, hasHiddenPRs: hidden > 0) {
           withAnimation(Motion.snappy) { _ = expanded.insert(section.group) }
         }
       }
     }
+  }
+}
+
+private struct BoardColumnHeader: View {
+  let section: PRSection
+
+  var body: some View {
+    let repositories = Dictionary(grouping: section.pullRequests, by: \.repository)
+    let ordered = repositories.keys.sorted { lhs, rhs in
+      let leftCount = repositories[lhs]?.count ?? 0
+      let rightCount = repositories[rhs]?.count ?? 0
+      return leftCount == rightCount ? lhs < rhs : leftCount > rightCount
+    }
+    let badges = HStack(spacing: 4) {
+      ForEach(ordered, id: \.self) { repo in
+        let pulls = repositories[repo] ?? []
+        HStack(spacing: 4) {
+          RepoAvatar(url: pulls.lazy.compactMap(\.ownerAvatar).first, size: 12)
+          Text("\(pulls.count)").monospacedDigit()
+        }
+        .font(.system(size: 10, weight: .semibold))
+        .foregroundStyle(section.group.color)
+        .padding(.horizontal, 5).padding(.vertical, 3)
+        .background(Capsule().fill(section.group.color.opacity(0.13)))
+        .help("\(repo) · \(pulls.count) \(section.group.label.lowercased())")
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(
+          "\(repo), \(pulls.count) \(section.group.label.lowercased()) pull requests")
+      }
+    }
+    HStack(spacing: 6) {
+      HStack(spacing: 6) {
+        GlyphView(glyph: section.group.glyph, size: 12).foregroundStyle(section.group.color)
+        Text(section.group.label).font(.system(size: 11.5, weight: .semibold))
+        Text("\(section.pullRequests.count)").font(.system(size: 11, weight: .semibold))
+          .monospacedDigit().foregroundStyle(.white.opacity(0.35))
+      }
+      .fixedSize(horizontal: true, vertical: false)
+      ViewThatFits(in: .horizontal) {
+        badges.fixedSize(horizontal: true, vertical: false)
+        ScrollView(.horizontal) { badges }
+          .scrollIndicators(.hidden)
+      }
+      .frame(maxWidth: .infinity, alignment: .trailing)
+    }
+    .frame(height: 20)
   }
 }
 

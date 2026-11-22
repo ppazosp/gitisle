@@ -204,10 +204,6 @@ public struct PullRequest: Codable, Hashable, Identifiable, Sendable {
     return .open
   }
 
-  /// An open PR waiting on you: a review request, failed checks, conflicts, requested
-  /// changes, or ready to merge. This flags a PR within its state; it is not a state.
-  public var needsYou: Bool { group == .open && status.needsAttention }
-
   public var status: PRStatus {
     if state == "MERGED" { return .merged }
     if state == "CLOSED" { return .closed }
@@ -296,20 +292,16 @@ public struct RepoSection: Identifiable, Equatable, Sendable {
   public var repository: String
   /// The PRs shown, after any state filter.
   public var pullRequests: [PullRequest]
-  /// PRs that need you, before the state filter.
-  public var needsYou: Int
   /// PR counts per state before the state filter, in display order, omitting empty states,
   /// so every state stays available to filter by.
   public var counts: [StateCount]
   public var id: String { repository }
 
   public init(
-    repository: String, pullRequests: [PullRequest], counts: [StateCount]? = nil,
-    needsYou: Int? = nil
+    repository: String, pullRequests: [PullRequest], counts: [StateCount]? = nil
   ) {
     self.repository = repository
     self.pullRequests = pullRequests
-    self.needsYou = needsYou ?? pullRequests.count(where: \.needsYou)
     self.counts =
       counts
       ?? PRGroup.allCases.compactMap { group in
@@ -327,15 +319,15 @@ public struct RepoSection: Identifiable, Equatable, Sendable {
 public enum PRGrouping {
   /// Repositories and their PRs show the newest activity first. A stack reads bottom to top
   /// at the position of its newest visible PR.
-  /// An empty `states` set shows every state; `needsYouOnly` keeps only PRs that need you.
+  /// An empty `states` set shows every state.
   /// Repositories with nothing left are omitted. Order follows the PRs the filters show, so
   /// hiding a repository's newest PR moves it down; counts ignore the filters, so every state
   /// stays selectable.
   public static func repositories(
-    _ pullRequests: [PullRequest], window: ActivityWindow, states: Set<PRGroup> = [],
-    needsYouOnly: Bool = false, now: Date = Date(), calendar: Calendar = .current
+    _ pullRequests: [PullRequest], window: ActivityWindow?, states: Set<PRGroup> = [],
+    now: Date = Date(), calendar: Calendar = .current
   ) -> [RepoSection] {
-    let start = window.firstIncludedDay(at: now, calendar: calendar)
+    let start = window?.firstIncludedDay(at: now, calendar: calendar) ?? .distantPast
     let recent = pullRequests.filter {
       $0.group != nil && $0.activityDate >= start
     }
@@ -345,13 +337,11 @@ public enum PRGrouping {
       let shown = all.pullRequests.filter { pr in
         // A closure, not `map(states.contains)`: release builds miscompile that method
         // reference and crash when a state filter is pressed.
-        (states.isEmpty || (pr.group.map { states.contains($0) } ?? false))
-          && (!needsYouOnly || pr.needsYou)
+        states.isEmpty || (pr.group.map { states.contains($0) } ?? false)
       }.sorted { ($0.activityDate, $0.number) > ($1.activityDate, $1.number) }
       guard !shown.isEmpty else { return nil }
       return RepoSection(
-        repository: repository, pullRequests: PRStacks.ordered(shown), counts: all.counts,
-        needsYou: all.needsYou)
+        repository: repository, pullRequests: PRStacks.ordered(shown), counts: all.counts)
     }
     // Newest activity among the PRs shown.
     func latest(_ prs: [PullRequest]) -> Date {
@@ -365,10 +355,10 @@ public enum PRGrouping {
   }
 
   public static func sections(
-    _ pullRequests: [PullRequest], window: ActivityWindow, now: Date = Date(),
+    _ pullRequests: [PullRequest], window: ActivityWindow?, now: Date = Date(),
     calendar: Calendar = .current
   ) -> [PRSection] {
-    let start = window.firstIncludedDay(at: now, calendar: calendar)
+    let start = window?.firstIncludedDay(at: now, calendar: calendar) ?? .distantPast
     var buckets: [PRGroup: [PullRequest]] = [:]
     for pr in pullRequests {
       guard let group = pr.group else { continue }
@@ -384,16 +374,29 @@ public enum PRGrouping {
         }
       case .merged:
         rows.sort { $0.activityDate > $1.activityDate }
-      case .open:
-        // PRs waiting on you lead their column.
-        rows.sort { lhs, rhs in
-          lhs.needsYou != rhs.needsYou ? lhs.needsYou : lhs.updatedAt > rhs.updatedAt
-        }
       default:
         rows.sort { $0.updatedAt > $1.updatedAt }
       }
       return PRSection(group: group, pullRequests: rows)
     }
+  }
+}
+
+public struct MergedHistory: Codable, Sendable {
+  public var nextCursor: String?
+
+  public init(nextCursor: String?) {
+    self.nextCursor = nextCursor
+  }
+}
+
+public struct OpenSearchProgress: Codable, Equatable, Sendable {
+  public var nextCursor: String?
+  public var pages: Int
+
+  public init(nextCursor: String?, pages: Int) {
+    self.nextCursor = nextCursor
+    self.pages = pages
   }
 }
 
@@ -403,11 +406,14 @@ public struct GitHubSnapshot: Codable, Sendable {
   public var fetchedAt: Date
   public var selection: String
   public var isLimited: Bool
-  /// More merged PRs exist in the last 30 days than were fetched; only the newest are kept.
+  /// Whether more merged PRs are available in this account's history.
   public var mergedLimited: Bool?
-  /// When the full 30 days of merged PRs were last read. In between, refreshes read only
-  /// recent merges and keep the rest.
+  /// When merged history was last refreshed from GitHub.
   public var mergedSweptAt: Date?
+  /// Nil in older snapshots, before the first history page has been read.
+  public var mergedHistory: MergedHistory?
+  /// Cursors for the active searches that reached the background refresh cap.
+  public var openSearchProgress: [String: OpenSearchProgress]?
   /// What the open-PR searches found, to compare the next one-point check against. Nil when a
   /// search found more than one check can see, or for snapshots saved before it existed.
   public var searchFingerprint: SearchFingerprint?
@@ -415,11 +421,14 @@ public struct GitHubSnapshot: Codable, Sendable {
   public init(
     login: String, pullRequests: [PullRequest], fetchedAt: Date = Date(), selection: String = "",
     isLimited: Bool = false, mergedLimited: Bool = false, mergedSweptAt: Date? = nil,
-    searchFingerprint: SearchFingerprint? = nil
+    searchFingerprint: SearchFingerprint? = nil, mergedHistory: MergedHistory? = nil,
+    openSearchProgress: [String: OpenSearchProgress]? = nil
   ) {
     self.searchFingerprint = searchFingerprint
     self.mergedLimited = mergedLimited
     self.mergedSweptAt = mergedSweptAt
+    self.mergedHistory = mergedHistory
+    self.openSearchProgress = openSearchProgress
     self.login = login
     self.pullRequests = pullRequests
     self.fetchedAt = fetchedAt
