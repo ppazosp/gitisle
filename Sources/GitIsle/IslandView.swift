@@ -879,6 +879,11 @@ private struct ExpandedIsland: View {
       Text("Activity").font(.system(size: 14, weight: .semibold))
       Spacer(minLength: 8)
       RepositoryButton(store: store)
+      PillPicker(
+        options: ActivityWindow.allCases.map { ($0, $0.label) },
+        selection: $store.activityWindow, fontSize: 11
+      )
+      .help("Activity date range")
       LayoutToggle(layout: $store.activityLayout)
     }
     .padding(.horizontal, 28)
