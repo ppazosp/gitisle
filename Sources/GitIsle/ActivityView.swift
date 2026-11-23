@@ -317,18 +317,19 @@ struct StateFilterBar: View {
   var body: some View {
     let canIsolate =
       !store.repositoryPickerOpen && store.dropdown == nil && store.checksPreview == nil
+    let enabledStates = store.enabledStates
     HStack(spacing: 6) {
       ActivitySearchField(query: $store.activitySearch, expanded: store.expanded)
       Rectangle().fill(Palette.hairline).frame(width: 1, height: 16).padding(.horizontal, 2)
       ForEach(PRGroup.boardOrder, id: \.self) { group in
         let count = store.stateCounts.first { $0.group == group }?.count ?? 0
-        let selected = store.stateFilter.contains(group)
+        let selected = enabledStates.contains(group)
         let capped =
           group == .merged && store.activityWindow == .all && store.activityQuery.isEmpty
           && store.repositoryFilter.isEmpty && store.github?.mergedHistory?.nextCursor != nil
         StateChip(
           group: group, count: count, capped: capped, selected: selected,
-          dimmed: !store.stateFilter.isEmpty && !selected,
+          dimmed: !selected,
           action: { store.toggleState(group) },
           isolate: canIsolate ? { store.stateFilter = [group] } : nil)
       }

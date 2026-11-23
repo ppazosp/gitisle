@@ -361,6 +361,9 @@ final class IslandStore {
       regroupActivity()
     }
   }
+  var enabledStates: Set<PRGroup> {
+    stateFilter.isEmpty ? Set(PRGroup.allCases) : stateFilter
+  }
   var activityLayout: ActivityLayout =
     ActivityLayout(rawValue: UserDefaults.standard.string(forKey: "activityLayout") ?? "") ?? .list
   {
@@ -683,11 +686,9 @@ final class IslandStore {
   }
 
   func toggleState(_ group: PRGroup) {
-    if stateFilter.contains(group) {
-      stateFilter.remove(group)
-    } else {
-      stateFilter.insert(group)
-    }
+    var selection = enabledStates
+    if selection.remove(group) == nil { selection.insert(group) }
+    stateFilter = selection
   }
 
   func toggleCollapsed(_ repository: String) {
